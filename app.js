@@ -4,6 +4,7 @@
   const STORAGE_KEY = "arcana-cube-v1";
   const SHEETJS_URL = "https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js";
   const { buildBackup, buildCardNameSearchUrl, buildExcelRows, buildPrintingsUrl, chooseValidFinish, computeStats, filterCards, filterPrintings, sortCards, getAvailableFinishes, getCardBucket, getFrontColors, getFrontTypeLine, getPriceNumber, getUsdPrice, isPaperPrinting, needsPriceRefresh, normalizeCardName, normalizeFinish, normalizeScryfallCard, parseBackup, parseDecklist, parseExcelRows, replacePrinting } = window.CubeCore;
+  const { requestJson: scryfallRequest } = window.ScryfallClient;
   let sheetJsLoader;
   let printingRequestId = 0;
 
@@ -74,7 +75,9 @@
     printingCache: new Map(),
     lookupMode: "name",
     nameResults: [],
-    nameSearchId: 0
+    nameSearchId: 0,
+    nameSearchController: null,
+    printingController: null
   };
 
   const $ = (selector, parent = document) => parent.querySelector(selector);
@@ -284,41 +287,47 @@
     setTimeout(() => node.remove(), 3300);
   }
 
-  async function lookupCard(name) {
-    const response = await fetch(`https://api.scryfall.com/cards/named?fuzzy=${encodeURIComponent(name)}`, { headers: { Accept: "application/json" } });
-    if (!response.ok) throw new Error(response.status === 404 ? "没有找到这张牌" : "卡牌服务暂时不可用");
-    return response.json();
+  async function lookupCard(name, signal) {
+    try {
+      return await scryfallRequest(`https://api.scryfall.com/cards/named?fuzzy=${encodeURIComponent(name)}`, { signal });
+    } catch (error) {
+      if (error.status === 404) throw new Error("没有找到这张牌");
+      throw error;
+    }
   }
 
-  async function searchCardsByName(name) {
+  async function searchCardsByName(name, signal) {
     let url = buildCardNameSearchUrl(name);
     const cards = [];
     while (url) {
-      const response = await fetch(url, { headers: { Accept: "application/json" } });
-      if (!response.ok) {
-        if (response.status === 404) return [];
-        throw new Error("卡牌服务暂时不可用");
+      let page;
+      try {
+        page = await scryfallRequest(url, { signal });
+      } catch (error) {
+        if (error.status === 404) return [];
+        throw error;
       }
-      const page = await response.json();
       cards.push(...(page.data || []).filter(isPaperPrinting));
       url = page.has_more ? page.next_page : null;
-      if (url) await new Promise((resolve) => setTimeout(resolve, 110));
     }
     return cards;
   }
 
-  async function lookupPrinting(setCode, collectorNumber) {
+  async function lookupPrinting(setCode, collectorNumber, signal) {
     const set = setCode.trim().toLowerCase();
     const number = collectorNumber.trim();
-    const response = await fetch(`https://api.scryfall.com/cards/${encodeURIComponent(set)}/${encodeURIComponent(number)}`, { headers: { Accept: "application/json" } });
-    if (!response.ok) throw new Error(response.status === 404 ? "没有找到这个系列与编号的卡牌" : "卡牌服务暂时不可用");
-    return response.json();
+    try {
+      return await scryfallRequest(`https://api.scryfall.com/cards/${encodeURIComponent(set)}/${encodeURIComponent(number)}`, { signal });
+    } catch (error) {
+      if (error.status === 404) throw new Error("没有找到这个系列与编号的卡牌");
+      throw error;
+    }
   }
 
-  async function lookupAllPrintings(card) {
+  async function lookupAllPrintings(card, signal) {
     let oracleId = card.oracleId;
     if (!oracleId) {
-      const identity = await lookupCard(card.name);
+      const identity = await lookupCard(card.name, signal);
       oracleId = identity.oracle_id;
     }
     if (state.printingCache.has(oracleId)) return state.printingCache.get(oracleId).filter(isPaperPrinting);
@@ -326,12 +335,9 @@
     let url = buildPrintingsUrl(oracleId);
     const printings = [];
     while (url) {
-      const response = await fetch(url, { headers: { Accept: "application/json" } });
-      if (!response.ok) throw new Error("无法获取这张牌的版本列表");
-      const page = await response.json();
+      const page = await scryfallRequest(url, { signal });
       printings.push(...(page.data || []).filter(isPaperPrinting));
       url = page.has_more ? page.next_page : null;
-      if (url) await new Promise((resolve) => setTimeout(resolve, 110));
     }
     state.printingCache.set(oracleId, printings);
     return printings;
@@ -421,6 +427,8 @@
   async function openPrintingDialog(cardId) {
     const card = state.data.cards.find((item) => item.id === cardId);
     if (!card) return;
+    if (state.printingController) state.printingController.abort();
+    state.printingController = new AbortController();
     const requestId = ++printingRequestId;
     state.editingCardId = cardId;
     state.printings = [];
@@ -433,7 +441,7 @@
     $("#printingDialogTitle").textContent = `${card.name} · 选择版本`;
     elements.printingDialog.showModal();
     try {
-      const printings = await lookupAllPrintings(card);
+      const printings = await lookupAllPrintings(card, state.printingController.signal);
       if (requestId !== printingRequestId || state.editingCardId !== cardId || !elements.printingDialog.open) return;
       state.printings = printings;
       renderPrintings();
@@ -477,6 +485,8 @@
   }
 
   function clearNameResults() {
+    if (state.nameSearchController) state.nameSearchController.abort();
+    state.nameSearchController = null;
     state.nameSearchId += 1;
     state.nameResults = [];
     elements.lookupResult.classList.add("hidden");
@@ -552,10 +562,12 @@
     elements.lookupButton.textContent = "正在查找…";
     try {
       if (isNameLookup) {
+        if (state.nameSearchController) state.nameSearchController.abort();
+        state.nameSearchController = new AbortController();
         const searchId = ++state.nameSearchId;
         elements.lookupResult.classList.remove("hidden");
         elements.lookupResult.innerHTML = '<div class="name-result-empty">正在搜索实体卡牌…</div>';
-        const results = await searchCardsByName(name);
+        const results = await searchCardsByName(name, state.nameSearchController.signal);
         if (searchId !== state.nameSearchId) return;
         state.nameResults = results;
         renderNameResults();
@@ -570,6 +582,7 @@
       elements.collectorNumberInput.value = "";
       toast("已添加", card.name);
     } catch (error) {
+      if (error.name === "AbortError") return;
       toast("添加失败", error.message || "请检查网络后重试", true);
     } finally {
       elements.lookupButton.disabled = false;
@@ -657,15 +670,12 @@
     if (!rows.length) return results;
     for (let start = 0; start < rows.length; start += 75) {
       const chunk = rows.slice(start, start + 75);
-      const response = await fetch("https://api.scryfall.com/cards/collection", {
+      const payload = await scryfallRequest("https://api.scryfall.com/cards/collection", {
         method: "POST",
         headers: { Accept: "application/json", "Content-Type": "application/json" },
         body: JSON.stringify({ identifiers: chunk.map((row) => ({ set: row.setCode.toLowerCase(), collector_number: row.collectorNumber })) })
       });
-      if (!response.ok) throw new Error("Scryfall 批量核验暂时不可用");
-      const payload = await response.json();
       (payload.data || []).forEach((card) => results.set(printingKey(card.set, card.collector_number), card));
-      if (start + 75 < rows.length) await new Promise((resolve) => setTimeout(resolve, 110));
     }
     return results;
   }
@@ -805,7 +815,6 @@
         } catch (error) {
           failed += 1;
         }
-        if (index < names.length - 1) await new Promise((resolve) => setTimeout(resolve, 110));
       }
       state.data.cards = sortCards(state.data.cards);
       saveState();
@@ -1008,6 +1017,8 @@
     });
     elements.addCardDialog.addEventListener("close", clearNameResults);
     elements.printingDialog.addEventListener("close", () => {
+      if (state.printingController) state.printingController.abort();
+      state.printingController = null;
       printingRequestId += 1;
       state.editingCardId = null;
       state.printings = [];
