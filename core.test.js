@@ -1,6 +1,6 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { buildBackup, buildCardNameSearchUrl, buildExcelRows, buildPrintingsUrl, chooseValidFinish, computeStats, filterCards, filterPrintings, getAvailableFinishes, getCardBucket, getColorBucket, getFrontTypeLine, getPriceNumber, getUsdPrice, isPaperPrinting, normalizeCardName, normalizeFinish, normalizeScryfallCard, parseBackup, parseDecklist, parseExcelRows, replacePrinting, sortCards } = require("./core.js");
+const { buildBackup, buildCardNameSearchUrl, buildExcelRows, buildPrintingsUrl, chooseValidFinish, computeStats, filterCards, filterPrintings, getAvailableFinishes, getCardBucket, getColorBucket, getFrontTypeLine, getPriceNumber, getUsdPrice, isLandCard, isPaperPrinting, normalizeCardName, normalizeFinish, normalizeScryfallCard, parseBackup, parseDecklist, parseExcelRows, replacePrinting, sortCards } = require("./core.js");
 
 const cards = [
   { name: "Alpha", colors: ["W"], cmc: 1, typeLine: "Creature — Human", set: "TST" },
@@ -65,6 +65,13 @@ test("colorless and land filters use separate display buckets", () => {
   ];
   assert.deepEqual(filterCards(sample, { query: "", color: "C", type: "all" }).map((card) => card.name), ["Sol Ring"]);
   assert.deepEqual(filterCards(sample, { query: "", color: "L", type: "all" }).map((card) => card.name), ["Wasteland", "Dryad Arbor"]);
+  assert.deepEqual(filterCards(sample, { query: "", color: "all", type: "Land" }).map((card) => card.name), ["Wasteland", "Dryad Arbor"]);
+  assert.equal(isLandCard(sample[2]), true);
+  const stats = computeStats([sample[2]]);
+  assert.equal(stats.lands, 1);
+  assert.equal(stats.creatures, 1);
+  assert.equal(stats.averageCmc, 0);
+  assert.equal(stats.curve[0], 0);
 });
 
 test("sortCards orders by WUBRG, then colorless, multicolor, lands, then name", () => {

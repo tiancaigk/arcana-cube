@@ -110,13 +110,17 @@
     return priorities.find((type) => (typeLine || "").includes(type)) || "Other";
   }
 
+  function isLandCard(card) {
+    return getFrontTypeLine(card).includes("Land");
+  }
+
   function getCardBucket(card) {
-    if (getFrontTypeLine(card).includes("Land")) return "L";
+    if (isLandCard(card)) return "L";
     return getColorBucket(card);
   }
 
   function computeStats(cards) {
-    const nonlands = cards.filter((card) => getPrimaryType(getFrontTypeLine(card)) !== "Land");
+    const nonlands = cards.filter((card) => !isLandCard(card));
     const cmcTotal = nonlands.reduce((sum, card) => sum + (Number(card.cmc) || 0), 0);
     const colors = { W: 0, U: 0, B: 0, R: 0, G: 0, C: 0, M: 0 };
     const types = {};
@@ -126,7 +130,7 @@
       colors[getColorBucket(card)] += 1;
       const type = getPrimaryType(getFrontTypeLine(card));
       types[type] = (types[type] || 0) + 1;
-      if (type !== "Land") {
+      if (!isLandCard(card)) {
         const cmc = Math.max(0, Math.floor(Number(card.cmc) || 0));
         curve[cmc >= 7 ? "7+" : cmc] += 1;
       }
@@ -136,7 +140,7 @@
       total: cards.length,
       averageCmc: nonlands.length ? cmcTotal / nonlands.length : 0,
       creatures: types.Creature || 0,
-      lands: types.Land || 0,
+      lands: cards.length - nonlands.length,
       colors,
       types,
       curve
@@ -148,7 +152,7 @@
     return cards.filter((card) => {
       const bucket = getCardBucket(card);
       const matchesColor = !filters.color || filters.color === "all" || bucket === filters.color;
-      const matchesType = !filters.type || filters.type === "all" || getPrimaryType(getFrontTypeLine(card)) === filters.type;
+      const matchesType = !filters.type || filters.type === "all" || (filters.type === "Land" ? isLandCard(card) : getPrimaryType(getFrontTypeLine(card)) === filters.type);
       const matchesFinish = !filters.finish || filters.finish === "all" || normalizeFinish(card.finish) === filters.finish;
       const haystack = `${card.name} ${getFrontTypeLine(card)} ${card.set}`.toLocaleLowerCase();
       return matchesColor && matchesType && matchesFinish && (!query || haystack.includes(query));
@@ -272,5 +276,5 @@
     };
   }
 
-  return { COLOR_ORDER, SORT_ORDER, parseDecklist, normalizeFinish, parseFinish, getAvailableFinishes, chooseValidFinish, normalizeScryfallCard, getFrontColors, getFrontTypeLine, getUsdPrice, getPriceNumber, getColorBucket, getPrimaryType, getCardBucket, computeStats, filterCards, sortCards, buildCardNameSearchUrl, buildPrintingsUrl, isPaperPrinting, filterPrintings, replacePrinting, normalizeCardName, parseExcelRows, buildExcelRows, buildBackup, parseBackup };
+  return { COLOR_ORDER, SORT_ORDER, parseDecklist, normalizeFinish, parseFinish, getAvailableFinishes, chooseValidFinish, normalizeScryfallCard, getFrontColors, getFrontTypeLine, getUsdPrice, getPriceNumber, getColorBucket, getPrimaryType, isLandCard, getCardBucket, computeStats, filterCards, sortCards, buildCardNameSearchUrl, buildPrintingsUrl, isPaperPrinting, filterPrintings, replacePrinting, normalizeCardName, parseExcelRows, buildExcelRows, buildBackup, parseBackup };
 });
