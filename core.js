@@ -25,6 +25,7 @@
     const imageUris = card.image_uris || (face && face.image_uris) || {};
     const frontColors = (face && face.colors) || card.colors || [];
     const frontTypeLine = (face && face.type_line) || card.type_line || "Unknown";
+    const finishes = getAvailableFinishes(card);
     return {
       id: `${card.id || cryptoId()}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
       scryfallId: card.id || "",
@@ -47,7 +48,8 @@
         usdFoil: normalizePrice(card.prices && card.prices.usd_foil),
         usdEtched: normalizePrice(card.prices && card.prices.usd_etched)
       },
-      finish: "foil",
+      finishes,
+      finish: chooseValidFinish({ finishes }, "foil"),
       addedAt: new Date().toISOString()
     };
   }
@@ -64,6 +66,23 @@
   function parseFinish(value) {
     const normalized = String(value || "").toLocaleLowerCase().replace(/[\s_-]+/g, "");
     return normalized === "nonfoil" || normalized === "非闪" ? "nonfoil" : "foil";
+  }
+
+  function getAvailableFinishes(card) {
+    const rawFinishes = Array.isArray(card && card.finishes) ? card.finishes : [];
+    const hasAvailabilityData = rawFinishes.length > 0 || typeof (card && card.foil) === "boolean" || typeof (card && card.nonfoil) === "boolean";
+    if (!hasAvailabilityData) return ["foil", "nonfoil"];
+    const available = [];
+    if (rawFinishes.includes("foil") || rawFinishes.includes("etched") || card.foil === true) available.push("foil");
+    if (rawFinishes.includes("nonfoil") || card.nonfoil === true) available.push("nonfoil");
+    return available.length ? available : ["foil"];
+  }
+
+  function chooseValidFinish(card, preferred) {
+    const available = getAvailableFinishes(card);
+    const normalized = normalizeFinish(preferred);
+    if (available.includes(normalized)) return normalized;
+    return available.includes("foil") ? "foil" : "nonfoil";
   }
 
   function normalizePrice(value) {
@@ -178,18 +197,19 @@
   }
 
   function replacePrinting(currentCard, printing) {
+    const normalized = normalizeScryfallCard(printing);
     return {
-      ...normalizeScryfallCard(printing),
+      ...normalized,
       id: currentCard.id,
       addedAt: currentCard.addedAt,
-      finish: normalizeFinish(currentCard.finish)
+      finish: chooseValidFinish(normalized, currentCard.finish)
     };
   }
 
   function getUsdPrice(card, finish) {
     const prices = card && card.prices ? card.prices : {};
     const normalizedFinish = normalizeFinish(finish || card.finish);
-    return normalizedFinish === "foil" ? prices.usdFoil || "" : prices.usd || "";
+    return normalizedFinish === "foil" ? prices.usdFoil || prices.usdEtched || "" : prices.usd || "";
   }
 
   function getPriceNumber(card, finish) {
@@ -252,5 +272,5 @@
     };
   }
 
-  return { COLOR_ORDER, SORT_ORDER, parseDecklist, normalizeFinish, parseFinish, normalizeScryfallCard, getFrontColors, getFrontTypeLine, getUsdPrice, getPriceNumber, getColorBucket, getPrimaryType, getCardBucket, computeStats, filterCards, sortCards, buildCardNameSearchUrl, buildPrintingsUrl, isPaperPrinting, filterPrintings, replacePrinting, normalizeCardName, parseExcelRows, buildExcelRows, buildBackup, parseBackup };
+  return { COLOR_ORDER, SORT_ORDER, parseDecklist, normalizeFinish, parseFinish, getAvailableFinishes, chooseValidFinish, normalizeScryfallCard, getFrontColors, getFrontTypeLine, getUsdPrice, getPriceNumber, getColorBucket, getPrimaryType, getCardBucket, computeStats, filterCards, sortCards, buildCardNameSearchUrl, buildPrintingsUrl, isPaperPrinting, filterPrintings, replacePrinting, normalizeCardName, parseExcelRows, buildExcelRows, buildBackup, parseBackup };
 });

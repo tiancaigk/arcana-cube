@@ -1,6 +1,6 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { buildBackup, buildCardNameSearchUrl, buildExcelRows, buildPrintingsUrl, computeStats, filterCards, filterPrintings, getCardBucket, getColorBucket, getFrontTypeLine, getPriceNumber, getUsdPrice, isPaperPrinting, normalizeCardName, normalizeFinish, normalizeScryfallCard, parseBackup, parseDecklist, parseExcelRows, replacePrinting, sortCards } = require("./core.js");
+const { buildBackup, buildCardNameSearchUrl, buildExcelRows, buildPrintingsUrl, chooseValidFinish, computeStats, filterCards, filterPrintings, getAvailableFinishes, getCardBucket, getColorBucket, getFrontTypeLine, getPriceNumber, getUsdPrice, isPaperPrinting, normalizeCardName, normalizeFinish, normalizeScryfallCard, parseBackup, parseDecklist, parseExcelRows, replacePrinting, sortCards } = require("./core.js");
 
 const cards = [
   { name: "Alpha", colors: ["W"], cmc: 1, typeLine: "Creature — Human", set: "TST" },
@@ -113,7 +113,7 @@ test("normalizeScryfallCard keeps Treasure Map's front-face classification", () 
 });
 
 test("normalizeScryfallCard keeps the exact printing number", () => {
-  const card = normalizeScryfallCard({ id: "card", name: "Black Vise", set: "lea", collector_number: "233", type_line: "Artifact", prices: { usd: "1.23", usd_foil: "4.56" } });
+  const card = normalizeScryfallCard({ id: "card", name: "Black Vise", set: "lea", collector_number: "233", type_line: "Artifact", finishes: ["nonfoil", "foil"], prices: { usd: "1.23", usd_foil: "4.56" } });
   assert.equal(card.set, "LEA");
   assert.equal(card.collectorNumber, "233");
   assert.equal(card.scryfallId, "card");
@@ -127,6 +127,18 @@ test("normalizeScryfallCard keeps the exact printing number", () => {
   assert.equal(getPriceNumber(card, "foil"), 4.56);
   assert.equal(getUsdPrice({ prices: { usd: "1.23", usdFoil: "" }, finish: "foil" }), "");
   assert.equal(getPriceNumber({ prices: { usd: "1.23", usdFoil: "" }, finish: "foil" }), null);
+});
+
+test("finish helpers respect the selected printing's availability", () => {
+  const nonfoilOnly = normalizeScryfallCard({ id: "regular", name: "Regular", set: "tst", type_line: "Artifact", finishes: ["nonfoil"], foil: false, nonfoil: true, prices: { usd: "1.00" } });
+  assert.deepEqual(getAvailableFinishes(nonfoilOnly), ["nonfoil"]);
+  assert.equal(nonfoilOnly.finish, "nonfoil");
+  assert.equal(chooseValidFinish(nonfoilOnly, "foil"), "nonfoil");
+  const etched = normalizeScryfallCard({ id: "etched", name: "Etched", set: "tst", type_line: "Artifact", finishes: ["etched"], prices: { usd_etched: "5.00" } });
+  assert.deepEqual(etched.finishes, ["foil"]);
+  assert.equal(getUsdPrice(etched, "foil"), "5.00");
+  const replaced = replacePrinting({ id: "cube-card", addedAt: "date", finish: "nonfoil" }, { id: "foil-only", name: "Card", set: "tst", type_line: "Artifact", finishes: ["foil"], foil: true, nonfoil: false });
+  assert.equal(replaced.finish, "foil");
 });
 
 test("printing helpers build, filter, and replace versions safely", () => {

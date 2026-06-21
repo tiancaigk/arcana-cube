@@ -3,7 +3,7 @@
 
   const STORAGE_KEY = "arcana-cube-v1";
   const SHEETJS_URL = "https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js";
-  const { buildBackup, buildCardNameSearchUrl, buildExcelRows, buildPrintingsUrl, computeStats, filterCards, filterPrintings, sortCards, getCardBucket, getFrontColors, getFrontTypeLine, getPriceNumber, getUsdPrice, isPaperPrinting, normalizeCardName, normalizeFinish, normalizeScryfallCard, parseBackup, parseDecklist, parseExcelRows, replacePrinting } = window.CubeCore;
+  const { buildBackup, buildCardNameSearchUrl, buildExcelRows, buildPrintingsUrl, chooseValidFinish, computeStats, filterCards, filterPrintings, sortCards, getAvailableFinishes, getCardBucket, getFrontColors, getFrontTypeLine, getPriceNumber, getUsdPrice, isPaperPrinting, normalizeCardName, normalizeFinish, normalizeScryfallCard, parseBackup, parseDecklist, parseExcelRows, replacePrinting } = window.CubeCore;
   let sheetJsLoader;
   let printingRequestId = 0;
 
@@ -100,7 +100,8 @@
       ...card,
       frontColors: getFrontColors(card),
       frontTypeLine: getFrontTypeLine(card),
-      finish: normalizeFinish(card.finish)
+      finishes: getAvailableFinishes(card),
+      finish: chooseValidFinish(card, card.finish)
     })));
   }
 
@@ -223,6 +224,8 @@
   function cardTemplate(card, index) {
     const cost = (card.manaCost || "").replace(/[{}]/g, "").replace(/(?=\D)/g, " ").trim();
     const finish = normalizeFinish(card.finish);
+    const availableFinishes = getAvailableFinishes(card);
+    const finishDisabled = availableFinishes.length < 2;
     const price = formatUsd(cardPrice(card));
     return `<article class="card-item" data-id="${escapeHtml(card.id)}" data-finish="${finish}" style="animation-delay:${Math.min(index * 18, 220)}ms">
       <div class="card-image-wrap">
@@ -231,7 +234,7 @@
       </div>
       <div class="card-info">
         <div class="card-name-row"><span class="card-name" title="${escapeHtml(card.name)}">${escapeHtml(card.name)}</span><span class="card-cost">${escapeHtml(cost)}</span></div>
-        <div class="card-meta"><span>${escapeHtml(card.typeLine.split(" — ")[0])}</span><button class="finish-pill ${finish}" data-toggle-finish="${escapeHtml(card.id)}" title="切换 ${escapeHtml(card.name)} 的 foil 状态">${finish === "foil" ? "Foil" : "Non-Foil"}</button></div>
+        <div class="card-meta"><span>${escapeHtml(card.typeLine.split(" — ")[0])}</span><button class="finish-pill ${finish}" data-toggle-finish="${escapeHtml(card.id)}" ${finishDisabled ? "disabled" : ""} title="${finishDisabled ? `此版本仅支持 ${finish === "foil" ? "Foil" : "Non-Foil"}` : `切换 ${escapeHtml(card.name)} 的 Foil 状态`}">${finish === "foil" ? "Foil" : "Non-Foil"}</button></div>
         <div class="card-meta"><span>${escapeHtml(card.set)}${card.collectorNumber ? ` · ${escapeHtml(card.collectorNumber)}` : ""} · <span class="card-price">${escapeHtml(price)}</span></span><button class="printing-button" data-change-printing="${escapeHtml(card.id)}" title="选择 ${escapeHtml(card.name)} 的其他版本">选择版本</button></div>
       </div>
       <button class="remove-card" data-remove="${escapeHtml(card.id)}" title="从 Cube 移除" aria-label="移除 ${escapeHtml(card.name)}">−</button>
@@ -377,14 +380,16 @@
   function printingPriceSummary(printing) {
     const prices = printing.prices || {};
     const nonfoil = formatUsd(prices.usd);
-    const foil = formatUsd(prices.usd_foil);
+    const foil = formatUsd(prices.usd_foil || prices.usd_etched);
     return `Non-Foil ${nonfoil} · Foil ${foil}`;
   }
 
   function renderPrintingFinishToggle(card) {
     const finish = normalizeFinish(card.finish);
+    const available = getAvailableFinishes(card);
+    const disabled = available.length < 2;
     elements.printingFinishToggle.innerHTML = `
-      <button type="button" class="finish-toggle-button ${finish}" data-toggle-finish="${escapeHtml(card.id)}">
+      <button type="button" class="finish-toggle-button ${finish}" data-toggle-finish="${escapeHtml(card.id)}" ${disabled ? "disabled" : ""} title="${disabled ? `此版本仅支持 ${finish === "foil" ? "Foil" : "Non-Foil"}` : "切换 Finish"}">
         <span>Finish</span>
         <strong>${finish === "foil" ? "Foil" : "Non-Foil"}</strong>
       </button>`;
@@ -452,6 +457,11 @@
     const cardIndex = state.data.cards.findIndex((item) => item.id === cardId);
     if (cardIndex < 0) return;
     const current = state.data.cards[cardIndex];
+    const available = getAvailableFinishes(current);
+    if (available.length < 2) {
+      toast("无法切换", `此版本仅支持 ${available[0] === "foil" ? "Foil" : "Non-Foil"}`, true);
+      return;
+    }
     current.finish = normalizeFinish(current.finish) === "foil" ? "nonfoil" : "foil";
     state.data.cards[cardIndex] = current;
     saveState();
@@ -752,7 +762,10 @@
 
   function commitExcelImport() {
     const rows = state.excelRows.filter((row) => row.importable && row.card);
-    rows.forEach((row) => state.data.cards.push({ ...normalizeScryfallCard(row.card), finish: row.finish }));
+    rows.forEach((row) => {
+      const card = normalizeScryfallCard(row.card);
+      state.data.cards.push({ ...card, finish: chooseValidFinish(card, row.finish) });
+    });
     state.data.cards = sortCards(state.data.cards);
     saveState();
     render();
