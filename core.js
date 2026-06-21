@@ -125,8 +125,9 @@
       const bucket = getCardBucket(card);
       const matchesColor = !filters.color || filters.color === "all" || bucket === filters.color;
       const matchesType = !filters.type || filters.type === "all" || getPrimaryType(getFrontTypeLine(card)) === filters.type;
+      const matchesFinish = !filters.finish || filters.finish === "all" || normalizeFinish(card.finish) === filters.finish;
       const haystack = `${card.name} ${getFrontTypeLine(card)} ${card.set}`.toLocaleLowerCase();
-      return matchesColor && matchesType && (!query || haystack.includes(query));
+      return matchesColor && matchesType && matchesFinish && (!query || haystack.includes(query));
     });
   }
 

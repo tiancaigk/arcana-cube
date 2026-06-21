@@ -66,7 +66,7 @@
       })));
       return loaded;
     })(),
-    filters: { query: "", color: "all", type: "all" },
+    filters: { query: "", color: "all", type: "all", finish: "all" },
     mode: "grid",
     view: "collection",
     importing: false,
@@ -87,7 +87,7 @@
 
   const elements = {
     statsGrid: $("#statsGrid"), cardGrid: $("#cardGrid"), resultCount: $("#resultCount"),
-    emptyState: $("#emptyState"), searchInput: $("#searchInput"), typeFilter: $("#typeFilter"),
+    emptyState: $("#emptyState"), searchInput: $("#searchInput"), typeFilter: $("#typeFilter"), finishFilter: $("#finishFilter"),
     collectionView: $("#collectionView"), analyticsView: $("#analyticsView"),
     addCardDialog: $("#addCardDialog"), importDialog: $("#importDialog"), editCubeDialog: $("#editCubeDialog"),
     toastRegion: $("#toastRegion"), cardNameInput: $("#cardNameInput"), lookupButton: $("#lookupButton"),
@@ -203,6 +203,7 @@
     const labels = [];
     if (state.filters.color !== "all") labels.push(`颜色：${colorLabel(state.filters.color)}`);
     if (state.filters.type !== "all") labels.push(`类型：${typeLabel(state.filters.type)}`);
+    if (state.filters.finish !== "all") labels.push(`Finish：${state.filters.finish === "foil" ? "仅 Foil" : "仅 Non-Foil"}`);
     if (state.filters.query) labels.push(`搜索：“${state.filters.query}”`);
     $("#activeFilterText").textContent = labels.join(" · ") || "按颜色与类型整理";
   }
@@ -843,9 +844,10 @@
   }
 
   function clearFilters() {
-    state.filters = { query: "", color: "all", type: "all" };
+    state.filters = { query: "", color: "all", type: "all", finish: "all" };
     elements.searchInput.value = "";
     elements.typeFilter.value = "all";
+    elements.finishFilter.value = "all";
     $$("[data-color]").forEach((button) => button.classList.toggle("active", button.dataset.color === "all"));
     renderCards();
   }
@@ -874,6 +876,7 @@
     $$(".nav-item").forEach((button) => button.addEventListener("click", () => setView(button.dataset.view)));
     elements.searchInput.addEventListener("input", (event) => { state.filters.query = event.target.value; renderCards(); });
     elements.typeFilter.addEventListener("change", (event) => { state.filters.type = event.target.value; renderCards(); });
+    elements.finishFilter.addEventListener("change", (event) => { state.filters.finish = event.target.value; renderCards(); });
     $$("[data-color]").forEach((button) => button.addEventListener("click", () => {
       state.filters.color = button.dataset.color;
       $$("[data-color]").forEach((item) => item.classList.toggle("active", item === button));

@@ -39,6 +39,17 @@ test("filterCards combines query, type, and color", () => {
   assert.equal(filterCards(cards, { query: "", color: "W", type: "Land" }).length, 0);
 });
 
+test("filterCards combines finish with the other filters", () => {
+  const sample = [
+    { name: "Foil Bolt", colors: ["R"], typeLine: "Instant", finish: "foil" },
+    { name: "Regular Bolt", colors: ["R"], typeLine: "Instant", finish: "nonfoil" },
+    { name: "Legacy Foil", colors: ["U"], typeLine: "Instant" }
+  ];
+  assert.deepEqual(filterCards(sample, { query: "bolt", color: "R", type: "Instant", finish: "foil" }).map((card) => card.name), ["Foil Bolt"]);
+  assert.deepEqual(filterCards(sample, { query: "", color: "all", type: "all", finish: "nonfoil" }).map((card) => card.name), ["Regular Bolt"]);
+  assert.deepEqual(filterCards(sample, { query: "", color: "all", type: "all", finish: "foil" }).map((card) => card.name), ["Foil Bolt", "Legacy Foil"]);
+});
+
 test("getColorBucket recognizes multicolor and colorless", () => {
   assert.equal(getColorBucket(cards[1]), "M");
   assert.equal(getColorBucket(cards[2]), "C");

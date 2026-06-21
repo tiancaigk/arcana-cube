@@ -329,7 +329,7 @@ select { height: 38px; padding: 0 30px 0 11px; border: 1px solid var(--line); bo
   .toolbar { align-items: stretch; }
   .search-field { min-width: 100%; }
   .color-filters { order: 3; width: 100%; padding: 7px 0 0; overflow-x: auto; border: 0; }
-  #typeFilter { flex: 1; }
+  #typeFilter, #finishFilter { flex: 1; }
   .card-group-grid { grid-template-columns: repeat(2, 1fr); gap: 18px 11px; }
   .analytics-grid { grid-template-columns: 1fr; }
   .panel { min-height: 280px; padding: 19px; }
