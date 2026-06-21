@@ -1,6 +1,6 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { buildExcelRows, buildPrintingsUrl, computeStats, filterCards, filterPrintings, getCardBucket, getColorBucket, getFrontTypeLine, getPriceNumber, getUsdPrice, isPaperPrinting, normalizeCardName, normalizeFinish, normalizeScryfallCard, parseDecklist, parseExcelRows, replacePrinting, sortCards } = require("./core.js");
+const { buildCardNameSearchUrl, buildExcelRows, buildPrintingsUrl, computeStats, filterCards, filterPrintings, getCardBucket, getColorBucket, getFrontTypeLine, getPriceNumber, getUsdPrice, isPaperPrinting, normalizeCardName, normalizeFinish, normalizeScryfallCard, parseDecklist, parseExcelRows, replacePrinting, sortCards } = require("./core.js");
 
 const cards = [
   { name: "Alpha", colors: ["W"], cmc: 1, typeLine: "Creature — Human", set: "TST" },
@@ -119,6 +119,8 @@ test("normalizeScryfallCard keeps the exact printing number", () => {
 });
 
 test("printing helpers build, filter, and replace versions safely", () => {
+  assert.match(decodeURIComponent(buildCardNameSearchUrl("Elspeth")), /name:Elspeth game:paper/);
+  assert.match(buildCardNameSearchUrl("Elspeth"), /unique=cards.*order=name/);
   assert.match(buildPrintingsUrl("oracle-id"), /oracleid%3Aoracle-id.*unique=prints/);
   assert.match(decodeURIComponent(buildPrintingsUrl("oracle-id")), /game:paper/);
   const printings = [

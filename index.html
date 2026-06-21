@@ -142,8 +142,8 @@
 
     <div class="toast-region" id="toastRegion" aria-live="polite"></div>
 
-    <dialog id="addCardDialog" class="modal">
-      <form method="dialog" class="modal-card" id="addCardForm">
+    <dialog id="addCardDialog" class="modal add-card-dialog">
+      <form method="dialog" class="modal-card add-card-modal" id="addCardForm">
         <div class="modal-header"><div><span>SCRYFALL SEARCH</span><h2>添加卡牌</h2></div><button type="button" class="close-button" data-close-dialog aria-label="关闭">×</button></div>
         <p class="modal-copy">按牌名模糊查找，或用系列代码和收藏编号定位一个准确版本。</p>
         <div class="lookup-mode" role="tablist" aria-label="卡牌查找方式">
@@ -159,7 +159,7 @@
         </div>
         <p class="field-hint hidden" id="printingLookupHint">系列代码可在卡牌左下角找到，例如 <code>MH3</code>、<code>NEO</code> 或 <code>LEA</code>。</p>
         <div class="lookup-result hidden" id="lookupResult"></div>
-        <div class="modal-actions"><button type="button" class="text-button" data-close-dialog>取消</button><button type="submit" class="primary-button" id="lookupButton"><span>+</span> 查找并添加</button></div>
+        <div class="modal-actions"><button type="button" class="text-button" data-close-dialog>取消</button><button type="submit" class="primary-button" id="lookupButton">搜索卡牌</button></div>
       </form>
     </dialog>
 

@@ -148,6 +148,11 @@
     return [...cards].sort(compareCards);
   }
 
+  function buildCardNameSearchUrl(name) {
+    const query = `name:${String(name || "").trim()} game:paper`;
+    return `https://api.scryfall.com/cards/search?q=${encodeURIComponent(query)}&unique=cards&order=name&dir=asc`;
+  }
+
   function buildPrintingsUrl(oracleId) {
     return `https://api.scryfall.com/cards/search?q=${encodeURIComponent(`oracleid:${oracleId} game:paper`)}&unique=prints&order=released&dir=desc`;
   }
@@ -218,5 +223,5 @@
     ];
   }
 
-  return { COLOR_ORDER, SORT_ORDER, parseDecklist, normalizeFinish, normalizeScryfallCard, getFrontColors, getFrontTypeLine, getUsdPrice, getPriceNumber, getColorBucket, getPrimaryType, getCardBucket, computeStats, filterCards, sortCards, buildPrintingsUrl, isPaperPrinting, filterPrintings, replacePrinting, normalizeCardName, parseExcelRows, buildExcelRows };
+  return { COLOR_ORDER, SORT_ORDER, parseDecklist, normalizeFinish, normalizeScryfallCard, getFrontColors, getFrontTypeLine, getUsdPrice, getPriceNumber, getColorBucket, getPrimaryType, getCardBucket, computeStats, filterCards, sortCards, buildCardNameSearchUrl, buildPrintingsUrl, isPaperPrinting, filterPrintings, replacePrinting, normalizeCardName, parseExcelRows, buildExcelRows };
 });

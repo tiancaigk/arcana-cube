@@ -3,7 +3,7 @@
 
   const STORAGE_KEY = "arcana-cube-v1";
   const SHEETJS_URL = "https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js";
-  const { buildExcelRows, buildPrintingsUrl, computeStats, filterCards, filterPrintings, sortCards, getCardBucket, getFrontColors, getFrontTypeLine, getPriceNumber, getUsdPrice, isPaperPrinting, normalizeCardName, normalizeFinish, normalizeScryfallCard, parseDecklist, parseExcelRows, replacePrinting } = window.CubeCore;
+  const { buildCardNameSearchUrl, buildExcelRows, buildPrintingsUrl, computeStats, filterCards, filterPrintings, sortCards, getCardBucket, getFrontColors, getFrontTypeLine, getPriceNumber, getUsdPrice, isPaperPrinting, normalizeCardName, normalizeFinish, normalizeScryfallCard, parseDecklist, parseExcelRows, replacePrinting } = window.CubeCore;
   let sheetJsLoader;
   let printingRequestId = 0;
 
@@ -77,7 +77,9 @@
     editingCardId: null,
     printings: [],
     printingCache: new Map(),
-    lookupMode: "name"
+    lookupMode: "name",
+    nameResults: [],
+    nameSearchId: 0
   };
 
   const $ = (selector, parent = document) => parent.querySelector(selector);
@@ -94,7 +96,8 @@
     printingStatus: $("#printingStatus"), printingGrid: $("#printingGrid"), printingCount: $("#printingCount"), printingFinishToggle: $("#printingFinishToggle"),
     importText: $("#importText"), importStatus: $("#importStatus"), startImportBtn: $("#startImportBtn"),
     excelFileInput: $("#excelFileInput"), excelFileName: $("#excelFileName"), excelPreview: $("#excelPreview"),
-    excelSummary: $("#excelSummary"), excelPreviewBody: $("#excelPreviewBody"), excelDropZone: $("#excelDropZone")
+    excelSummary: $("#excelSummary"), excelPreviewBody: $("#excelPreviewBody"), excelDropZone: $("#excelDropZone"),
+    lookupResult: $("#lookupResult")
   };
 
   function loadState() {
@@ -271,6 +274,23 @@
     return response.json();
   }
 
+  async function searchCardsByName(name) {
+    let url = buildCardNameSearchUrl(name);
+    const cards = [];
+    while (url) {
+      const response = await fetch(url, { headers: { Accept: "application/json" } });
+      if (!response.ok) {
+        if (response.status === 404) return [];
+        throw new Error("卡牌服务暂时不可用");
+      }
+      const page = await response.json();
+      cards.push(...(page.data || []).filter(isPaperPrinting));
+      url = page.has_more ? page.next_page : null;
+      if (url) await new Promise((resolve) => setTimeout(resolve, 110));
+    }
+    return cards;
+  }
+
   async function lookupPrinting(setCode, collectorNumber) {
     const set = setCode.trim().toLowerCase();
     const number = collectorNumber.trim();
@@ -438,6 +458,13 @@
     toast("Finish 已更新", current.finish === "foil" ? "Foil" : "Non-Foil");
   }
 
+  function clearNameResults() {
+    state.nameSearchId += 1;
+    state.nameResults = [];
+    elements.lookupResult.classList.add("hidden");
+    elements.lookupResult.innerHTML = "";
+  }
+
   function setLookupMode(mode) {
     state.lookupMode = mode;
     const isName = mode === "name";
@@ -447,6 +474,8 @@
     elements.cardNameInput.required = isName;
     elements.setCodeInput.required = !isName;
     elements.collectorNumberInput.required = !isName;
+    clearNameResults();
+    elements.lookupButton.innerHTML = isName ? "搜索卡牌" : "<span>+</span> 查找并添加";
     $$('[data-lookup-mode]').forEach((button) => {
       const active = button.dataset.lookupMode === mode;
       button.classList.toggle("active", active);
@@ -462,6 +491,38 @@
     render();
   }
 
+  function renderNameResults() {
+    if (!state.nameResults.length) {
+      elements.lookupResult.classList.remove("hidden");
+      elements.lookupResult.innerHTML = '<div class="name-result-empty">没有找到包含这个名称的实体卡牌</div>';
+      return;
+    }
+    elements.lookupResult.classList.remove("hidden");
+    elements.lookupResult.innerHTML = `
+      <div class="name-result-summary">找到 ${state.nameResults.length} 张不同卡牌，请选择要添加的牌</div>
+      <div class="name-result-list">${state.nameResults.map((card) => {
+        const face = card.card_faces && card.card_faces[0];
+        const image = printingImage(card);
+        const typeLine = (face && face.type_line) || card.type_line || "";
+        return `<button type="button" class="name-result-option" data-add-search-result="${escapeHtml(card.id)}">
+          <span class="name-result-thumb">${image ? `<img src="${escapeHtml(image)}" alt="" loading="lazy" />` : ""}</span>
+          <span class="name-result-info"><strong>${escapeHtml(card.name)}</strong><span>${escapeHtml(typeLine)}</span><small>${escapeHtml(card.set_name || card.set.toUpperCase())} · ${escapeHtml(card.set.toUpperCase())} ${escapeHtml(card.collector_number)}</small></span>
+          <span class="name-result-add">添加</span>
+        </button>`;
+      }).join("")}</div>`;
+  }
+
+  function selectNameResult(scryfallId) {
+    const result = state.nameResults.find((card) => card.id === scryfallId);
+    if (!result) return;
+    const card = normalizeScryfallCard(result);
+    addCard(card);
+    elements.addCardDialog.close();
+    elements.cardNameInput.value = "";
+    clearNameResults();
+    toast("已添加", card.name);
+  }
+
   async function handleAddCard(event) {
     event.preventDefault();
     const isNameLookup = state.lookupMode !== "printing";
@@ -472,7 +533,17 @@
     elements.lookupButton.disabled = true;
     elements.lookupButton.textContent = "正在查找…";
     try {
-      const result = isNameLookup ? await lookupCard(name) : await lookupPrinting(setCode, collectorNumber);
+      if (isNameLookup) {
+        const searchId = ++state.nameSearchId;
+        elements.lookupResult.classList.remove("hidden");
+        elements.lookupResult.innerHTML = '<div class="name-result-empty">正在搜索实体卡牌…</div>';
+        const results = await searchCardsByName(name);
+        if (searchId !== state.nameSearchId) return;
+        state.nameResults = results;
+        renderNameResults();
+        return;
+      }
+      const result = await lookupPrinting(setCode, collectorNumber);
       const card = normalizeScryfallCard(result);
       addCard(card);
       elements.addCardDialog.close();
@@ -484,7 +555,7 @@
       toast("添加失败", error.message || "请检查网络后重试", true);
     } finally {
       elements.lookupButton.disabled = false;
-      elements.lookupButton.innerHTML = "<span>+</span> 查找并添加";
+      elements.lookupButton.innerHTML = isNameLookup ? "搜索卡牌" : "<span>+</span> 查找并添加";
     }
   }
 
@@ -782,6 +853,11 @@
   function bindEvents() {
     $("#addCardBtn").addEventListener("click", () => { elements.addCardDialog.showModal(); setTimeout(() => (state.lookupMode === "printing" ? elements.setCodeInput : elements.cardNameInput).focus(), 20); });
     $("#addCardForm").addEventListener("submit", handleAddCard);
+    elements.cardNameInput.addEventListener("input", clearNameResults);
+    elements.lookupResult.addEventListener("click", (event) => {
+      const button = event.target.closest("[data-add-search-result]");
+      if (button) selectNameResult(button.dataset.addSearchResult);
+    });
     $$('[data-lookup-mode]').forEach((button) => button.addEventListener("click", () => setLookupMode(button.dataset.lookupMode)));
     $("#importBtn").addEventListener("click", () => { elements.importDialog.showModal(); setImportMode(state.importMode); });
     $("#importForm").addEventListener("submit", handleImport);
@@ -871,6 +947,7 @@
     elements.importDialog.addEventListener("cancel", (event) => {
       if (state.importing) event.preventDefault();
     });
+    elements.addCardDialog.addEventListener("close", clearNameResults);
     elements.printingDialog.addEventListener("close", () => {
       printingRequestId += 1;
       state.editingCardId = null;
