@@ -5,6 +5,7 @@
 })(typeof globalThis !== "undefined" ? globalThis : this, function () {
   const COLOR_ORDER = ["W", "U", "B", "R", "G"];
   const SORT_ORDER = ["W", "U", "B", "R", "G", "C", "M", "L"];
+  const PRICE_TTL_MS = 24 * 60 * 60 * 1000;
 
   function parseDecklist(text) {
     return text
@@ -48,6 +49,7 @@
         usdFoil: normalizePrice(card.prices && card.prices.usd_foil),
         usdEtched: normalizePrice(card.prices && card.prices.usd_etched)
       },
+      priceUpdatedAt: new Date().toISOString(),
       finishes,
       finish: chooseValidFinish({ finishes }, "foil"),
       addedAt: new Date().toISOString()
@@ -223,6 +225,12 @@
     return Number.isFinite(value) ? value : null;
   }
 
+  function needsPriceRefresh(card, now = Date.now()) {
+    if (!card || !card.set || !card.collectorNumber) return false;
+    const updatedAt = Date.parse(card.priceUpdatedAt || "");
+    return !Number.isFinite(updatedAt) || now - updatedAt >= PRICE_TTL_MS;
+  }
+
   function normalizeCardName(name) {
     return String(name || "").normalize("NFKC").toLocaleLowerCase().replace(/[’‘]/g, "'").replace(/\s+/g, " ").trim();
   }
@@ -276,5 +284,5 @@
     };
   }
 
-  return { COLOR_ORDER, SORT_ORDER, parseDecklist, normalizeFinish, parseFinish, getAvailableFinishes, chooseValidFinish, normalizeScryfallCard, getFrontColors, getFrontTypeLine, getUsdPrice, getPriceNumber, getColorBucket, getPrimaryType, isLandCard, getCardBucket, computeStats, filterCards, sortCards, buildCardNameSearchUrl, buildPrintingsUrl, isPaperPrinting, filterPrintings, replacePrinting, normalizeCardName, parseExcelRows, buildExcelRows, buildBackup, parseBackup };
+  return { COLOR_ORDER, SORT_ORDER, PRICE_TTL_MS, parseDecklist, normalizeFinish, parseFinish, getAvailableFinishes, chooseValidFinish, normalizeScryfallCard, getFrontColors, getFrontTypeLine, getUsdPrice, getPriceNumber, needsPriceRefresh, getColorBucket, getPrimaryType, isLandCard, getCardBucket, computeStats, filterCards, sortCards, buildCardNameSearchUrl, buildPrintingsUrl, isPaperPrinting, filterPrintings, replacePrinting, normalizeCardName, parseExcelRows, buildExcelRows, buildBackup, parseBackup };
 });

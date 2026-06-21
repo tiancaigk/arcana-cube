@@ -3,7 +3,7 @@
 
   const STORAGE_KEY = "arcana-cube-v1";
   const SHEETJS_URL = "https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js";
-  const { buildBackup, buildCardNameSearchUrl, buildExcelRows, buildPrintingsUrl, chooseValidFinish, computeStats, filterCards, filterPrintings, sortCards, getAvailableFinishes, getCardBucket, getFrontColors, getFrontTypeLine, getPriceNumber, getUsdPrice, isPaperPrinting, normalizeCardName, normalizeFinish, normalizeScryfallCard, parseBackup, parseDecklist, parseExcelRows, replacePrinting } = window.CubeCore;
+  const { buildBackup, buildCardNameSearchUrl, buildExcelRows, buildPrintingsUrl, chooseValidFinish, computeStats, filterCards, filterPrintings, sortCards, getAvailableFinishes, getCardBucket, getFrontColors, getFrontTypeLine, getPriceNumber, getUsdPrice, isPaperPrinting, needsPriceRefresh, normalizeCardName, normalizeFinish, normalizeScryfallCard, parseBackup, parseDecklist, parseExcelRows, replacePrinting } = window.CubeCore;
   let sheetJsLoader;
   let printingRequestId = 0;
 
@@ -143,12 +143,13 @@
 
   function renderStats() {
     const stats = computeStats(state.data.cards);
+    const priceInfo = priceStatus(state.data.cards);
     const cards = [
       ["总牌数", stats.total, "张", "当前 Cube 规模", "cards"],
       ["平均费用", stats.averageCmc.toFixed(2), "CMC", "地牌不计入", "curve"],
       ["生物", stats.creatures, "张", `${percent(stats.creatures, stats.total)}% 的牌表`, "creature"],
       ["地牌", stats.lands, "张", `${percent(stats.lands, stats.total)}% 的牌表`, "land"],
-      ["总价", formatUsd(cubeValue(state.data.cards)), "USD", "按当前 Foil / Non-Foil 状态估算", "cards"]
+      ["总价", formatUsd(cubeValue(state.data.cards)), "USD", priceInfo, "cards"]
     ];
     const icons = {
       cards: '<rect x="5" y="3" width="14" height="18" rx="2"/><path d="M9 7h6M9 11h6"/>',
@@ -184,6 +185,13 @@
       const price = getPriceNumber(card, card.finish);
       return sum + (price || 0);
     }, 0);
+  }
+
+  function priceStatus(cards) {
+    const missing = cards.filter((card) => getPriceNumber(card, card.finish) === null).length;
+    const timestamps = cards.map((card) => Date.parse(card.priceUpdatedAt || "")).filter(Number.isFinite);
+    const updated = timestamps.length ? new Intl.DateTimeFormat("zh-CN", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" }).format(Math.max(...timestamps)) : "尚未更新";
+    return `最近更新 ${updated}${missing ? ` · 缺价 ${missing} 张` : ""}`;
   }
 
   function renderCards() {
@@ -307,11 +315,6 @@
     return response.json();
   }
 
-  function needsPriceHydration(card) {
-    const prices = card && card.prices ? card.prices : {};
-    return Boolean(card && card.set && card.collectorNumber && !prices.usd && !prices.usdFoil);
-  }
-
   async function lookupAllPrintings(card) {
     let oracleId = card.oracleId;
     if (!oracleId) {
@@ -334,29 +337,29 @@
     return printings;
   }
 
-  async function hydrateMissingPrices() {
-    const targets = state.data.cards.filter(needsPriceHydration);
+  async function refreshStalePrices() {
+    const targets = state.data.cards.filter((card) => needsPriceRefresh(card));
     if (!targets.length) return;
     let updated = false;
-    for (let index = 0; index < targets.length; index += 1) {
-      const target = targets[index];
-      try {
-        const printing = await lookupPrinting(target.set, target.collectorNumber);
+    try {
+      const uniqueTargets = [...new Map(targets.map((card) => [printingKey(card.set, card.collectorNumber), { setCode: card.set, collectorNumber: card.collectorNumber }])).values()];
+      const cardsByPrinting = await lookupPrintingBatch(uniqueTargets);
+      targets.forEach((target) => {
+        const printing = cardsByPrinting.get(printingKey(target.set, target.collectorNumber));
+        if (!printing) return;
         const cardIndex = state.data.cards.findIndex((item) => item.id === target.id);
-        if (cardIndex >= 0) {
-          const current = state.data.cards[cardIndex];
-          const samePrinting = current.scryfallId
-            ? current.scryfallId === target.scryfallId
-            : current.set === target.set && current.collectorNumber === target.collectorNumber;
-          if (samePrinting && needsPriceHydration(current)) {
-            state.data.cards[cardIndex] = replacePrinting(current, printing);
-            updated = true;
-          }
+        if (cardIndex < 0) return;
+        const current = state.data.cards[cardIndex];
+        const samePrinting = current.scryfallId
+          ? current.scryfallId === target.scryfallId
+          : current.set === target.set && current.collectorNumber === target.collectorNumber;
+        if (samePrinting && needsPriceRefresh(current)) {
+          state.data.cards[cardIndex] = replacePrinting(current, printing);
+          updated = true;
         }
-      } catch (error) {
-        // Ignore background price hydration failures.
-      }
-      if (index < targets.length - 1) await new Promise((resolve) => setTimeout(resolve, 110));
+      });
+    } catch (error) {
+      // Price refresh is best-effort and should not block local use.
     }
     if (updated) {
       state.data.cards = sortCards(state.data.cards);
@@ -1013,5 +1016,5 @@
 
   bindEvents();
   render();
-  setTimeout(() => hydrateMissingPrices(), 450);
+  setTimeout(() => refreshStalePrices(), 450);
 })();

@@ -1,6 +1,6 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { buildBackup, buildCardNameSearchUrl, buildExcelRows, buildPrintingsUrl, chooseValidFinish, computeStats, filterCards, filterPrintings, getAvailableFinishes, getCardBucket, getColorBucket, getFrontTypeLine, getPriceNumber, getUsdPrice, isLandCard, isPaperPrinting, normalizeCardName, normalizeFinish, normalizeScryfallCard, parseBackup, parseDecklist, parseExcelRows, replacePrinting, sortCards } = require("./core.js");
+const { buildBackup, buildCardNameSearchUrl, buildExcelRows, buildPrintingsUrl, chooseValidFinish, computeStats, filterCards, filterPrintings, getAvailableFinishes, getCardBucket, getColorBucket, getFrontTypeLine, getPriceNumber, getUsdPrice, isLandCard, isPaperPrinting, needsPriceRefresh, normalizeCardName, normalizeFinish, normalizeScryfallCard, parseBackup, parseDecklist, parseExcelRows, replacePrinting, sortCards } = require("./core.js");
 
 const cards = [
   { name: "Alpha", colors: ["W"], cmc: 1, typeLine: "Creature — Human", set: "TST" },
@@ -146,6 +146,14 @@ test("finish helpers respect the selected printing's availability", () => {
   assert.equal(getUsdPrice(etched, "foil"), "5.00");
   const replaced = replacePrinting({ id: "cube-card", addedAt: "date", finish: "nonfoil" }, { id: "foil-only", name: "Card", set: "tst", type_line: "Artifact", finishes: ["foil"], foil: true, nonfoil: false });
   assert.equal(replaced.finish, "foil");
+});
+
+test("prices refresh when missing or older than 24 hours", () => {
+  const now = Date.parse("2026-06-22T12:00:00.000Z");
+  assert.equal(needsPriceRefresh({ set: "TST", collectorNumber: "1" }, now), true);
+  assert.equal(needsPriceRefresh({ set: "TST", collectorNumber: "1", priceUpdatedAt: "2026-06-22T11:00:00.000Z" }, now), false);
+  assert.equal(needsPriceRefresh({ set: "TST", collectorNumber: "1", priceUpdatedAt: "2026-06-21T11:59:59.000Z" }, now), true);
+  assert.equal(needsPriceRefresh({ set: "TST", collectorNumber: "" }, now), false);
 });
 
 test("printing helpers build, filter, and replace versions safely", () => {
