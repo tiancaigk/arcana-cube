@@ -3,7 +3,7 @@
 
   const STORAGE_KEY = "arcana-cube-v1";
   const SHEETJS_URL = "https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js";
-  const { buildExcelRows, buildPrintingsUrl, computeStats, filterCards, filterPrintings, sortCards, getFrontColors, getFrontTypeLine, getPriceNumber, getUsdPrice, normalizeCardName, normalizeFinish, normalizeScryfallCard, parseDecklist, parseExcelRows, replacePrinting } = window.CubeCore;
+  const { buildExcelRows, buildPrintingsUrl, computeStats, filterCards, filterPrintings, sortCards, getColorBucket, getFrontColors, getFrontTypeLine, getPrimaryType, getPriceNumber, getUsdPrice, normalizeCardName, normalizeFinish, normalizeScryfallCard, parseDecklist, parseExcelRows, replacePrinting } = window.CubeCore;
   let sheetJsLoader;
   let printingRequestId = 0;
 
@@ -184,7 +184,17 @@
     elements.emptyState.classList.toggle("hidden", cards.length > 0);
     elements.cardGrid.classList.toggle("hidden", cards.length === 0);
     elements.cardGrid.classList.toggle("list-mode", state.mode === "list");
-    elements.cardGrid.innerHTML = cards.map((card, index) => cardTemplate(card, index)).join("");
+    const groups = cards.reduce((result, card) => {
+      const key = cardGroupKey(card);
+      if (!result.has(key)) result.set(key, []);
+      result.get(key).push(card);
+      return result;
+    }, new Map());
+    elements.cardGrid.innerHTML = [...groups.entries()].map(([key, groupCards]) => `
+      <section class="card-group" data-card-group="${key}">
+        <div class="card-group-heading"><span class="card-group-mark"></span><h2>${cardGroupLabel(key)}</h2><small>${groupCards.length} 张</small></div>
+        <div class="card-group-grid">${groupCards.map((card, index) => cardTemplate(card, index)).join("")}</div>
+      </section>`).join("");
     $$(".card-image", elements.cardGrid).forEach((image) => image.addEventListener("error", () => image.classList.add("hidden"), { once: true }));
 
     const labels = [];
@@ -194,21 +204,30 @@
     $("#activeFilterText").textContent = labels.join(" · ") || "按颜色与类型整理";
   }
 
+  function cardGroupKey(card) {
+    if (getPrimaryType(getFrontTypeLine(card)) === "Land") return "L";
+    return getColorBucket(card);
+  }
+
+  function cardGroupLabel(key) {
+    return ({ W: "白色", U: "蓝色", B: "黑色", R: "红色", G: "绿色", C: "无色", M: "多色", L: "地牌" })[key] || "其他";
+  }
+
   function cardTemplate(card, index) {
     const cost = (card.manaCost || "").replace(/[{}]/g, "").replace(/(?=\D)/g, " ").trim();
     const finish = normalizeFinish(card.finish);
     const price = formatUsd(cardPrice(card));
-    return `<article class="card-item" data-id="${escapeHtml(card.id)}" style="animation-delay:${Math.min(index * 18, 220)}ms">
+    return `<article class="card-item" data-id="${escapeHtml(card.id)}" data-finish="${finish}" style="animation-delay:${Math.min(index * 18, 220)}ms">
       <div class="card-image-wrap">
         <div class="card-fallback"><span class="fallback-name">${escapeHtml(card.name)}</span><span class="fallback-type">${escapeHtml(card.typeLine)}</span></div>
         ${card.image ? `<img class="card-image" src="${escapeHtml(card.image)}" alt="${escapeHtml(card.name)}" loading="lazy" />` : ""}
-        <button class="remove-card" data-remove="${escapeHtml(card.id)}" title="从 Cube 移除" aria-label="移除 ${escapeHtml(card.name)}">−</button>
       </div>
       <div class="card-info">
         <div class="card-name-row"><span class="card-name" title="${escapeHtml(card.name)}">${escapeHtml(card.name)}</span><span class="card-cost">${escapeHtml(cost)}</span></div>
         <div class="card-meta"><span>${escapeHtml(card.typeLine.split(" — ")[0])}</span><button class="finish-pill ${finish}" data-toggle-finish="${escapeHtml(card.id)}" title="切换 ${escapeHtml(card.name)} 的 foil 状态">${finish === "foil" ? "Foil" : "Non-Foil"}</button></div>
         <div class="card-meta"><span>${escapeHtml(card.set)}${card.collectorNumber ? ` · ${escapeHtml(card.collectorNumber)}` : ""} · <span class="card-price">${escapeHtml(price)}</span></span><button class="printing-button" data-change-printing="${escapeHtml(card.id)}" title="选择 ${escapeHtml(card.name)} 的其他版本">选择版本</button></div>
       </div>
+      <button class="remove-card" data-remove="${escapeHtml(card.id)}" title="从 Cube 移除" aria-label="移除 ${escapeHtml(card.name)}">−</button>
     </article>`;
   }
 
