@@ -196,5 +196,18 @@
     })).filter((row) => row.setCode || row.collectorNumber || row.expectedName);
   }
 
-  return { COLOR_ORDER, SORT_ORDER, parseDecklist, normalizeFinish, normalizeScryfallCard, getFrontColors, getFrontTypeLine, getUsdPrice, getPriceNumber, getColorBucket, getPrimaryType, computeStats, filterCards, sortCards, buildPrintingsUrl, filterPrintings, replacePrinting, normalizeCardName, parseExcelRows };
+  function buildExcelRows(cards) {
+    return [
+      ["系列", "编号", "卡牌名称", "闪卡状态", "美元价格"],
+      ...cards.map((card) => [
+        card.set || "",
+        card.collectorNumber || "",
+        card.name || "",
+        normalizeFinish(card.finish) === "foil" ? "Foil" : "Non-Foil",
+        getUsdPrice(card, card.finish) || ""
+      ])
+    ];
+  }
+
+  return { COLOR_ORDER, SORT_ORDER, parseDecklist, normalizeFinish, normalizeScryfallCard, getFrontColors, getFrontTypeLine, getUsdPrice, getPriceNumber, getColorBucket, getPrimaryType, computeStats, filterCards, sortCards, buildPrintingsUrl, filterPrintings, replacePrinting, normalizeCardName, parseExcelRows, buildExcelRows };
 });

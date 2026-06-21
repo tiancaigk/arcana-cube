@@ -3,7 +3,7 @@
 
   const STORAGE_KEY = "arcana-cube-v1";
   const SHEETJS_URL = "https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js";
-  const { buildPrintingsUrl, computeStats, filterCards, filterPrintings, sortCards, getFrontColors, getFrontTypeLine, getPriceNumber, getUsdPrice, normalizeCardName, normalizeFinish, normalizeScryfallCard, parseDecklist, parseExcelRows, replacePrinting } = window.CubeCore;
+  const { buildExcelRows, buildPrintingsUrl, computeStats, filterCards, filterPrintings, sortCards, getFrontColors, getFrontTypeLine, getPriceNumber, getUsdPrice, normalizeCardName, normalizeFinish, normalizeScryfallCard, parseDecklist, parseExcelRows, replacePrinting } = window.CubeCore;
   let sheetJsLoader;
   let printingRequestId = 0;
 
@@ -719,16 +719,20 @@
     await handleTextImport();
   }
 
-  function exportData() {
-    const payload = JSON.stringify({ ...state.data, exportedAt: new Date().toISOString(), format: "arcana-cube-v1" }, null, 2);
-    const blob = new Blob([payload], { type: "application/json" });
-    const url = URL.createObjectURL(blob);
-    const anchor = document.createElement("a");
-    anchor.href = url;
-    anchor.download = `${state.data.meta.name.replace(/[\\/:*?"<>|]/g, "-")}.json`;
-    anchor.click();
-    URL.revokeObjectURL(url);
-    toast("已导出", "JSON 数据文件已生成");
+  async function exportData() {
+    try {
+      const XLSX = await loadSheetJs();
+      const worksheet = XLSX.utils.aoa_to_sheet(buildExcelRows(state.data.cards));
+      worksheet["!cols"] = [{ wch: 10 }, { wch: 12 }, { wch: 34 }, { wch: 14 }, { wch: 12 }];
+      worksheet["!autofilter"] = { ref: `A1:E${state.data.cards.length + 1}` };
+      const workbook = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(workbook, worksheet, "Cube 牌表");
+      const fileName = `${state.data.meta.name.replace(/[\\/:*?"<>|]/g, "-") || "Cube牌表"}.xlsx`;
+      XLSX.writeFile(workbook, fileName, { compression: true });
+      toast("已导出", `Excel 表格包含 ${state.data.cards.length} 张牌`);
+    } catch (error) {
+      toast("导出失败", error.message || "Excel 组件加载失败，请稍后重试", true);
+    }
   }
 
   function removeCard(id) {

@@ -1,6 +1,6 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { buildPrintingsUrl, computeStats, filterCards, filterPrintings, getColorBucket, getFrontTypeLine, getPriceNumber, getUsdPrice, normalizeCardName, normalizeFinish, normalizeScryfallCard, parseDecklist, parseExcelRows, replacePrinting, sortCards } = require("./core.js");
+const { buildExcelRows, buildPrintingsUrl, computeStats, filterCards, filterPrintings, getColorBucket, getFrontTypeLine, getPriceNumber, getUsdPrice, normalizeCardName, normalizeFinish, normalizeScryfallCard, parseDecklist, parseExcelRows, replacePrinting, sortCards } = require("./core.js");
 
 const cards = [
   { name: "Alpha", colors: ["W"], cmc: 1, typeLine: "Creature — Human", set: "TST" },
@@ -135,4 +135,18 @@ test("parseExcelRows detects headers and keeps identifiers as text", () => {
     { rowNumber: 3, setCode: "2X2", collectorNumber: "361", expectedName: "Lightning Bolt" }
   ]);
   assert.equal(normalizeCardName("  Urza’s   Saga "), "urza's saga");
+});
+
+test("buildExcelRows exports a re-importable table with finish and price", () => {
+  const rows = buildExcelRows([
+    { set: "XLN", collectorNumber: "250", name: "Treasure Map // Treasure Cove", finish: "foil", prices: { usd: "0.55", usdFoil: "0.73" } },
+    { set: "LEA", collectorNumber: "233", name: "Black Vise", finish: "nonfoil", prices: { usd: "25.00", usdFoil: "" } }
+  ]);
+  assert.deepEqual(rows[0], ["系列", "编号", "卡牌名称", "闪卡状态", "美元价格"]);
+  assert.deepEqual(rows[1], ["XLN", "250", "Treasure Map // Treasure Cove", "Foil", "0.73"]);
+  assert.deepEqual(rows[2], ["LEA", "233", "Black Vise", "Non-Foil", "25.00"]);
+  assert.deepEqual(parseExcelRows(rows).map(({ setCode, collectorNumber, expectedName }) => ({ setCode, collectorNumber, expectedName })), [
+    { setCode: "XLN", collectorNumber: "250", expectedName: "Treasure Map // Treasure Cove" },
+    { setCode: "LEA", collectorNumber: "233", expectedName: "Black Vise" }
+  ]);
 });
