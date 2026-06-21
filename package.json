@@ -1,0 +1,9 @@
+{
+  "name": "arcana-cube",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "test": "node --test *.test.js",
+    "check": "node --check core.js && node --check storage.js && node --check scryfall.js && node --check app.js"
+  }
+}

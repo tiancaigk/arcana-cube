@@ -26,6 +26,7 @@ body { margin: 0; min-width: 320px; min-height: 100vh; background: radial-gradie
 button, input, textarea, select { font: inherit; }
 button { color: inherit; }
 button, select { cursor: pointer; }
+:focus-visible { outline: 2px solid var(--accent-bright); outline-offset: 3px; }
 svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
 .hidden { display: none !important; }
 
@@ -139,6 +140,7 @@ select { height: 38px; padding: 0 30px 0 11px; border: 1px solid var(--line); bo
 .fallback-name { z-index: 1; font: 600 12px/1.3 "Playfair Display", serif; }.fallback-type { z-index: 1; color: #b5b1a7; font-size: 8px; }
 .remove-card { position: absolute; z-index: 3; top: 8px; right: 8px; width: 28px; height: 28px; border: 1px solid rgba(255,255,255,.17); border-radius: 50%; opacity: 0; color: white; background: rgba(12,12,11,.83); backdrop-filter: blur(4px); font-size: 17px; line-height: 1; transition: opacity .2s; }
 .card-item:hover .remove-card { opacity: 1; }
+.remove-card:focus-visible { opacity: 1; }
 .card-info { padding: 10px 2px 0; }
 .card-name-row { display: flex; gap: 6px; justify-content: space-between; }
 .card-name { overflow: hidden; color: #dedbd3; font-size: 11px; font-weight: 500; text-overflow: ellipsis; white-space: nowrap; }

@@ -12,7 +12,7 @@
   </head>
   <body>
     <div class="app-shell">
-      <aside class="sidebar">
+      <aside class="sidebar" id="sidebar">
         <div class="brand">
           <span class="brand-mark">A</span>
           <div>
@@ -65,7 +65,7 @@
 
       <main class="main-content">
         <header class="topbar">
-          <button class="mobile-menu" id="mobileMenu" aria-label="打开菜单">☰</button>
+          <button class="mobile-menu" id="mobileMenu" aria-label="打开菜单" aria-controls="sidebar" aria-expanded="false">☰</button>
           <div class="title-block">
             <div class="eyebrow">VINTAGE • UNPOWERED</div>
             <div class="title-line">
@@ -92,15 +92,15 @@
             </label>
 
             <div class="color-filters" id="colorFilters" aria-label="按颜色筛选">
-              <button class="color-filter active" data-color="all">全部</button>
-              <button class="mana white" data-color="W" title="白色">W</button>
-              <button class="mana blue" data-color="U" title="蓝色">U</button>
-              <button class="mana black" data-color="B" title="黑色">B</button>
-              <button class="mana red" data-color="R" title="红色">R</button>
-              <button class="mana green" data-color="G" title="绿色">G</button>
-              <button class="mana colorless" data-color="C" title="无色">C</button>
-              <button class="mana multi" data-color="M" title="多色">M</button>
-              <button class="mana land" data-color="L" title="地牌">L</button>
+              <button class="color-filter active" data-color="all" aria-pressed="true">全部</button>
+              <button class="mana white" data-color="W" title="白色" aria-pressed="false">W</button>
+              <button class="mana blue" data-color="U" title="蓝色" aria-pressed="false">U</button>
+              <button class="mana black" data-color="B" title="黑色" aria-pressed="false">B</button>
+              <button class="mana red" data-color="R" title="红色" aria-pressed="false">R</button>
+              <button class="mana green" data-color="G" title="绿色" aria-pressed="false">G</button>
+              <button class="mana colorless" data-color="C" title="无色" aria-pressed="false">C</button>
+              <button class="mana multi" data-color="M" title="多色" aria-pressed="false">M</button>
+              <button class="mana land" data-color="L" title="地牌" aria-pressed="false">L</button>
             </div>
 
             <select id="typeFilter" aria-label="按类型筛选">
@@ -121,17 +121,17 @@
             </select>
 
             <div class="view-toggle" aria-label="显示模式">
-              <button class="active" data-mode="grid" title="网格视图">
+              <button class="active" data-mode="grid" title="网格视图" aria-pressed="true">
                 <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="6" height="6"/><rect x="14" y="4" width="6" height="6"/><rect x="4" y="14" width="6" height="6"/><rect x="14" y="14" width="6" height="6"/></svg>
               </button>
-              <button data-mode="list" title="列表视图">
+              <button data-mode="list" title="列表视图" aria-pressed="false">
                 <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 6h12M8 12h12M8 18h12M4 6h.01M4 12h.01M4 18h.01"/></svg>
               </button>
             </div>
           </div>
 
           <div class="result-meta">
-            <span>牌表 <strong id="resultCount">0</strong></span>
+            <span>牌表 <strong id="resultCount" aria-live="polite">0</strong></span>
             <span id="activeFilterText">按颜色与类型整理</span>
           </div>
 
@@ -245,6 +245,7 @@
     </dialog>
 
     <script src="core.js"></script>
+    <script src="storage.js"></script>
     <script src="scryfall.js"></script>
     <script src="app.js"></script>
   </body>

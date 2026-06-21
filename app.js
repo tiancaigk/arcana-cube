@@ -5,6 +5,7 @@
   const SHEETJS_URL = "https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js";
   const { buildBackup, buildCardNameSearchUrl, buildExcelRows, buildPrintingsUrl, chooseValidFinish, computeStats, filterCards, filterPrintings, sortCards, getAvailableFinishes, getCardBucket, getFrontColors, getFrontTypeLine, getPriceNumber, getUsdPrice, isPaperPrinting, needsPriceRefresh, normalizeCardName, normalizeFinish, normalizeScryfallCard, parseBackup, parseDecklist, parseExcelRows, prepareTextImportRows, replacePrinting } = window.CubeCore;
   const { requestJson: scryfallRequest } = window.ScryfallClient;
+  const cubeStorage = window.CubeStorage.createStorage(localStorage, STORAGE_KEY);
   let sheetJsLoader;
   let printingRequestId = 0;
 
@@ -112,18 +113,12 @@
   }
 
   function loadState() {
-    try {
-      const saved = JSON.parse(localStorage.getItem(STORAGE_KEY));
-      if (saved && Array.isArray(saved.cards) && saved.meta) return saved;
-    } catch (error) {
-      console.warn("Could not load saved Cube", error);
-    }
-    return structuredClone(defaultState);
+    return cubeStorage.load(defaultState);
   }
 
   function saveState() {
     try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(state.data));
+      cubeStorage.save(state.data);
     } catch (error) {
       toast("保存失败", "浏览器存储空间可能不足", true);
     }
@@ -523,6 +518,7 @@
       const active = button.dataset.lookupMode === mode;
       button.classList.toggle("active", active);
       button.setAttribute("aria-selected", String(active));
+      button.tabIndex = active ? 0 : -1;
     });
     setTimeout(() => (isName ? elements.cardNameInput : elements.setCodeInput).focus(), 20);
   }
@@ -614,6 +610,7 @@
       const active = button.dataset.importMode === mode;
       button.classList.toggle("active", active);
       button.setAttribute("aria-selected", String(active));
+      button.tabIndex = active ? 0 : -1;
     });
     elements.importStatus.classList.add("hidden");
     if (mode === "text") updateTextAction();
@@ -995,9 +992,35 @@
     state.view = view;
     elements.collectionView.classList.toggle("hidden", view !== "collection");
     elements.analyticsView.classList.toggle("hidden", view !== "analytics");
-    $$(".nav-item").forEach((button) => button.classList.toggle("active", button.dataset.view === view));
+    $$(".nav-item").forEach((button) => {
+      const active = button.dataset.view === view;
+      button.classList.toggle("active", active);
+      if (active) button.setAttribute("aria-current", "page");
+      else button.removeAttribute("aria-current");
+    });
     if (view === "analytics") renderAnalytics();
-    $(".sidebar").classList.remove("open");
+    setSidebarOpen(false);
+  }
+
+  function setSidebarOpen(open) {
+    $(".sidebar").classList.toggle("open", open);
+    $("#mobileMenu").setAttribute("aria-expanded", String(open));
+    $("#mobileMenu").setAttribute("aria-label", open ? "关闭菜单" : "打开菜单");
+  }
+
+  function bindTabKeyboard(selector) {
+    const buttons = $$(selector);
+    buttons.forEach((button, index) => button.addEventListener("keydown", (event) => {
+      let nextIndex = null;
+      if (event.key === "ArrowRight") nextIndex = (index + 1) % buttons.length;
+      if (event.key === "ArrowLeft") nextIndex = (index - 1 + buttons.length) % buttons.length;
+      if (event.key === "Home") nextIndex = 0;
+      if (event.key === "End") nextIndex = buttons.length - 1;
+      if (nextIndex === null) return;
+      event.preventDefault();
+      buttons[nextIndex].click();
+      buttons[nextIndex].focus();
+    }));
   }
 
   function clearFilters() {
@@ -1005,7 +1028,11 @@
     elements.searchInput.value = "";
     elements.typeFilter.value = "all";
     elements.finishFilter.value = "all";
-    $$("[data-color]").forEach((button) => button.classList.toggle("active", button.dataset.color === "all"));
+    $$("[data-color]").forEach((button) => {
+      const active = button.dataset.color === "all";
+      button.classList.toggle("active", active);
+      button.setAttribute("aria-pressed", String(active));
+    });
     renderCards();
   }
 
@@ -1031,7 +1058,7 @@
     $("#restoreBtn").addEventListener("click", () => elements.backupFileInput.click());
     elements.backupFileInput.addEventListener("change", (event) => restoreJsonBackup(event.target.files[0]));
     $("#clearFiltersBtn").addEventListener("click", clearFilters);
-    $("#mobileMenu").addEventListener("click", () => $(".sidebar").classList.toggle("open"));
+    $("#mobileMenu").addEventListener("click", () => setSidebarOpen(!$(".sidebar").classList.contains("open")));
     $("#newCubeBtn").addEventListener("click", () => toast("即将支持", "多 Cube 管理已列入下一版"));
 
     $$(".nav-item").forEach((button) => button.addEventListener("click", () => setView(button.dataset.view)));
@@ -1040,12 +1067,20 @@
     elements.finishFilter.addEventListener("change", (event) => { state.filters.finish = event.target.value; renderCards(); });
     $$("[data-color]").forEach((button) => button.addEventListener("click", () => {
       state.filters.color = button.dataset.color;
-      $$("[data-color]").forEach((item) => item.classList.toggle("active", item === button));
+      $$("[data-color]").forEach((item) => {
+        const active = item === button;
+        item.classList.toggle("active", active);
+        item.setAttribute("aria-pressed", String(active));
+      });
       renderCards();
     }));
     $$("[data-mode]").forEach((button) => button.addEventListener("click", () => {
       state.mode = button.dataset.mode;
-      $$("[data-mode]").forEach((item) => item.classList.toggle("active", item === button));
+      $$("[data-mode]").forEach((item) => {
+        const active = item === button;
+        item.classList.toggle("active", active);
+        item.setAttribute("aria-pressed", String(active));
+      });
       renderCards();
     }));
     elements.cardGrid.addEventListener("click", (event) => {
@@ -1102,7 +1137,7 @@
           openDialog.close();
           return;
         }
-        $(".sidebar").classList.remove("open");
+        setSidebarOpen(false);
       }
     });
     $$("dialog").forEach((dialog) => dialog.addEventListener("click", (event) => {
@@ -1119,6 +1154,10 @@
       state.editingCardId = null;
       state.printings = [];
     });
+    bindTabKeyboard('[data-lookup-mode]');
+    bindTabKeyboard('[data-import-mode]');
+    $$('[data-lookup-mode]').forEach((button) => { button.tabIndex = button.dataset.lookupMode === state.lookupMode ? 0 : -1; });
+    $$('[data-import-mode]').forEach((button) => { button.tabIndex = button.dataset.importMode === state.importMode ? 0 : -1; });
   }
 
   bindEvents();

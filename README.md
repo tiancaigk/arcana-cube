@@ -26,3 +26,10 @@ python3 -m http.server 4173
 ```
 
 然后访问 `http://localhost:4173`。卡图和牌张查找需要联网。
+
+## 测试
+
+```sh
+npm test
+npm run check
+```
