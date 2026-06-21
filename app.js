@@ -3,7 +3,7 @@
 
   const STORAGE_KEY = "arcana-cube-v1";
   const SHEETJS_URL = "https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js";
-  const { buildExcelRows, buildPrintingsUrl, computeStats, filterCards, filterPrintings, sortCards, getColorBucket, getFrontColors, getFrontTypeLine, getPrimaryType, getPriceNumber, getUsdPrice, normalizeCardName, normalizeFinish, normalizeScryfallCard, parseDecklist, parseExcelRows, replacePrinting } = window.CubeCore;
+  const { buildExcelRows, buildPrintingsUrl, computeStats, filterCards, filterPrintings, sortCards, getColorBucket, getFrontColors, getFrontTypeLine, getPrimaryType, getPriceNumber, getUsdPrice, isPaperPrinting, normalizeCardName, normalizeFinish, normalizeScryfallCard, parseDecklist, parseExcelRows, replacePrinting } = window.CubeCore;
   let sheetJsLoader;
   let printingRequestId = 0;
 
@@ -291,7 +291,7 @@
       const identity = await lookupCard(card.name);
       oracleId = identity.oracle_id;
     }
-    if (state.printingCache.has(oracleId)) return state.printingCache.get(oracleId);
+    if (state.printingCache.has(oracleId)) return state.printingCache.get(oracleId).filter(isPaperPrinting);
 
     let url = buildPrintingsUrl(oracleId);
     const printings = [];
@@ -299,7 +299,7 @@
       const response = await fetch(url, { headers: { Accept: "application/json" } });
       if (!response.ok) throw new Error("无法获取这张牌的版本列表");
       const page = await response.json();
-      printings.push(...(page.data || []));
+      printings.push(...(page.data || []).filter(isPaperPrinting));
       url = page.has_more ? page.next_page : null;
       if (url) await new Promise((resolve) => setTimeout(resolve, 110));
     }

@@ -148,10 +148,15 @@
     return `https://api.scryfall.com/cards/search?q=${encodeURIComponent(`oracleid:${oracleId} game:paper`)}&unique=prints&order=released&dir=desc`;
   }
 
+  function isPaperPrinting(printing) {
+    return Boolean(printing && printing.digital !== true && Array.isArray(printing.games) && printing.games.includes("paper"));
+  }
+
   function filterPrintings(printings, query) {
     const needle = (query || "").trim().toLocaleLowerCase();
-    if (!needle) return printings;
-    return printings.filter((printing) => {
+    const paperPrintings = printings.filter(isPaperPrinting);
+    if (!needle) return paperPrintings;
+    return paperPrintings.filter((printing) => {
       const haystack = `${printing.set_name || ""} ${printing.set || ""} ${printing.collector_number || ""} ${printing.released_at || ""} ${printing.artist || ""}`.toLocaleLowerCase();
       return haystack.includes(needle);
     });
@@ -209,5 +214,5 @@
     ];
   }
 
-  return { COLOR_ORDER, SORT_ORDER, parseDecklist, normalizeFinish, normalizeScryfallCard, getFrontColors, getFrontTypeLine, getUsdPrice, getPriceNumber, getColorBucket, getPrimaryType, computeStats, filterCards, sortCards, buildPrintingsUrl, filterPrintings, replacePrinting, normalizeCardName, parseExcelRows, buildExcelRows };
+  return { COLOR_ORDER, SORT_ORDER, parseDecklist, normalizeFinish, normalizeScryfallCard, getFrontColors, getFrontTypeLine, getUsdPrice, getPriceNumber, getColorBucket, getPrimaryType, computeStats, filterCards, sortCards, buildPrintingsUrl, isPaperPrinting, filterPrintings, replacePrinting, normalizeCardName, parseExcelRows, buildExcelRows };
 });

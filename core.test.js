@@ -1,6 +1,6 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { buildExcelRows, buildPrintingsUrl, computeStats, filterCards, filterPrintings, getColorBucket, getFrontTypeLine, getPriceNumber, getUsdPrice, normalizeCardName, normalizeFinish, normalizeScryfallCard, parseDecklist, parseExcelRows, replacePrinting, sortCards } = require("./core.js");
+const { buildExcelRows, buildPrintingsUrl, computeStats, filterCards, filterPrintings, getColorBucket, getFrontTypeLine, getPriceNumber, getUsdPrice, isPaperPrinting, normalizeCardName, normalizeFinish, normalizeScryfallCard, parseDecklist, parseExcelRows, replacePrinting, sortCards } = require("./core.js");
 
 const cards = [
   { name: "Alpha", colors: ["W"], cmc: 1, typeLine: "Creature — Human", set: "TST" },
@@ -110,9 +110,13 @@ test("printing helpers build, filter, and replace versions safely", () => {
   assert.match(buildPrintingsUrl("oracle-id"), /oracleid%3Aoracle-id.*unique=prints/);
   assert.match(decodeURIComponent(buildPrintingsUrl("oracle-id")), /game:paper/);
   const printings = [
-    { id: "alpha", name: "Black Vise", set: "lea", set_name: "Limited Edition Alpha", collector_number: "233", type_line: "Artifact" },
-    { id: "beta", name: "Black Vise", set: "leb", set_name: "Limited Edition Beta", collector_number: "234", type_line: "Artifact" }
+    { id: "alpha", name: "Black Vise", set: "lea", set_name: "Limited Edition Alpha", collector_number: "233", type_line: "Artifact", games: ["paper"], digital: false },
+    { id: "beta", name: "Black Vise", set: "leb", set_name: "Limited Edition Beta", collector_number: "234", type_line: "Artifact", games: ["paper", "mtgo"], digital: false },
+    { id: "digital", name: "Black Vise", set: "ana", set_name: "Arena", collector_number: "1", type_line: "Artifact", games: ["arena"], digital: true }
   ];
+  assert.equal(isPaperPrinting(printings[0]), true);
+  assert.equal(isPaperPrinting(printings[2]), false);
+  assert.deepEqual(filterPrintings(printings, "").map((card) => card.id), ["alpha", "beta"]);
   assert.deepEqual(filterPrintings(printings, "LEA").map((card) => card.id), ["alpha"]);
   assert.deepEqual(filterPrintings(printings, "234").map((card) => card.id), ["beta"]);
   const replaced = replacePrinting({ id: "cube-card", addedAt: "saved-date", finish: "nonfoil" }, printings[1]);
