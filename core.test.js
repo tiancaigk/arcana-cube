@@ -1,6 +1,6 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { buildCardNameSearchUrl, buildExcelRows, buildPrintingsUrl, computeStats, filterCards, filterPrintings, getCardBucket, getColorBucket, getFrontTypeLine, getPriceNumber, getUsdPrice, isPaperPrinting, normalizeCardName, normalizeFinish, normalizeScryfallCard, parseDecklist, parseExcelRows, replacePrinting, sortCards } = require("./core.js");
+const { buildBackup, buildCardNameSearchUrl, buildExcelRows, buildPrintingsUrl, computeStats, filterCards, filterPrintings, getCardBucket, getColorBucket, getFrontTypeLine, getPriceNumber, getUsdPrice, isPaperPrinting, normalizeCardName, normalizeFinish, normalizeScryfallCard, parseBackup, parseDecklist, parseExcelRows, replacePrinting, sortCards } = require("./core.js");
 
 const cards = [
   { name: "Alpha", colors: ["W"], cmc: 1, typeLine: "Creature — Human", set: "TST" },
@@ -160,8 +160,8 @@ test("parseExcelRows detects headers and keeps identifiers as text", () => {
     ["2X2", 361, "Lightning Bolt"],
     ["", "", ""]
   ]), [
-    { rowNumber: 2, setCode: "LEA", collectorNumber: "001", expectedName: "Black Vise" },
-    { rowNumber: 3, setCode: "2X2", collectorNumber: "361", expectedName: "Lightning Bolt" }
+    { rowNumber: 2, setCode: "LEA", collectorNumber: "001", expectedName: "Black Vise", finish: "foil" },
+    { rowNumber: 3, setCode: "2X2", collectorNumber: "361", expectedName: "Lightning Bolt", finish: "foil" }
   ]);
   assert.equal(normalizeCardName("  Urza’s   Saga "), "urza's saga");
 });
@@ -174,8 +174,17 @@ test("buildExcelRows exports a re-importable table with finish and price", () =>
   assert.deepEqual(rows[0], ["系列", "编号", "卡牌名称", "闪卡状态", "美元价格"]);
   assert.deepEqual(rows[1], ["XLN", "250", "Treasure Map // Treasure Cove", "Foil", "0.73"]);
   assert.deepEqual(rows[2], ["LEA", "233", "Black Vise", "Non-Foil", "25.00"]);
-  assert.deepEqual(parseExcelRows(rows).map(({ setCode, collectorNumber, expectedName }) => ({ setCode, collectorNumber, expectedName })), [
-    { setCode: "XLN", collectorNumber: "250", expectedName: "Treasure Map // Treasure Cove" },
-    { setCode: "LEA", collectorNumber: "233", expectedName: "Black Vise" }
+  assert.deepEqual(parseExcelRows(rows).map(({ setCode, collectorNumber, expectedName, finish }) => ({ setCode, collectorNumber, expectedName, finish })), [
+    { setCode: "XLN", collectorNumber: "250", expectedName: "Treasure Map // Treasure Cove", finish: "foil" },
+    { setCode: "LEA", collectorNumber: "233", expectedName: "Black Vise", finish: "nonfoil" }
   ]);
+});
+
+test("JSON backups preserve the complete Cube and accept legacy exports", () => {
+  const data = { meta: { name: "Test Cube", description: "Desc" }, notes: "Notes", cards: [{ id: "1", name: "Black Vise", finish: "nonfoil" }] };
+  const backup = buildBackup(data, "2026-06-22T00:00:00.000Z");
+  assert.equal(backup.version, 2);
+  assert.deepEqual(parseBackup(JSON.stringify(backup)), data);
+  assert.deepEqual(parseBackup(JSON.stringify({ ...data, format: "arcana-cube-v1" })), data);
+  assert.throws(() => parseBackup('{"not":"a cube"}'), /有效/);
 });

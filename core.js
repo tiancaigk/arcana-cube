@@ -61,6 +61,11 @@
     return finish === "nonfoil" ? "nonfoil" : "foil";
   }
 
+  function parseFinish(value) {
+    const normalized = String(value || "").toLocaleLowerCase().replace(/[\s_-]+/g, "");
+    return normalized === "nonfoil" || normalized === "非闪" ? "nonfoil" : "foil";
+  }
+
   function normalizePrice(value) {
     return typeof value === "string" && value.trim() ? value.trim() : "";
   }
@@ -207,7 +212,8 @@
       rowNumber: index + (hasHeader ? 2 : 1),
       setCode: String(row[0] ?? "").trim().toUpperCase(),
       collectorNumber: String(row[1] ?? "").trim(),
-      expectedName: String(row[2] ?? "").trim()
+      expectedName: String(row[2] ?? "").trim(),
+      finish: parseFinish(row[3])
     })).filter((row) => row.setCode || row.collectorNumber || row.expectedName);
   }
 
@@ -224,5 +230,27 @@
     ];
   }
 
-  return { COLOR_ORDER, SORT_ORDER, parseDecklist, normalizeFinish, normalizeScryfallCard, getFrontColors, getFrontTypeLine, getUsdPrice, getPriceNumber, getColorBucket, getPrimaryType, getCardBucket, computeStats, filterCards, sortCards, buildCardNameSearchUrl, buildPrintingsUrl, isPaperPrinting, filterPrintings, replacePrinting, normalizeCardName, parseExcelRows, buildExcelRows };
+  function buildBackup(data, exportedAt = new Date().toISOString()) {
+    return {
+      format: "arcana-cube-backup",
+      version: 2,
+      exportedAt,
+      data
+    };
+  }
+
+  function parseBackup(source) {
+    const payload = typeof source === "string" ? JSON.parse(source) : source;
+    const data = payload && payload.data && payload.format === "arcana-cube-backup" ? payload.data : payload;
+    if (!data || typeof data !== "object" || !data.meta || typeof data.meta.name !== "string" || !Array.isArray(data.cards)) {
+      throw new Error("不是有效的 Arcana Cube 备份文件");
+    }
+    return {
+      meta: data.meta,
+      notes: typeof data.notes === "string" ? data.notes : "",
+      cards: data.cards
+    };
+  }
+
+  return { COLOR_ORDER, SORT_ORDER, parseDecklist, normalizeFinish, parseFinish, normalizeScryfallCard, getFrontColors, getFrontTypeLine, getUsdPrice, getPriceNumber, getColorBucket, getPrimaryType, getCardBucket, computeStats, filterCards, sortCards, buildCardNameSearchUrl, buildPrintingsUrl, isPaperPrinting, filterPrintings, replacePrinting, normalizeCardName, parseExcelRows, buildExcelRows, buildBackup, parseBackup };
 });

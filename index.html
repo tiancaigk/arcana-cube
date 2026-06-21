@@ -50,6 +50,15 @@
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 16V4m0 0 4 4m-4-4L8 8M4 20h16"/></svg>
             导出 Excel
           </button>
+          <button class="quiet-button" id="backupBtn">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4h12l2 2v14H5Z"/><path d="M8 4v6h8V4M8 20v-6h8v6"/></svg>
+            备份 JSON
+          </button>
+          <button class="quiet-button" id="restoreBtn">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12a8 8 0 1 0 3-6.2L4 8"/><path d="M4 3v5h5"/></svg>
+            恢复备份
+          </button>
+          <input class="hidden" id="backupFileInput" type="file" accept="application/json,.json" />
           <div class="storage-note"><span class="status-dot"></span><span>已保存在此浏览器</span></div>
         </div>
       </aside>

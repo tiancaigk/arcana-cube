@@ -3,7 +3,7 @@
 
   const STORAGE_KEY = "arcana-cube-v1";
   const SHEETJS_URL = "https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js";
-  const { buildCardNameSearchUrl, buildExcelRows, buildPrintingsUrl, computeStats, filterCards, filterPrintings, sortCards, getCardBucket, getFrontColors, getFrontTypeLine, getPriceNumber, getUsdPrice, isPaperPrinting, normalizeCardName, normalizeFinish, normalizeScryfallCard, parseDecklist, parseExcelRows, replacePrinting } = window.CubeCore;
+  const { buildBackup, buildCardNameSearchUrl, buildExcelRows, buildPrintingsUrl, computeStats, filterCards, filterPrintings, sortCards, getCardBucket, getFrontColors, getFrontTypeLine, getPriceNumber, getUsdPrice, isPaperPrinting, normalizeCardName, normalizeFinish, normalizeScryfallCard, parseBackup, parseDecklist, parseExcelRows, replacePrinting } = window.CubeCore;
   let sheetJsLoader;
   let printingRequestId = 0;
 
@@ -58,12 +58,7 @@
   const state = {
     data: (() => {
       const loaded = loadState();
-      loaded.cards = sortCards((loaded.cards || []).map((card) => ({
-        ...card,
-        frontColors: getFrontColors(card),
-        frontTypeLine: getFrontTypeLine(card),
-        finish: normalizeFinish(card.finish)
-      })));
+      loaded.cards = normalizeStoredCards(loaded.cards || []);
       return loaded;
     })(),
     filters: { query: "", color: "all", type: "all", finish: "all" },
@@ -97,8 +92,17 @@
     importText: $("#importText"), importStatus: $("#importStatus"), startImportBtn: $("#startImportBtn"),
     excelFileInput: $("#excelFileInput"), excelFileName: $("#excelFileName"), excelPreview: $("#excelPreview"),
     excelSummary: $("#excelSummary"), excelPreviewBody: $("#excelPreviewBody"), excelDropZone: $("#excelDropZone"),
-    lookupResult: $("#lookupResult")
+    lookupResult: $("#lookupResult"), backupFileInput: $("#backupFileInput")
   };
+
+  function normalizeStoredCards(cards) {
+    return sortCards(cards.map((card) => ({
+      ...card,
+      frontColors: getFrontColors(card),
+      frontTypeLine: getFrontTypeLine(card),
+      finish: normalizeFinish(card.finish)
+    })));
+  }
 
   function loadState() {
     try {
@@ -748,7 +752,7 @@
 
   function commitExcelImport() {
     const rows = state.excelRows.filter((row) => row.importable && row.card);
-    rows.forEach((row) => state.data.cards.push(normalizeScryfallCard(row.card)));
+    rows.forEach((row) => state.data.cards.push({ ...normalizeScryfallCard(row.card), finish: row.finish }));
     state.data.cards = sortCards(state.data.cards);
     saveState();
     render();
@@ -825,6 +829,39 @@
     }
   }
 
+  function downloadJsonBackup() {
+    const payload = JSON.stringify(buildBackup(state.data), null, 2);
+    const blob = new Blob([payload], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = `${state.data.meta.name.replace(/[\\/:*?"<>|]/g, "-") || "Cube备份"}.json`;
+    anchor.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    toast("备份完成", "完整 JSON 备份已生成");
+  }
+
+  async function restoreJsonBackup(file) {
+    if (!file) return;
+    try {
+      const restored = parseBackup(await file.text());
+      if (!window.confirm(`恢复“${restored.meta.name}”将覆盖当前 Cube，是否继续？`)) return;
+      state.data = {
+        meta: { ...restored.meta },
+        notes: typeof restored.notes === "string" ? restored.notes : "",
+        cards: normalizeStoredCards(restored.cards)
+      };
+      saveState();
+      clearFilters();
+      render();
+      toast("恢复完成", `已恢复 ${state.data.cards.length} 张牌`);
+    } catch (error) {
+      toast("恢复失败", error.message || "无法读取这个备份文件", true);
+    } finally {
+      elements.backupFileInput.value = "";
+    }
+  }
+
   function removeCard(id) {
     const index = state.data.cards.findIndex((card) => card.id === id);
     if (index < 0) return;
@@ -869,6 +906,9 @@
     ["dragleave", "drop"].forEach((type) => elements.excelDropZone.addEventListener(type, (event) => { event.preventDefault(); elements.excelDropZone.classList.remove("dragging"); }));
     elements.excelDropZone.addEventListener("drop", (event) => chooseExcelFile(event.dataTransfer.files[0]));
     $("#exportBtn").addEventListener("click", exportData);
+    $("#backupBtn").addEventListener("click", downloadJsonBackup);
+    $("#restoreBtn").addEventListener("click", () => elements.backupFileInput.click());
+    elements.backupFileInput.addEventListener("change", (event) => restoreJsonBackup(event.target.files[0]));
     $("#clearFiltersBtn").addEventListener("click", clearFilters);
     $("#mobileMenu").addEventListener("click", () => $(".sidebar").classList.toggle("open"));
     $("#newCubeBtn").addEventListener("click", () => toast("即将支持", "多 Cube 管理已列入下一版"));
