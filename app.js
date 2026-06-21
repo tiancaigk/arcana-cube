@@ -3,7 +3,7 @@
 
   const STORAGE_KEY = "arcana-cube-v1";
   const SHEETJS_URL = "https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js";
-  const { buildBackup, buildCardNameSearchUrl, buildExcelRows, buildPrintingsUrl, chooseValidFinish, computeStats, filterCards, filterPrintings, sortCards, getAvailableFinishes, getCardBucket, getFrontColors, getFrontTypeLine, getPriceNumber, getUsdPrice, isPaperPrinting, needsPriceRefresh, normalizeCardName, normalizeFinish, normalizeScryfallCard, parseBackup, parseDecklist, parseExcelRows, replacePrinting } = window.CubeCore;
+  const { buildBackup, buildCardNameSearchUrl, buildExcelRows, buildPrintingsUrl, chooseValidFinish, computeStats, filterCards, filterPrintings, sortCards, getAvailableFinishes, getCardBucket, getFrontColors, getFrontTypeLine, getPriceNumber, getUsdPrice, isPaperPrinting, needsPriceRefresh, normalizeCardName, normalizeFinish, normalizeScryfallCard, parseBackup, parseDecklist, parseExcelRows, prepareTextImportRows, replacePrinting } = window.CubeCore;
   const { requestJson: scryfallRequest } = window.ScryfallClient;
   let sheetJsLoader;
   let printingRequestId = 0;
@@ -67,6 +67,8 @@
     view: "collection",
     importing: false,
     importMode: "text",
+    textRows: [],
+    textValidated: false,
     excelFile: null,
     excelRows: [],
     excelValidated: false,
@@ -93,6 +95,7 @@
     printingDialog: $("#printingDialog"), printingSearchInput: $("#printingSearchInput"),
     printingStatus: $("#printingStatus"), printingGrid: $("#printingGrid"), printingCount: $("#printingCount"), printingFinishToggle: $("#printingFinishToggle"),
     importText: $("#importText"), importStatus: $("#importStatus"), startImportBtn: $("#startImportBtn"),
+    textPreview: $("#textPreview"), textSummary: $("#textSummary"), textPreviewBody: $("#textPreviewBody"),
     excelFileInput: $("#excelFileInput"), excelFileName: $("#excelFileName"), excelPreview: $("#excelPreview"),
     excelSummary: $("#excelSummary"), excelPreviewBody: $("#excelPreviewBody"), excelDropZone: $("#excelDropZone"),
     lookupResult: $("#lookupResult"), backupFileInput: $("#backupFileInput")
@@ -279,12 +282,24 @@
     return ({ Creature: "生物", Instant: "瞬间", Sorcery: "法术", Artifact: "神器", Enchantment: "结界", Planeswalker: "鹏洛客", Land: "地" })[type] || "全部";
   }
 
-  function toast(title, message, error = false) {
+  function toast(title, message, error = false, action = null) {
     const node = document.createElement("div");
     node.className = `toast${error ? " error" : ""}`;
     node.innerHTML = `<strong>${escapeHtml(title)}</strong>${escapeHtml(message)}`;
+    let timer;
+    if (action) {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.textContent = action.label;
+      button.addEventListener("click", () => {
+        clearTimeout(timer);
+        node.remove();
+        action.run();
+      }, { once: true });
+      node.append(button);
+    }
     elements.toastRegion.append(node);
-    setTimeout(() => node.remove(), 3300);
+    timer = setTimeout(() => node.remove(), action ? 6500 : 3300);
   }
 
   async function lookupCard(name, signal) {
@@ -601,12 +616,27 @@
       button.setAttribute("aria-selected", String(active));
     });
     elements.importStatus.classList.add("hidden");
-    if (mode === "text") {
-      elements.startImportBtn.disabled = false;
-      elements.startImportBtn.textContent = "开始导入";
+    if (mode === "text") updateTextAction();
+    else updateExcelAction();
+  }
+
+  function updateTextAction() {
+    const valid = state.textRows.filter((row) => row.importable).length;
+    if (state.textValidated) {
+      elements.startImportBtn.textContent = `导入通过的 ${valid} 张`;
+      elements.startImportBtn.disabled = valid === 0;
     } else {
-      updateExcelAction();
+      elements.startImportBtn.textContent = "检查并预览";
+      elements.startImportBtn.disabled = !elements.importText.value.trim();
     }
+  }
+
+  function resetTextValidation() {
+    state.textRows = [];
+    state.textValidated = false;
+    elements.textPreview.classList.add("hidden");
+    elements.importStatus.classList.add("hidden");
+    if (state.importMode === "text" && !state.importing) updateTextAction();
   }
 
   function updateExcelAction() {
@@ -676,6 +706,23 @@
         body: JSON.stringify({ identifiers: chunk.map((row) => ({ set: row.setCode.toLowerCase(), collector_number: row.collectorNumber })) })
       });
       (payload.data || []).forEach((card) => results.set(printingKey(card.set, card.collector_number), card));
+    }
+    return results;
+  }
+
+  async function lookupCardNameBatch(names) {
+    const results = new Map();
+    for (let start = 0; start < names.length; start += 75) {
+      const chunk = names.slice(start, start + 75);
+      const payload = await scryfallRequest("https://api.scryfall.com/cards/collection", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ identifiers: chunk.map((name) => ({ name })) })
+      });
+      (payload.data || []).forEach((card) => {
+        const faces = (card.card_faces || []).map((face) => face.name);
+        [card.name, card.printed_name, ...faces].filter(Boolean).forEach((name) => results.set(normalizeCardName(name), card));
+      });
     }
     return results;
   }
@@ -792,8 +839,27 @@
     elements.excelPreview.classList.add("hidden");
   }
 
-  async function handleTextImport() {
-    if (state.importing) return;
+  function renderTextPreview() {
+    const counts = state.textRows.reduce((result, row) => {
+      const [severity] = excelStatus(row);
+      result[severity] += 1;
+      return result;
+    }, { valid: 0, warning: 0, error: 0 });
+    elements.textSummary.innerHTML = [
+      ["总行数", state.textRows.length, ""],
+      ["可以导入", counts.valid, "valid"],
+      ["需要检查", counts.warning, "warning"],
+      ["错误", counts.error, "error"]
+    ].map(([label, value, kind]) => `<div class="excel-summary-item ${kind}"><span>${label}</span><strong>${value}</strong></div>`).join("");
+    elements.textPreviewBody.innerHTML = state.textRows.map((row) => {
+      const [severity, label] = excelStatus(row);
+      const actual = row.card ? `<strong>${escapeHtml(row.card.name)}</strong><span>${escapeHtml(row.card.set.toUpperCase())} · ${escapeHtml(row.card.collector_number)}</span>` : `<strong>—</strong><span>${escapeHtml(row.message || "没有核验结果")}</span>`;
+      return `<tr><td>${row.rowNumber}</td><td class="excel-card-input"><strong>${escapeHtml(row.expectedName)}</strong></td><td class="excel-card-result">${actual}</td><td><span class="excel-status ${severity}">${label}</span></td></tr>`;
+    }).join("");
+    elements.textPreview.classList.remove("hidden");
+  }
+
+  async function validateTextImport() {
     const names = parseDecklist(elements.importText.value);
     if (!names.length) {
       toast("没有牌名", "请先粘贴牌表", true);
@@ -802,30 +868,48 @@
     state.importing = true;
     elements.startImportBtn.disabled = true;
     elements.importStatus.classList.remove("hidden");
-    let success = 0;
-    let failed = 0;
-
     try {
-      for (let index = 0; index < names.length; index += 1) {
-        elements.importStatus.textContent = `正在获取 ${index + 1} / ${names.length}：${names[index]}`;
-        try {
-          const result = await lookupCard(names[index]);
-          state.data.cards.push(normalizeScryfallCard(result));
-          success += 1;
-        } catch (error) {
-          failed += 1;
+      const existingNames = state.data.cards.flatMap((card) => String(card.name || "").split(" // "));
+      state.textRows = prepareTextImportRows(names, existingNames);
+      const candidates = state.textRows.filter((row) => row.status === "valid");
+      elements.importStatus.textContent = `正在批量核验 ${candidates.length} 个牌名…`;
+      const cardsByName = await lookupCardNameBatch(candidates.map((row) => row.expectedName));
+      const existingOracleIds = new Set(state.data.cards.map((card) => card.oracleId).filter(Boolean));
+      candidates.forEach((row) => {
+        row.card = cardsByName.get(normalizeCardName(row.expectedName)) || null;
+        if (!row.card) {
+          row.status = "notFound";
+          row.message = "Scryfall 中没有精确匹配的实体卡牌";
+        } else if (row.card.oracle_id && existingOracleIds.has(row.card.oracle_id)) {
+          row.status = "existing";
+          row.message = "当前 Cube 已包含这张牌的其他版本";
+        } else {
+          row.importable = true;
         }
-      }
-      state.data.cards = sortCards(state.data.cards);
-      saveState();
-      render();
-      elements.importStatus.textContent = `完成：成功 ${success} 张，未找到 ${failed} 张。`;
-      toast("导入完成", `添加 ${success} 张牌${failed ? `，${failed} 张未找到` : ""}`);
-      if (!failed) setTimeout(() => elements.importDialog.close(), 850);
+      });
+      state.textValidated = true;
+      renderTextPreview();
+      elements.importStatus.textContent = "核验完成。请检查结果后再导入。";
+    } catch (error) {
+      state.textValidated = false;
+      elements.importStatus.textContent = error.message || "文本牌表核验失败";
+      toast("无法检查牌表", error.message || "请检查网络后重试", true);
     } finally {
       state.importing = false;
-      elements.startImportBtn.disabled = false;
+      updateTextAction();
     }
+  }
+
+  function commitTextImport() {
+    const rows = state.textRows.filter((row) => row.importable && row.card);
+    rows.forEach((row) => state.data.cards.push(normalizeScryfallCard(row.card)));
+    state.data.cards = sortCards(state.data.cards);
+    saveState();
+    render();
+    elements.importDialog.close();
+    toast("文本导入完成", `已添加 ${rows.length} 张核验通过的卡牌`);
+    elements.importText.value = "";
+    resetTextValidation();
   }
 
   async function handleImport(event) {
@@ -835,7 +919,8 @@
       else await validateExcelImport();
       return;
     }
-    await handleTextImport();
+    if (state.textValidated) commitTextImport();
+    else await validateTextImport();
   }
 
   async function exportData() {
@@ -893,7 +978,17 @@
     const [removed] = state.data.cards.splice(index, 1);
     saveState();
     render();
-    toast("已移除", removed.name);
+    toast("已移除", removed.name, false, {
+      label: "撤销",
+      run: () => {
+        if (state.data.cards.some((card) => card.id === removed.id)) return;
+        state.data.cards.push(removed);
+        state.data.cards = sortCards(state.data.cards);
+        saveState();
+        render();
+        toast("已恢复", removed.name);
+      }
+    });
   }
 
   function setView(view) {
@@ -925,6 +1020,7 @@
     $$('[data-lookup-mode]').forEach((button) => button.addEventListener("click", () => setLookupMode(button.dataset.lookupMode)));
     $("#importBtn").addEventListener("click", () => { elements.importDialog.showModal(); setImportMode(state.importMode); });
     $("#importForm").addEventListener("submit", handleImport);
+    elements.importText.addEventListener("input", resetTextValidation);
     $$('[data-import-mode]').forEach((button) => button.addEventListener("click", () => setImportMode(button.dataset.importMode)));
     elements.excelFileInput.addEventListener("change", (event) => chooseExcelFile(event.target.files[0]));
     ["dragenter", "dragover"].forEach((type) => elements.excelDropZone.addEventListener(type, (event) => { event.preventDefault(); elements.excelDropZone.classList.add("dragging"); }));

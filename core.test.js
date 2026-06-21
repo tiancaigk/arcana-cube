@@ -1,6 +1,6 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { buildBackup, buildCardNameSearchUrl, buildExcelRows, buildPrintingsUrl, chooseValidFinish, computeStats, filterCards, filterPrintings, getAvailableFinishes, getCardBucket, getColorBucket, getFrontTypeLine, getPriceNumber, getUsdPrice, isLandCard, isPaperPrinting, needsPriceRefresh, normalizeCardName, normalizeFinish, normalizeScryfallCard, parseBackup, parseDecklist, parseExcelRows, replacePrinting, sortCards } = require("./core.js");
+const { buildBackup, buildCardNameSearchUrl, buildExcelRows, buildPrintingsUrl, chooseValidFinish, computeStats, filterCards, filterPrintings, getAvailableFinishes, getCardBucket, getColorBucket, getFrontTypeLine, getPriceNumber, getUsdPrice, isLandCard, isPaperPrinting, needsPriceRefresh, normalizeCardName, normalizeFinish, normalizeScryfallCard, parseBackup, parseDecklist, parseExcelRows, prepareTextImportRows, replacePrinting, sortCards } = require("./core.js");
 
 const cards = [
   { name: "Alpha", colors: ["W"], cmc: 1, typeLine: "Creature — Human", set: "TST" },
@@ -10,6 +10,12 @@ const cards = [
 
 test("parseDecklist supports quantities, comments, and Arena suffixes", () => {
   assert.deepEqual(parseDecklist("# title\n2x Lightning Bolt\n1 Counterspell (DMR) 45\n// note"), ["Lightning Bolt", "Lightning Bolt", "Counterspell"]);
+});
+
+test("text import rows flag duplicates and cards already in the Cube", () => {
+  const rows = prepareTextImportRows(["Lightning Bolt", "Counterspell", "lightning  bolt"], ["Counterspell"]);
+  assert.deepEqual(rows.map((row) => row.status), ["valid", "existing", "duplicate"]);
+  assert.deepEqual(rows.map((row) => row.rowNumber), [1, 2, 3]);
 });
 
 test("computeStats separates lands and color buckets", () => {

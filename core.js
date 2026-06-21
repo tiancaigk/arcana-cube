@@ -235,6 +235,24 @@
     return String(name || "").normalize("NFKC").toLocaleLowerCase().replace(/[’‘]/g, "'").replace(/\s+/g, " ").trim();
   }
 
+  function prepareTextImportRows(names, existingNames = []) {
+    const seen = new Set();
+    const existing = new Set(existingNames.map(normalizeCardName));
+    return names.map((expectedName, index) => {
+      const key = normalizeCardName(expectedName);
+      const row = { rowNumber: index + 1, expectedName, status: "valid", importable: false, card: null, message: "" };
+      if (seen.has(key)) {
+        row.status = "duplicate";
+        row.message = "相同牌名已在输入中出现";
+      } else if (existing.has(key)) {
+        row.status = "existing";
+        row.message = "当前 Cube 已包含这张牌";
+      }
+      seen.add(key);
+      return row;
+    });
+  }
+
   function parseExcelRows(rows) {
     const source = Array.isArray(rows) ? rows.slice(0, 1001) : [];
     const first = source[0] || [];
@@ -284,5 +302,5 @@
     };
   }
 
-  return { COLOR_ORDER, SORT_ORDER, PRICE_TTL_MS, parseDecklist, normalizeFinish, parseFinish, getAvailableFinishes, chooseValidFinish, normalizeScryfallCard, getFrontColors, getFrontTypeLine, getUsdPrice, getPriceNumber, needsPriceRefresh, getColorBucket, getPrimaryType, isLandCard, getCardBucket, computeStats, filterCards, sortCards, buildCardNameSearchUrl, buildPrintingsUrl, isPaperPrinting, filterPrintings, replacePrinting, normalizeCardName, parseExcelRows, buildExcelRows, buildBackup, parseBackup };
+  return { COLOR_ORDER, SORT_ORDER, PRICE_TTL_MS, parseDecklist, normalizeFinish, parseFinish, getAvailableFinishes, chooseValidFinish, normalizeScryfallCard, getFrontColors, getFrontTypeLine, getUsdPrice, getPriceNumber, needsPriceRefresh, getColorBucket, getPrimaryType, isLandCard, getCardBucket, computeStats, filterCards, sortCards, buildCardNameSearchUrl, buildPrintingsUrl, isPaperPrinting, filterPrintings, replacePrinting, normalizeCardName, prepareTextImportRows, parseExcelRows, buildExcelRows, buildBackup, parseBackup };
 });

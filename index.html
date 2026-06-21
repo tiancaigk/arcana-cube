@@ -203,6 +203,15 @@
         <div class="import-pane" id="textImportPane">
           <p class="modal-copy">每行一张牌，可带数量。支持 <code>1 Lightning Bolt</code> 或直接写牌名。</p>
           <textarea id="importText" class="import-textarea" placeholder="1 Lightning Bolt&#10;1 Birds of Paradise&#10;1 Counterspell"></textarea>
+          <div class="excel-preview hidden" id="textPreview">
+            <div class="excel-summary" id="textSummary"></div>
+            <div class="excel-table-wrap text-preview-table">
+              <table class="excel-table">
+                <thead><tr><th>行</th><th>输入牌名</th><th>Scryfall 核验</th><th>状态</th></tr></thead>
+                <tbody id="textPreviewBody"></tbody>
+              </table>
+            </div>
+          </div>
         </div>
         <div class="import-pane hidden" id="excelImportPane">
           <p class="modal-copy">读取第一个工作表：A 列系列代码、B 列收藏编号、C 列卡牌名称。第一行可以是标题。</p>
@@ -222,7 +231,7 @@
           </div>
         </div>
         <div class="import-status hidden" id="importStatus"></div>
-        <div class="modal-actions"><button type="button" class="text-button" data-close-dialog>取消</button><button type="submit" class="primary-button" id="startImportBtn">开始导入</button></div>
+        <div class="modal-actions"><button type="button" class="text-button" data-close-dialog>取消</button><button type="submit" class="primary-button" id="startImportBtn">检查并预览</button></div>
       </form>
     </dialog>
 
