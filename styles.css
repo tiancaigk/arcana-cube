@@ -99,7 +99,7 @@ kbd { padding: 3px 6px; border: 1px solid var(--line); border-radius: 4px; color
 .color-filter.active { color: var(--text); background: var(--surface-3); }
 .mana { display: grid; place-items: center; width: 27px; height: 27px; border: 1px solid transparent; border-radius: 50%; font: 600 10px/1 "DM Mono", monospace; opacity: .65; transition: .2s ease; }
 .mana:hover, .mana.active { opacity: 1; transform: translateY(-1px); box-shadow: 0 0 0 2px var(--surface), 0 0 0 3px currentColor; }
-.mana.white { color: #e9dcb4; background: #534e3f; }.mana.blue { color: #9dd4e8; background: #234552; }.mana.black { color: #c5b9cd; background: #3f3445; }.mana.red { color: #ef9c82; background: #5c3028; }.mana.green { color: #9bc59b; background: #294832; }.mana.colorless { color: #c4c2b9; background: #4a4a46; }.mana.multi { color: #e4bd69; background: #554625; }
+.mana.white { color: #e9dcb4; background: #534e3f; }.mana.blue { color: #9dd4e8; background: #234552; }.mana.black { color: #c5b9cd; background: #3f3445; }.mana.red { color: #ef9c82; background: #5c3028; }.mana.green { color: #9bc59b; background: #294832; }.mana.colorless { color: #c4c2b9; background: #4a4a46; }.mana.multi { color: #e4bd69; background: #554625; }.mana.land { color: #cfad83; background: #4d3d2c; }
 select { height: 38px; padding: 0 30px 0 11px; border: 1px solid var(--line); border-radius: 7px; outline: 0; color: var(--muted); background: #171715; font-size: 11px; }
 .view-toggle { display: flex; gap: 2px; padding: 3px; border: 1px solid var(--line); border-radius: 7px; }
 .view-toggle button { display: grid; place-items: center; width: 30px; height: 29px; padding: 0; border: 0; border-radius: 4px; color: var(--muted-2); background: transparent; }

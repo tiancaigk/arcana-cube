@@ -86,6 +86,11 @@
     return priorities.find((type) => (typeLine || "").includes(type)) || "Other";
   }
 
+  function getCardBucket(card) {
+    if (getFrontTypeLine(card).includes("Land")) return "L";
+    return getColorBucket(card);
+  }
+
   function computeStats(cards) {
     const nonlands = cards.filter((card) => getPrimaryType(getFrontTypeLine(card)) !== "Land");
     const cmcTotal = nonlands.reduce((sum, card) => sum + (Number(card.cmc) || 0), 0);
@@ -117,7 +122,7 @@
   function filterCards(cards, filters) {
     const query = (filters.query || "").trim().toLocaleLowerCase();
     return cards.filter((card) => {
-      const bucket = getColorBucket(card);
+      const bucket = getCardBucket(card);
       const matchesColor = !filters.color || filters.color === "all" || bucket === filters.color;
       const matchesType = !filters.type || filters.type === "all" || getPrimaryType(getFrontTypeLine(card)) === filters.type;
       const haystack = `${card.name} ${getFrontTypeLine(card)} ${card.set}`.toLocaleLowerCase();
@@ -126,8 +131,7 @@
   }
 
   function getSortBucket(card) {
-    if (getPrimaryType(getFrontTypeLine(card)) === "Land") return "L";
-    return getColorBucket(card);
+    return getCardBucket(card);
   }
 
   function compareCards(a, b) {
@@ -214,5 +218,5 @@
     ];
   }
 
-  return { COLOR_ORDER, SORT_ORDER, parseDecklist, normalizeFinish, normalizeScryfallCard, getFrontColors, getFrontTypeLine, getUsdPrice, getPriceNumber, getColorBucket, getPrimaryType, computeStats, filterCards, sortCards, buildPrintingsUrl, isPaperPrinting, filterPrintings, replacePrinting, normalizeCardName, parseExcelRows, buildExcelRows };
+  return { COLOR_ORDER, SORT_ORDER, parseDecklist, normalizeFinish, normalizeScryfallCard, getFrontColors, getFrontTypeLine, getUsdPrice, getPriceNumber, getColorBucket, getPrimaryType, getCardBucket, computeStats, filterCards, sortCards, buildPrintingsUrl, isPaperPrinting, filterPrintings, replacePrinting, normalizeCardName, parseExcelRows, buildExcelRows };
 });

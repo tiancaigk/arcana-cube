@@ -3,7 +3,7 @@
 
   const STORAGE_KEY = "arcana-cube-v1";
   const SHEETJS_URL = "https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js";
-  const { buildExcelRows, buildPrintingsUrl, computeStats, filterCards, filterPrintings, sortCards, getColorBucket, getFrontColors, getFrontTypeLine, getPrimaryType, getPriceNumber, getUsdPrice, isPaperPrinting, normalizeCardName, normalizeFinish, normalizeScryfallCard, parseDecklist, parseExcelRows, replacePrinting } = window.CubeCore;
+  const { buildExcelRows, buildPrintingsUrl, computeStats, filterCards, filterPrintings, sortCards, getCardBucket, getFrontColors, getFrontTypeLine, getPriceNumber, getUsdPrice, isPaperPrinting, normalizeCardName, normalizeFinish, normalizeScryfallCard, parseDecklist, parseExcelRows, replacePrinting } = window.CubeCore;
   let sheetJsLoader;
   let printingRequestId = 0;
 
@@ -205,8 +205,7 @@
   }
 
   function cardGroupKey(card) {
-    if (getPrimaryType(getFrontTypeLine(card)) === "Land") return "L";
-    return getColorBucket(card);
+    return getCardBucket(card);
   }
 
   function cardGroupLabel(key) {
@@ -251,7 +250,7 @@
   }
 
   function colorLabel(color) {
-    return ({ W: "白", U: "蓝", B: "黑", R: "红", G: "绿", C: "无色", M: "多色" })[color] || "全部";
+    return ({ W: "白", U: "蓝", B: "黑", R: "红", G: "绿", C: "无色", M: "多色", L: "地牌" })[color] || "全部";
   }
 
   function typeLabel(type) {
