@@ -2,10 +2,14 @@
   "use strict";
 
   const STORAGE_KEY = "arcana-cube-v1";
+  const NAME_LANGUAGE_KEY = "arcana-cube-card-name-language";
+  const DIRECTORY_HANDLE_KEY = "cube-directory-handle";
+  const CUBE_FILE_NAME = "cube-data.json";
   const SHEETJS_URL = "https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js";
-  const { buildBackup, buildCardNameSearchUrl, buildExcelRows, buildPrintingsUrl, chooseValidFinish, computeStats, filterCards, filterPrintings, sortCards, getAvailableFinishes, getCardBucket, getFrontColors, getFrontTypeLine, getPriceNumber, getUsdPrice, isPaperPrinting, needsPriceRefresh, normalizeCardName, normalizeFinish, normalizeScryfallCard, parseBackup, parseDecklist, parseExcelRows, prepareTextImportRows, replacePrinting } = window.CubeCore;
+  const { buildBackup, buildCardNameSearchUrl, buildExcelRows, buildLocalizedNameSearchUrl, buildPrintingsUrl, chooseValidFinish, computeStats, filterCards, filterOraclePrintings, filterPrintings, sortCards, getAvailableFinishes, getCardBucket, getFrontColors, getFrontDisplayName, getFrontTypeLine, getLookupName, getOracleId, getPreferredLocalizedName, getPriceNumber, getUsdPrice, isPaperPrinting, needsPriceRefresh, normalizeCardName, normalizeFinish, normalizeLocalizedNames, normalizeScryfallCard, parseBackup, parseDecklist, parseExcelRows, prepareTextImportRows, replacePrinting } = window.CubeCore;
   const { requestJson: scryfallRequest } = window.ScryfallClient;
   const cubeStorage = window.CubeStorage.createStorage(localStorage, STORAGE_KEY);
+  const cubeHandleStore = window.CubeStorage.createHandleStore(window.indexedDB);
   let sheetJsLoader;
   let printingRequestId = 0;
 
@@ -65,6 +69,11 @@
     })(),
     filters: { query: "", color: "all", type: "all", finish: "all" },
     mode: "grid",
+    nameLanguage: loadNameLanguage(),
+    nameLocalization: {
+      refreshing: false,
+      failures: new Set()
+    },
     view: "collection",
     importing: false,
     importMode: "text",
@@ -80,7 +89,16 @@
     nameResults: [],
     nameSearchId: 0,
     nameSearchController: null,
-    printingController: null
+    printingController: null,
+    refreshingPrices: false,
+    storage: {
+      mode: "browser",
+      supported: typeof window.showDirectoryPicker === "function",
+      directoryHandle: null,
+      directoryName: "",
+      rememberedDirectoryName: "",
+      writeQueue: Promise.resolve()
+    }
   };
 
   const $ = (selector, parent = document) => parent.querySelector(selector);
@@ -99,12 +117,33 @@
     textPreview: $("#textPreview"), textSummary: $("#textSummary"), textPreviewBody: $("#textPreviewBody"),
     excelFileInput: $("#excelFileInput"), excelFileName: $("#excelFileName"), excelPreview: $("#excelPreview"),
     excelSummary: $("#excelSummary"), excelPreviewBody: $("#excelPreviewBody"), excelDropZone: $("#excelDropZone"),
-    lookupResult: $("#lookupResult"), backupFileInput: $("#backupFileInput")
+    lookupResult: $("#lookupResult"), backupFileInput: $("#backupFileInput"),
+    connectFolderBtn: $("#connectFolderBtn"), reloadFolderBtn: $("#reloadFolderBtn"), disconnectFolderBtn: $("#disconnectFolderBtn"),
+    storageStatusLabel: $("#storageStatusLabel"), storageStatusDetail: $("#storageStatusDetail"),
+    nameLanguageToggle: $("#nameLanguageToggle")
   };
+
+  function loadNameLanguage() {
+    try {
+      return localStorage.getItem(NAME_LANGUAGE_KEY) === "zh" ? "zh" : "en";
+    } catch (error) {
+      return "en";
+    }
+  }
+
+  function saveNameLanguage(language) {
+    try {
+      localStorage.setItem(NAME_LANGUAGE_KEY, language === "zh" ? "zh" : "en");
+    } catch (error) {
+      // Display preference is optional; the Cube data itself still works.
+    }
+  }
 
   function normalizeStoredCards(cards) {
     return sortCards(cards.map((card) => ({
       ...card,
+      oracleId: getOracleId(card),
+      localizedNames: normalizeLocalizedNames(card),
       frontColors: getFrontColors(card),
       frontTypeLine: getFrontTypeLine(card),
       finishes: getAvailableFinishes(card),
@@ -116,21 +155,354 @@
     return cubeStorage.load(defaultState);
   }
 
+  function snapshotCubeData(data) {
+    if (typeof structuredClone === "function") return structuredClone(data);
+    return JSON.parse(JSON.stringify(data));
+  }
+
+  function applyCubeData(data) {
+    state.data = {
+      meta: { ...(data.meta || defaultState.meta) },
+      notes: typeof data.notes === "string" ? data.notes : "",
+      cards: normalizeStoredCards(data.cards || [])
+    };
+    if (!state.data.meta.name) state.data.meta.name = defaultState.meta.name;
+    if (typeof state.data.meta.description !== "string") state.data.meta.description = defaultState.meta.description;
+  }
+
+  function localMirrorSave() {
+    cubeStorage.save(state.data);
+  }
+
+  async function queryDirectoryPermission(directoryHandle, mode = "readwrite") {
+    if (!directoryHandle || typeof directoryHandle.queryPermission !== "function") return "granted";
+    return directoryHandle.queryPermission({ mode });
+  }
+
+  async function requestDirectoryPermission(directoryHandle, mode = "readwrite") {
+    const current = await queryDirectoryPermission(directoryHandle, mode);
+    if (current === "granted") return true;
+    if (typeof directoryHandle.requestPermission !== "function") return false;
+    return (await directoryHandle.requestPermission({ mode })) === "granted";
+  }
+
+  function isMissingEntryError(error) {
+    return error && (error.name === "NotFoundError" || error.code === 8);
+  }
+
+  async function getCubeFileHandle(directoryHandle, create = false) {
+    return directoryHandle.getFileHandle(CUBE_FILE_NAME, { create });
+  }
+
+  async function readCubeDataFile(directoryHandle) {
+    try {
+      const fileHandle = await getCubeFileHandle(directoryHandle, false);
+      const file = await fileHandle.getFile();
+      const text = await file.text();
+      if (!text.trim()) return null;
+      return window.CubeStorage.parseWorkspaceData(text);
+    } catch (error) {
+      if (isMissingEntryError(error)) return null;
+      if (error instanceof SyntaxError) throw new Error("cube-data.json 不是有效的 JSON");
+      throw error;
+    }
+  }
+
+  async function writeCubeDataFile(directoryHandle, data) {
+    const fileHandle = await getCubeFileHandle(directoryHandle, true);
+    const writable = await fileHandle.createWritable();
+    await writable.write(JSON.stringify(window.CubeStorage.wrapWorkspaceData(data), null, 2));
+    await writable.close();
+  }
+
+  function renderStorageStatus() {
+    const connectLabel = state.storage.mode === "directory" ? "更换 Cube 文件夹" : "选择 Cube 文件夹";
+    if (elements.connectFolderBtn) {
+      elements.connectFolderBtn.textContent = connectLabel;
+      elements.connectFolderBtn.disabled = !state.storage.supported;
+      elements.connectFolderBtn.title = state.storage.supported ? connectLabel : "当前浏览器不支持文件夹写入";
+    }
+    if (elements.reloadFolderBtn) elements.reloadFolderBtn.classList.toggle("hidden", state.storage.mode !== "directory");
+    if (elements.disconnectFolderBtn) elements.disconnectFolderBtn.classList.toggle("hidden", state.storage.mode !== "directory");
+
+    if (!elements.storageStatusLabel || !elements.storageStatusDetail) return;
+    if (state.storage.mode === "directory") {
+      elements.storageStatusLabel.textContent = "已同步到文件夹";
+      elements.storageStatusDetail.textContent = `${state.storage.directoryName}/${CUBE_FILE_NAME}`;
+      return;
+    }
+    elements.storageStatusLabel.textContent = "已保存在此浏览器";
+    if (!state.storage.supported) {
+      elements.storageStatusDetail.textContent = "当前浏览器不支持直接写入文件夹";
+    } else if (state.storage.rememberedDirectoryName) {
+      elements.storageStatusDetail.textContent = `文件夹 ${state.storage.rememberedDirectoryName} 需要重新连接`;
+    } else {
+      elements.storageStatusDetail.textContent = "也可以切换到文件夹模式，随项目一起移动";
+    }
+  }
+
+  async function disconnectDirectoryMode(message = "已切回浏览器本地保存") {
+    state.storage.mode = "browser";
+    state.storage.directoryHandle = null;
+    state.storage.directoryName = "";
+    state.storage.rememberedDirectoryName = "";
+    try {
+      await cubeHandleStore.clear(DIRECTORY_HANDLE_KEY);
+    } catch (error) {
+      // Best-effort cleanup.
+    }
+    renderStorageStatus();
+    if (message) toast("文件夹已断开", message);
+  }
+
+  async function queueDirectorySave(snapshot) {
+    state.storage.writeQueue = state.storage.writeQueue
+      .catch(() => {})
+      .then(() => writeCubeDataFile(state.storage.directoryHandle, snapshot))
+      .catch(async () => {
+        await disconnectDirectoryMode("文件夹写入失败，后续会继续保存在浏览器");
+      });
+    return state.storage.writeQueue;
+  }
+
   function saveState() {
     try {
-      cubeStorage.save(state.data);
+      localMirrorSave();
     } catch (error) {
       toast("保存失败", "浏览器存储空间可能不足", true);
     }
+    if (state.storage.mode === "directory" && state.storage.directoryHandle) queueDirectorySave(snapshotCubeData(state.data));
+  }
+
+  async function reloadFromDirectory() {
+    if (!state.storage.directoryHandle) return;
+    if (!window.confirm(`从 ${state.storage.directoryName}/${CUBE_FILE_NAME} 重新载入会覆盖当前 Cube，是否继续？`)) return;
+    try {
+      if (!await requestDirectoryPermission(state.storage.directoryHandle, "readwrite")) {
+        toast("无法读取文件夹", "请重新授权这个 Cube 文件夹", true);
+        return;
+      }
+      const fileData = await readCubeDataFile(state.storage.directoryHandle);
+      if (!fileData) {
+        toast("没有找到数据文件", `${state.storage.directoryName} 里还没有 ${CUBE_FILE_NAME}`, true);
+        return;
+      }
+      applyCubeData(fileData);
+      localMirrorSave();
+      render();
+      renderStorageStatus();
+      toast("已从文件夹载入", `${state.storage.directoryName}/${CUBE_FILE_NAME}`);
+    } catch (error) {
+      toast("载入失败", error.message || "无法读取 Cube 文件夹", true);
+    }
+  }
+
+  async function connectCubeFolder() {
+    if (!state.storage.supported) {
+      toast("当前浏览器不支持", "请使用较新的 Chromium 浏览器以启用文件夹保存", true);
+      return;
+    }
+    try {
+      const directoryHandle = await window.showDirectoryPicker({ mode: "readwrite" });
+      if (!await requestDirectoryPermission(directoryHandle, "readwrite")) {
+        toast("没有获得权限", "需要允许读写该文件夹才能自动保存", true);
+        return;
+      }
+      const fileData = await readCubeDataFile(directoryHandle);
+      if (fileData) {
+        const shouldLoad = window.confirm(`发现现有的 ${CUBE_FILE_NAME}。\n确定要载入文件里的 Cube 吗？\n选择“取消”会用当前牌表覆盖文件内容。`);
+        if (shouldLoad) applyCubeData(fileData);
+        else await writeCubeDataFile(directoryHandle, snapshotCubeData(state.data));
+      } else {
+        await writeCubeDataFile(directoryHandle, snapshotCubeData(state.data));
+      }
+      state.storage.mode = "directory";
+      state.storage.directoryHandle = directoryHandle;
+      state.storage.directoryName = directoryHandle.name || "";
+      state.storage.rememberedDirectoryName = directoryHandle.name || "";
+      await cubeHandleStore.save(DIRECTORY_HANDLE_KEY, directoryHandle).catch(() => false);
+      localMirrorSave();
+      render();
+      renderStorageStatus();
+      toast("已连接文件夹", `后续修改会自动写入 ${state.storage.directoryName}/${CUBE_FILE_NAME}`);
+    } catch (error) {
+      if (error && error.name === "AbortError") return;
+      toast("连接失败", error.message || "无法连接 Cube 文件夹", true);
+    }
+  }
+
+  async function restoreDirectoryMode() {
+    if (!state.storage.supported || !cubeHandleStore.supported) {
+      renderStorageStatus();
+      return;
+    }
+    try {
+      const directoryHandle = await cubeHandleStore.load(DIRECTORY_HANDLE_KEY);
+      if (!directoryHandle) {
+        renderStorageStatus();
+        return;
+      }
+      state.storage.rememberedDirectoryName = directoryHandle.name || "";
+      if (await queryDirectoryPermission(directoryHandle, "readwrite") !== "granted") {
+        renderStorageStatus();
+        return;
+      }
+      const fileData = await readCubeDataFile(directoryHandle);
+      state.storage.mode = "directory";
+      state.storage.directoryHandle = directoryHandle;
+      state.storage.directoryName = directoryHandle.name || "";
+      if (fileData) {
+        applyCubeData(fileData);
+        localMirrorSave();
+      }
+      render();
+    } catch (error) {
+      // Fallback to local mirror on startup.
+    }
+    renderStorageStatus();
   }
 
   function escapeHtml(value) {
     return String(value ?? "").replace(/[&<>'"]/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;" })[char]);
   }
 
+  function cardDisplayName(card) {
+    const name = state.nameLanguage === "zh" ? getPreferredLocalizedName(card) || card.name || "" : card.name || "";
+    return getFrontDisplayName(name);
+  }
+
+  function renderNameLanguageToggle() {
+    if (!elements.nameLanguageToggle) return;
+    $$("[data-name-language]", elements.nameLanguageToggle).forEach((button) => {
+      const active = button.dataset.nameLanguage === state.nameLanguage;
+      button.classList.toggle("active", active);
+      button.setAttribute("aria-pressed", String(active));
+      button.tabIndex = active ? 0 : -1;
+    });
+    const zhButton = $('[data-name-language="zh"]', elements.nameLanguageToggle);
+    if (zhButton) {
+      const loading = state.nameLanguage === "zh" && state.nameLocalization.refreshing;
+      zhButton.classList.toggle("loading", loading);
+      zhButton.title = loading ? "正在补齐中文卡牌名" : "显示中文卡牌名";
+    }
+  }
+
+  function setNameLanguage(language) {
+    const nextLanguage = language === "zh" ? "zh" : "en";
+    if (state.nameLanguage === nextLanguage) return;
+    state.nameLanguage = nextLanguage;
+    saveNameLanguage(nextLanguage);
+    renderNameLanguageToggle();
+    renderCards();
+  }
+
+  function missingLocalizedNameCards(cards) {
+    const seen = new Set();
+    return cards.filter((card) => {
+      if (getPreferredLocalizedName(card)) return false;
+      const oracleId = getOracleId(card);
+      if (!oracleId || state.nameLocalization.failures.has(oracleId) || seen.has(oracleId)) return false;
+      seen.add(oracleId);
+      return true;
+    });
+  }
+
+  function cardItemSelector(cardId) {
+    const escapedId = window.CSS && typeof window.CSS.escape === "function" ? window.CSS.escape(cardId) : String(cardId).replace(/["\\]/g, "\\$&");
+    return `.card-item[data-id="${escapedId}"]`;
+  }
+
+  function updateCardNameNode(card) {
+    if (state.nameLanguage !== "zh") return;
+    const node = elements.cardGrid.querySelector(cardItemSelector(card.id));
+    if (!node) return;
+    const displayName = cardDisplayName(card);
+    const fallbackName = $(".fallback-name", node);
+    const cardName = $(".card-name", node);
+    const cardImage = $(".card-image", node);
+    const finishButton = $("[data-toggle-finish]", node);
+    const printingButton = $("[data-change-printing]", node);
+    const removeButton = $("[data-remove]", node);
+    if (fallbackName) fallbackName.textContent = displayName;
+    if (cardName) {
+      cardName.textContent = displayName;
+      cardName.title = displayName;
+    }
+    if (cardImage) cardImage.alt = displayName;
+    if (finishButton && !finishButton.disabled) finishButton.title = `切换 ${displayName} 的 Foil 状态`;
+    if (printingButton) printingButton.title = `选择 ${displayName} 的其他版本`;
+    if (removeButton) removeButton.setAttribute("aria-label", `移除 ${displayName}`);
+  }
+
+  function applyLocalizedName(oracleId, lang, name) {
+    let updated = false;
+    state.data.cards.forEach((card) => {
+      if (getOracleId(card) !== oracleId) return;
+      const names = normalizeLocalizedNames(card);
+      if (names[lang] === name) return;
+      card.localizedNames = { ...names, [lang]: name };
+      updateCardNameNode(card);
+      updated = true;
+    });
+    return updated;
+  }
+
+  async function lookupLocalizedName(oracleId) {
+    for (const lang of ["zhs", "zht"]) {
+      let url = buildLocalizedNameSearchUrl(oracleId, lang);
+      while (url) {
+        let page;
+        try {
+          page = await scryfallRequest(url);
+        } catch (error) {
+          if (error.status === 404) break;
+          throw error;
+        }
+        const match = (page.data || []).find((printing) => getOracleId(printing) === oracleId && isPaperPrinting(printing) && normalizeLocalizedNames(printing)[lang]);
+        if (match) return { lang, name: normalizeLocalizedNames(match)[lang] };
+        url = page.has_more ? page.next_page : null;
+      }
+    }
+    return null;
+  }
+
+  async function refreshMissingLocalizedNames(cards) {
+    if (state.nameLanguage !== "zh" || state.nameLocalization.refreshing) return;
+    state.nameLocalization.refreshing = true;
+    renderNameLanguageToggle();
+    let changedSinceSave = 0;
+    try {
+      while (state.nameLanguage === "zh") {
+        const target = missingLocalizedNameCards(cards)[0];
+        if (!target) break;
+        const oracleId = getOracleId(target);
+        try {
+          const localized = await lookupLocalizedName(oracleId);
+          if (!localized) {
+            state.nameLocalization.failures.add(oracleId);
+            continue;
+          }
+          if (applyLocalizedName(oracleId, localized.lang, localized.name)) changedSinceSave += 1;
+          if (changedSinceSave >= 20) {
+            saveState();
+            changedSinceSave = 0;
+          }
+        } catch (error) {
+          state.nameLocalization.failures.add(oracleId);
+          break;
+        }
+      }
+    } finally {
+      if (changedSinceSave) saveState();
+      state.nameLocalization.refreshing = false;
+      renderNameLanguageToggle();
+    }
+  }
+
   function render() {
     renderMeta();
     renderStats();
+    renderNameLanguageToggle();
     renderCards();
     if (state.view === "analytics") renderAnalytics();
   }
@@ -145,12 +517,15 @@
   function renderStats() {
     const stats = computeStats(state.data.cards);
     const priceInfo = priceStatus(state.data.cards);
+    const priceAction = `<button type="button" class="stat-action icon-only${state.refreshingPrices ? " loading" : ""}" data-refresh-prices ${state.refreshingPrices ? "disabled" : ""} aria-label="${state.refreshingPrices ? "正在更新价格" : "手动更新价格"}" title="${state.refreshingPrices ? "正在更新价格" : "手动更新价格"}">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11a8 8 0 1 1-2.35-5.65"/><path d="M20 4v7h-7"/></svg>
+    </button>`;
     const cards = [
       ["总牌数", stats.total, "张", "当前 Cube 规模", "cards"],
       ["平均费用", stats.averageCmc.toFixed(2), "CMC", "地牌不计入", "curve"],
       ["生物", stats.creatures, "张", `${percent(stats.creatures, stats.total)}% 的牌表`, "creature"],
       ["地牌", stats.lands, "张", `${percent(stats.lands, stats.total)}% 的牌表`, "land"],
-      ["总价", formatUsd(cubeValue(state.data.cards)), "USD", priceInfo, "cards"]
+      ["总价", formatUsd(cubeValue(state.data.cards)), "USD", priceInfo, "cards", priceAction]
     ];
     const icons = {
       cards: '<rect x="5" y="3" width="14" height="18" rx="2"/><path d="M9 7h6M9 11h6"/>',
@@ -158,11 +533,11 @@
       creature: '<path d="M8 20v-6l-3-3 3-7 4 4 4-4 3 7-3 3v6Z"/>',
       land: '<path d="M12 21V10M7 15c-3-1-4-4-3-7 4 0 7 2 8 5M17 14c3-1 4-4 3-7-4 0-7 2-8 5"/>'
     };
-    elements.statsGrid.innerHTML = cards.map(([label, value, unit, foot, icon]) => `
+    elements.statsGrid.innerHTML = cards.map(([label, value, unit, foot, icon, action = ""]) => `
       <article class="stat-card">
-        <div class="stat-label"><span>${label}</span><svg viewBox="0 0 24 24">${icons[icon]}</svg></div>
+        <div class="stat-label"><div class="stat-label-main"><span>${label}</span>${action}</div><svg viewBox="0 0 24 24">${icons[icon]}</svg></div>
         <span class="stat-value">${value}<small>${unit}</small></span>
-        <div class="stat-foot">${foot}</div>
+        <div class="stat-foot-row"><div class="stat-foot">${foot}</div></div>
       </article>`).join("");
   }
 
@@ -213,6 +588,7 @@
         <div class="card-group-grid">${groupCards.map((card, index) => cardTemplate(card, index)).join("")}</div>
       </section>`).join("");
     $$(".card-image", elements.cardGrid).forEach((image) => image.addEventListener("error", () => image.classList.add("hidden"), { once: true }));
+    if (state.nameLanguage === "zh") refreshMissingLocalizedNames(cards);
 
     const labels = [];
     if (state.filters.color !== "all") labels.push(`颜色：${colorLabel(state.filters.color)}`);
@@ -236,17 +612,18 @@
     const availableFinishes = getAvailableFinishes(card);
     const finishDisabled = availableFinishes.length < 2;
     const price = formatUsd(cardPrice(card));
+    const displayName = cardDisplayName(card);
     return `<article class="card-item" data-id="${escapeHtml(card.id)}" data-finish="${finish}" style="animation-delay:${Math.min(index * 18, 220)}ms">
       <div class="card-image-wrap">
-        <div class="card-fallback"><span class="fallback-name">${escapeHtml(card.name)}</span><span class="fallback-type">${escapeHtml(card.typeLine)}</span></div>
-        ${card.image ? `<img class="card-image" src="${escapeHtml(card.image)}" alt="${escapeHtml(card.name)}" loading="lazy" />` : ""}
+        <div class="card-fallback"><span class="fallback-name">${escapeHtml(displayName)}</span><span class="fallback-type">${escapeHtml(card.typeLine)}</span></div>
+        ${card.image ? `<img class="card-image" src="${escapeHtml(card.image)}" alt="${escapeHtml(displayName)}" loading="lazy" />` : ""}
       </div>
       <div class="card-info">
-        <div class="card-name-row"><span class="card-name" title="${escapeHtml(card.name)}">${escapeHtml(card.name)}</span><span class="card-cost">${escapeHtml(cost)}</span></div>
-        <div class="card-meta"><span>${escapeHtml(card.typeLine.split(" — ")[0])}</span><button class="finish-pill ${finish}" data-toggle-finish="${escapeHtml(card.id)}" ${finishDisabled ? "disabled" : ""} title="${finishDisabled ? `此版本仅支持 ${finish === "foil" ? "Foil" : "Non-Foil"}` : `切换 ${escapeHtml(card.name)} 的 Foil 状态`}">${finish === "foil" ? "Foil" : "Non-Foil"}</button></div>
-        <div class="card-meta"><span>${escapeHtml(card.set)}${card.collectorNumber ? ` · ${escapeHtml(card.collectorNumber)}` : ""} · <span class="card-price">${escapeHtml(price)}</span></span><button class="printing-button" data-change-printing="${escapeHtml(card.id)}" title="选择 ${escapeHtml(card.name)} 的其他版本">选择版本</button></div>
+        <div class="card-name-row"><span class="card-name" title="${escapeHtml(displayName)}">${escapeHtml(displayName)}</span><span class="card-cost">${escapeHtml(cost)}</span></div>
+        <div class="card-meta"><span>${escapeHtml(card.typeLine.split(" — ")[0])}</span><button class="finish-pill ${finish}" data-toggle-finish="${escapeHtml(card.id)}" ${finishDisabled ? "disabled" : ""} title="${finishDisabled ? `此版本仅支持 ${finish === "foil" ? "Foil" : "Non-Foil"}` : `切换 ${escapeHtml(displayName)} 的 Foil 状态`}">${finish === "foil" ? "Foil" : "Non-Foil"}</button></div>
+        <div class="card-meta"><span>${escapeHtml(card.set)}${card.collectorNumber ? ` · ${escapeHtml(card.collectorNumber)}` : ""} · <span class="card-price">${escapeHtml(price)}</span></span><button class="printing-button" data-change-printing="${escapeHtml(card.id)}" title="选择 ${escapeHtml(displayName)} 的其他版本">选择版本</button></div>
       </div>
-      <button class="remove-card" data-remove="${escapeHtml(card.id)}" title="从 Cube 移除" aria-label="移除 ${escapeHtml(card.name)}">−</button>
+      <button class="remove-card" data-remove="${escapeHtml(card.id)}" title="从 Cube 移除" aria-label="移除 ${escapeHtml(displayName)}">−</button>
     </article>`;
   }
 
@@ -329,33 +706,68 @@
     try {
       return await scryfallRequest(`https://api.scryfall.com/cards/${encodeURIComponent(set)}/${encodeURIComponent(number)}`, { signal });
     } catch (error) {
-      if (error.status === 404) throw new Error("没有找到这个系列与编号的卡牌");
+      if (error.status === 404) {
+        const notFound = new Error("没有找到这个系列与编号的卡牌");
+        notFound.status = 404;
+        throw notFound;
+      }
       throw error;
     }
   }
 
-  async function lookupAllPrintings(card, signal) {
-    let oracleId = card.oracleId;
-    if (!oracleId) {
-      const identity = await lookupCard(card.name, signal);
-      oracleId = identity.oracle_id;
+  async function lookupCardById(scryfallId, signal) {
+    if (!scryfallId) return null;
+    try {
+      return await scryfallRequest(`https://api.scryfall.com/cards/${encodeURIComponent(scryfallId)}`, { signal });
+    } catch (error) {
+      if (error.status === 404) return null;
+      throw error;
     }
-    if (state.printingCache.has(oracleId)) return state.printingCache.get(oracleId).filter(isPaperPrinting);
+  }
+
+  async function resolvePrintingIdentity(card, signal) {
+    if (card.set && card.collectorNumber) {
+      try {
+        return await lookupPrinting(card.set, card.collectorNumber, signal);
+      } catch (error) {
+        if (error.status !== 404) throw error;
+      }
+    }
+    const printing = await lookupCardById(card.scryfallId, signal);
+    if (printing) return printing;
+    return lookupCard(getLookupName(card.name), signal);
+  }
+
+  async function lookupAllPrintings(card, signal) {
+    const identity = await resolvePrintingIdentity(card, signal);
+    const oracleId = getOracleId(identity);
+    if (!oracleId) throw new Error("无法确定这张牌的 Oracle ID，不能加载版本");
+    if (card.oracleId !== oracleId) {
+      card.oracleId = oracleId;
+      saveState();
+    }
+    if (state.printingCache.has(oracleId)) return filterOraclePrintings(state.printingCache.get(oracleId), oracleId);
 
     let url = buildPrintingsUrl(oracleId);
     const printings = [];
+    const visitedPages = new Set();
     while (url) {
+      if (visitedPages.has(url)) throw new Error("Scryfall 返回了重复分页，版本加载已停止");
+      visitedPages.add(url);
       const page = await scryfallRequest(url, { signal });
-      printings.push(...(page.data || []).filter(isPaperPrinting));
+      printings.push(...filterOraclePrintings(page.data || [], oracleId));
       url = page.has_more ? page.next_page : null;
     }
     state.printingCache.set(oracleId, printings);
     return printings;
   }
 
-  async function refreshStalePrices() {
-    const targets = state.data.cards.filter((card) => needsPriceRefresh(card));
+  async function refreshStalePrices(force = false) {
+    if (state.refreshingPrices) return;
+    const targets = state.data.cards.filter((card) => force || needsPriceRefresh(card));
     if (!targets.length) return;
+    state.refreshingPrices = true;
+    renderStats();
     let updated = false;
     try {
       const uniqueTargets = [...new Map(targets.map((card) => [printingKey(card.set, card.collectorNumber), { setCode: card.set, collectorNumber: card.collectorNumber }])).values()];
@@ -369,19 +781,26 @@
         const samePrinting = current.scryfallId
           ? current.scryfallId === target.scryfallId
           : current.set === target.set && current.collectorNumber === target.collectorNumber;
-        if (samePrinting && needsPriceRefresh(current)) {
+        if (samePrinting && (force || needsPriceRefresh(current))) {
           state.data.cards[cardIndex] = replacePrinting(current, printing);
           updated = true;
         }
       });
     } catch (error) {
       // Price refresh is best-effort and should not block local use.
+      if (force) toast("价格更新失败", "暂时无法连接 Scryfall，请稍后重试", true);
+    } finally {
+      state.refreshingPrices = false;
     }
     if (updated) {
       state.data.cards = sortCards(state.data.cards);
       saveState();
       render();
+      if (force) toast("价格已更新", `已检查 ${targets.length} 张牌的最新价格`);
+      return;
     }
+    renderStats();
+    if (force) toast("价格已是最新", "当前牌表没有新的价格变化");
   }
 
   function printingImage(printing) {
@@ -448,7 +867,7 @@
     elements.printingStatus.classList.remove("hidden", "error");
     elements.printingStatus.textContent = "正在获取可用版本…";
     elements.printingCount.textContent = "0 个版本";
-    $("#printingDialogTitle").textContent = `${card.name} · 选择版本`;
+    $("#printingDialogTitle").textContent = `${cardDisplayName(card)} · 选择版本`;
     elements.printingDialog.showModal();
     try {
       const printings = await lookupAllPrintings(card, state.printingController.signal);
@@ -1037,6 +1456,10 @@
   }
 
   function bindEvents() {
+    elements.statsGrid.addEventListener("click", (event) => {
+      const button = event.target.closest("[data-refresh-prices]");
+      if (button) refreshStalePrices(true);
+    });
     $("#addCardBtn").addEventListener("click", () => { elements.addCardDialog.showModal(); setTimeout(() => (state.lookupMode === "printing" ? elements.setCodeInput : elements.cardNameInput).focus(), 20); });
     $("#addCardForm").addEventListener("submit", handleAddCard);
     elements.cardNameInput.addEventListener("input", clearNameResults);
@@ -1057,6 +1480,9 @@
     $("#backupBtn").addEventListener("click", downloadJsonBackup);
     $("#restoreBtn").addEventListener("click", () => elements.backupFileInput.click());
     elements.backupFileInput.addEventListener("change", (event) => restoreJsonBackup(event.target.files[0]));
+    elements.connectFolderBtn.addEventListener("click", connectCubeFolder);
+    elements.reloadFolderBtn.addEventListener("click", reloadFromDirectory);
+    elements.disconnectFolderBtn.addEventListener("click", () => disconnectDirectoryMode());
     $("#clearFiltersBtn").addEventListener("click", clearFilters);
     $("#mobileMenu").addEventListener("click", () => setSidebarOpen(!$(".sidebar").classList.contains("open")));
     $("#newCubeBtn").addEventListener("click", () => toast("即将支持", "多 Cube 管理已列入下一版"));
@@ -1083,6 +1509,7 @@
       });
       renderCards();
     }));
+    $$("[data-name-language]").forEach((button) => button.addEventListener("click", () => setNameLanguage(button.dataset.nameLanguage)));
     elements.cardGrid.addEventListener("click", (event) => {
       const finishButton = event.target.closest("[data-toggle-finish]");
       if (finishButton) {
@@ -1156,11 +1583,15 @@
     });
     bindTabKeyboard('[data-lookup-mode]');
     bindTabKeyboard('[data-import-mode]');
+    bindTabKeyboard('[data-name-language]');
     $$('[data-lookup-mode]').forEach((button) => { button.tabIndex = button.dataset.lookupMode === state.lookupMode ? 0 : -1; });
     $$('[data-import-mode]').forEach((button) => { button.tabIndex = button.dataset.importMode === state.importMode ? 0 : -1; });
+    $$('[data-name-language]').forEach((button) => { button.tabIndex = button.dataset.nameLanguage === state.nameLanguage ? 0 : -1; });
   }
 
   bindEvents();
   render();
+  renderStorageStatus();
+  restoreDirectoryMode();
   setTimeout(() => refreshStalePrices(), 450);
 })();

@@ -58,8 +58,26 @@
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12a8 8 0 1 0 3-6.2L4 8"/><path d="M4 3v5h5"/></svg>
             恢复备份
           </button>
+          <button class="quiet-button" id="connectFolderBtn">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7h6l2 2h10v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/><path d="M3 10h18"/></svg>
+            选择 Cube 文件夹
+          </button>
+          <button class="quiet-button hidden" id="reloadFolderBtn">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12a8 8 0 1 0 3-6.2L4 8"/><path d="M4 3v5h5"/></svg>
+            从文件夹重载
+          </button>
+          <button class="quiet-button hidden" id="disconnectFolderBtn">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 4H5a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h4"/><path d="M16 17l5-5-5-5"/><path d="M21 12H9"/></svg>
+            断开文件夹
+          </button>
           <input class="hidden" id="backupFileInput" type="file" accept="application/json,.json" />
-          <div class="storage-note"><span class="status-dot"></span><span>已保存在此浏览器</span></div>
+          <div class="storage-note" aria-live="polite">
+            <span class="status-dot"></span>
+            <span class="storage-copy">
+              <strong id="storageStatusLabel">已保存在此浏览器</strong>
+              <small id="storageStatusDetail">也可以切换到文件夹模式，随项目一起移动</small>
+            </span>
+          </div>
         </div>
       </aside>
 
@@ -119,6 +137,11 @@
               <option value="foil">仅 Foil</option>
               <option value="nonfoil">仅 Non-Foil</option>
             </select>
+
+            <div class="language-toggle" id="nameLanguageToggle" aria-label="卡牌名语言">
+              <button class="active" data-name-language="en" title="显示英文卡牌名" aria-pressed="true">EN</button>
+              <button data-name-language="zh" title="显示中文卡牌名" aria-pressed="false">中</button>
+            </div>
 
             <div class="view-toggle" aria-label="显示模式">
               <button class="active" data-mode="grid" title="网格视图" aria-pressed="true">

@@ -21,6 +21,50 @@
       });
   }
 
+  function normalizeOracleId(value) {
+    const oracleId = String(value || "").trim().toLocaleLowerCase();
+    return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(oracleId) ? oracleId : "";
+  }
+
+  function getOracleId(card) {
+    const directId = normalizeOracleId(card && (card.oracleId || card.oracle_id));
+    if (directId) return directId;
+    const faces = Array.isArray(card && card.card_faces) ? card.card_faces : [];
+    for (const face of faces) {
+      const faceId = normalizeOracleId(face && (face.oracleId || face.oracle_id));
+      if (faceId) return faceId;
+    }
+    return "";
+  }
+
+  function normalizeLocalizedNames(card) {
+    const source = card && typeof card === "object" ? card : {};
+    const rawNames = source.localizedNames || source.localized_names || {};
+    const names = {};
+    const storeName = (lang, name, englishName = "") => {
+      const normalizedLang = String(lang || "").trim().toLocaleLowerCase();
+      const normalizedName = getFrontDisplayName(name);
+      const normalizedEnglishName = getFrontDisplayName(englishName);
+      if ((normalizedLang === "zhs" || normalizedLang === "zht") && normalizedName && normalizedName !== normalizedEnglishName) names[normalizedLang] = normalizedName;
+    };
+    if (rawNames && typeof rawNames === "object" && !Array.isArray(rawNames)) {
+      Object.entries(rawNames).forEach(([lang, name]) => {
+        storeName(lang, name, source.name);
+      });
+    }
+    const printedLang = String(source.lang || "").trim().toLocaleLowerCase();
+    storeName(printedLang, source.printedName || source.printed_name, source.name);
+    const faces = Array.isArray(source.card_faces) ? source.card_faces : (Array.isArray(source.cardFaces) ? source.cardFaces : []);
+    const frontFace = faces[0] || {};
+    storeName(printedLang, frontFace.printedName || frontFace.printed_name, frontFace.name);
+    return names;
+  }
+
+  function getPreferredLocalizedName(card) {
+    const names = normalizeLocalizedNames(card);
+    return names.zhs || names.zht || "";
+  }
+
   function normalizeScryfallCard(card) {
     const face = card.card_faces && card.card_faces[0];
     const imageUris = card.image_uris || (face && face.image_uris) || {};
@@ -30,8 +74,9 @@
     return {
       id: `${card.id || cryptoId()}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
       scryfallId: card.id || "",
-      oracleId: card.oracle_id || "",
+      oracleId: getOracleId(card),
       name: card.name,
+      localizedNames: normalizeLocalizedNames(card),
       manaCost: card.mana_cost || (face && face.mana_cost) || "",
       cmc: Number(card.cmc) || 0,
       colors: card.colors || (face && face.colors) || [],
@@ -185,11 +230,26 @@
   }
 
   function buildPrintingsUrl(oracleId) {
-    return `https://api.scryfall.com/cards/search?q=${encodeURIComponent(`oracleid:${oracleId} game:paper`)}&unique=prints&order=released&dir=desc`;
+    const normalizedId = normalizeOracleId(oracleId);
+    if (!normalizedId) throw new Error("无法确定这张牌的 Oracle ID");
+    return `https://api.scryfall.com/cards/search?q=${encodeURIComponent(`oracleid:${normalizedId} game:paper`)}&unique=prints&order=released&dir=desc`;
+  }
+
+  function buildLocalizedNameSearchUrl(oracleId, lang = "zhs") {
+    const normalizedId = normalizeOracleId(oracleId);
+    if (!normalizedId) throw new Error("无法确定这张牌的 Oracle ID");
+    const normalizedLang = lang === "zht" ? "zht" : "zhs";
+    return `https://api.scryfall.com/cards/search?q=${encodeURIComponent(`oracleid:${normalizedId} lang:${normalizedLang} game:paper`)}&unique=prints&order=released&dir=desc`;
   }
 
   function isPaperPrinting(printing) {
     return Boolean(printing && printing.digital !== true && Array.isArray(printing.games) && printing.games.includes("paper"));
+  }
+
+  function filterOraclePrintings(printings, oracleId) {
+    const normalizedId = normalizeOracleId(oracleId);
+    if (!normalizedId) return [];
+    return printings.filter((printing) => isPaperPrinting(printing) && getOracleId(printing) === normalizedId);
   }
 
   function filterPrintings(printings, query) {
@@ -208,6 +268,10 @@
       ...normalized,
       id: currentCard.id,
       addedAt: currentCard.addedAt,
+      localizedNames: {
+        ...normalizeLocalizedNames(currentCard),
+        ...normalizeLocalizedNames(normalized)
+      },
       finish: chooseValidFinish(normalized, currentCard.finish)
     };
   }
@@ -233,6 +297,16 @@
 
   function normalizeCardName(name) {
     return String(name || "").normalize("NFKC").toLocaleLowerCase().replace(/[’‘]/g, "'").replace(/\s+/g, " ").trim();
+  }
+
+  function getFrontDisplayName(name) {
+    const value = String(name || "").trim();
+    if (!value) return "";
+    return value.split(/\s*\/\/\s*/, 1)[0].trim() || value;
+  }
+
+  function getLookupName(name) {
+    return getFrontDisplayName(name);
   }
 
   function prepareTextImportRows(names, existingNames = []) {
@@ -302,5 +376,5 @@
     };
   }
 
-  return { COLOR_ORDER, SORT_ORDER, PRICE_TTL_MS, parseDecklist, normalizeFinish, parseFinish, getAvailableFinishes, chooseValidFinish, normalizeScryfallCard, getFrontColors, getFrontTypeLine, getUsdPrice, getPriceNumber, needsPriceRefresh, getColorBucket, getPrimaryType, isLandCard, getCardBucket, computeStats, filterCards, sortCards, buildCardNameSearchUrl, buildPrintingsUrl, isPaperPrinting, filterPrintings, replacePrinting, normalizeCardName, prepareTextImportRows, parseExcelRows, buildExcelRows, buildBackup, parseBackup };
+  return { COLOR_ORDER, SORT_ORDER, PRICE_TTL_MS, parseDecklist, normalizeFinish, parseFinish, getAvailableFinishes, chooseValidFinish, normalizeLocalizedNames, getPreferredLocalizedName, normalizeScryfallCard, getOracleId, getFrontColors, getFrontTypeLine, getUsdPrice, getPriceNumber, needsPriceRefresh, getColorBucket, getPrimaryType, isLandCard, getCardBucket, computeStats, filterCards, sortCards, buildCardNameSearchUrl, buildPrintingsUrl, buildLocalizedNameSearchUrl, isPaperPrinting, filterOraclePrintings, filterPrintings, replacePrinting, normalizeCardName, getFrontDisplayName, getLookupName, prepareTextImportRows, parseExcelRows, buildExcelRows, buildBackup, parseBackup };
 });

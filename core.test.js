@@ -1,6 +1,6 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { buildBackup, buildCardNameSearchUrl, buildExcelRows, buildPrintingsUrl, chooseValidFinish, computeStats, filterCards, filterPrintings, getAvailableFinishes, getCardBucket, getColorBucket, getFrontTypeLine, getPriceNumber, getUsdPrice, isLandCard, isPaperPrinting, needsPriceRefresh, normalizeCardName, normalizeFinish, normalizeScryfallCard, parseBackup, parseDecklist, parseExcelRows, prepareTextImportRows, replacePrinting, sortCards } = require("./core.js");
+const { buildBackup, buildCardNameSearchUrl, buildExcelRows, buildLocalizedNameSearchUrl, buildPrintingsUrl, chooseValidFinish, computeStats, filterCards, filterOraclePrintings, filterPrintings, getAvailableFinishes, getCardBucket, getColorBucket, getFrontDisplayName, getFrontTypeLine, getLookupName, getOracleId, getPreferredLocalizedName, getPriceNumber, getUsdPrice, isLandCard, isPaperPrinting, needsPriceRefresh, normalizeCardName, normalizeFinish, normalizeLocalizedNames, normalizeScryfallCard, parseBackup, parseDecklist, parseExcelRows, prepareTextImportRows, replacePrinting, sortCards } = require("./core.js");
 
 const cards = [
   { name: "Alpha", colors: ["W"], cmc: 1, typeLine: "Creature — Human", set: "TST" },
@@ -154,6 +154,49 @@ test("finish helpers respect the selected printing's availability", () => {
   assert.equal(replaced.finish, "foil");
 });
 
+test("localized name helpers store Chinese printed card names", () => {
+  const card = normalizeScryfallCard({
+    id: "bolt-zhs",
+    oracle_id: "4457ed35-7c10-48c8-9776-456485fdf070",
+    name: "Lightning Bolt",
+    printed_name: "闪电击",
+    lang: "zhs",
+    set: "2x2",
+    collector_number: "361",
+    type_line: "Instant"
+  });
+  assert.deepEqual(card.localizedNames, { zhs: "闪电击" });
+  assert.equal(getPreferredLocalizedName(card), "闪电击");
+  assert.deepEqual(normalizeLocalizedNames({ localized_names: { zhs: " 简中名 ", ja: "ignored" }, printed_name: "繁中名", lang: "zht" }), { zhs: "简中名", zht: "繁中名" });
+  const pathway = normalizeScryfallCard({
+    id: "pathway-zhs",
+    oracle_id: "a8394cfa-580d-4b09-9f8d-7bcd7e4c89a6",
+    name: "Barkchannel Pathway // Tidechannel Pathway",
+    lang: "zhs",
+    card_faces: [
+      { name: "Barkchannel Pathway", printed_name: "树渠通路", type_line: "Land", colors: [] },
+      { name: "Tidechannel Pathway", printed_name: "潮渠通路", type_line: "Land", colors: [] }
+    ],
+    set: "znr",
+    collector_number: "260",
+    type_line: "Land // Land"
+  });
+  assert.deepEqual(pathway.localizedNames, { zhs: "树渠通路" });
+  assert.equal(getPreferredLocalizedName(pathway), "树渠通路");
+  assert.deepEqual(normalizeLocalizedNames({
+    name: "Treasure Map // Treasure Cove",
+    lang: "zhs",
+    card_faces: [{ name: "Treasure Map", printed_name: "Treasure Map" }]
+  }), {});
+});
+
+test("replacePrinting preserves cached localized names", () => {
+  const current = { id: "cube-card", addedAt: "2026-01-01T00:00:00.000Z", name: "Lightning Bolt", localizedNames: { zhs: "闪电击" }, finish: "foil" };
+  const replaced = replacePrinting(current, { id: "new-printing", name: "Lightning Bolt", set: "clu", collector_number: "141", type_line: "Instant", finishes: ["foil", "nonfoil"] });
+  assert.equal(replaced.id, "cube-card");
+  assert.deepEqual(replaced.localizedNames, { zhs: "闪电击" });
+});
+
 test("prices refresh when missing or older than 24 hours", () => {
   const now = Date.parse("2026-06-22T12:00:00.000Z");
   assert.equal(needsPriceRefresh({ set: "TST", collectorNumber: "1" }, now), true);
@@ -163,18 +206,23 @@ test("prices refresh when missing or older than 24 hours", () => {
 });
 
 test("printing helpers build, filter, and replace versions safely", () => {
+  const oracleId = "0bfa4512-e35a-4c93-b324-80ec659f5a97";
   assert.match(decodeURIComponent(buildCardNameSearchUrl("Elspeth")), /name:Elspeth game:paper/);
   assert.match(buildCardNameSearchUrl("Elspeth"), /unique=cards.*order=name/);
-  assert.match(buildPrintingsUrl("oracle-id"), /oracleid%3Aoracle-id.*unique=prints/);
-  assert.match(decodeURIComponent(buildPrintingsUrl("oracle-id")), /game:paper/);
+  assert.match(buildPrintingsUrl(oracleId), new RegExp(`oracleid%3A${oracleId}.*unique=prints`));
+  assert.match(decodeURIComponent(buildPrintingsUrl(oracleId)), /game:paper/);
+  assert.match(decodeURIComponent(buildLocalizedNameSearchUrl(oracleId, "zht")), new RegExp(`oracleid:${oracleId} lang:zht game:paper`));
+  assert.throws(() => buildPrintingsUrl(null), /Oracle ID/);
   const printings = [
-    { id: "alpha", name: "Black Vise", set: "lea", set_name: "Limited Edition Alpha", collector_number: "233", type_line: "Artifact", games: ["paper"], digital: false },
-    { id: "beta", name: "Black Vise", set: "leb", set_name: "Limited Edition Beta", collector_number: "234", type_line: "Artifact", games: ["paper", "mtgo"], digital: false },
-    { id: "digital", name: "Black Vise", set: "ana", set_name: "Arena", collector_number: "1", type_line: "Artifact", games: ["arena"], digital: true }
+    { id: "alpha", oracle_id: oracleId, name: "Black Vise", set: "lea", set_name: "Limited Edition Alpha", collector_number: "233", type_line: "Artifact", games: ["paper"], digital: false },
+    { id: "beta", oracle_id: oracleId, name: "Black Vise", set: "leb", set_name: "Limited Edition Beta", collector_number: "234", type_line: "Artifact", games: ["paper", "mtgo"], digital: false },
+    { id: "other", oracle_id: "b817bc56-9b4d-4c50-bafa-3c652b99578f", name: "Other", set: "tst", set_name: "Other Set", collector_number: "1", type_line: "Creature", games: ["paper"], digital: false },
+    { id: "digital", oracle_id: oracleId, name: "Black Vise", set: "ana", set_name: "Arena", collector_number: "1", type_line: "Artifact", games: ["arena"], digital: true }
   ];
   assert.equal(isPaperPrinting(printings[0]), true);
-  assert.equal(isPaperPrinting(printings[2]), false);
-  assert.deepEqual(filterPrintings(printings, "").map((card) => card.id), ["alpha", "beta"]);
+  assert.equal(isPaperPrinting(printings[3]), false);
+  assert.deepEqual(filterOraclePrintings(printings, oracleId).map((card) => card.id), ["alpha", "beta"]);
+  assert.deepEqual(filterPrintings(printings, "").map((card) => card.id), ["alpha", "beta", "other"]);
   assert.deepEqual(filterPrintings(printings, "LEA").map((card) => card.id), ["alpha"]);
   assert.deepEqual(filterPrintings(printings, "234").map((card) => card.id), ["beta"]);
   const replaced = replacePrinting({ id: "cube-card", addedAt: "saved-date", finish: "nonfoil" }, printings[1]);
@@ -184,6 +232,28 @@ test("printing helpers build, filter, and replace versions safely", () => {
   assert.equal(replaced.set, "LEB");
   assert.equal(replaced.collectorNumber, "234");
   assert.equal(replaced.finish, "nonfoil");
+});
+
+test("reversible paper cards use the front face Oracle ID", () => {
+  const oracleId = "0bfa4512-e35a-4c93-b324-80ec659f5a97";
+  const reversible = {
+    id: "82fa24fb-aecc-4c33-9e79-c29651ddafbe",
+    name: "Ulamog, the Ceaseless Hunger // Ulamog, the Ceaseless Hunger",
+    oracle_id: null,
+    layout: "reversible_card",
+    set: "sld",
+    collector_number: "1122",
+    games: ["paper"],
+    digital: false,
+    card_faces: [
+      { name: "Ulamog, the Ceaseless Hunger", oracle_id: oracleId },
+      { name: "Ulamog, the Ceaseless Hunger", oracle_id: oracleId }
+    ]
+  };
+  assert.equal(getOracleId(reversible), oracleId);
+  assert.equal(normalizeScryfallCard(reversible).oracleId, oracleId);
+  assert.deepEqual(filterOraclePrintings([reversible], oracleId), [reversible]);
+  assert.equal(getOracleId({ oracleId: "undefined" }), "");
 });
 
 test("parseExcelRows detects headers and keeps identifiers as text", () => {
@@ -197,6 +267,11 @@ test("parseExcelRows detects headers and keeps identifiers as text", () => {
     { rowNumber: 3, setCode: "2X2", collectorNumber: "361", expectedName: "Lightning Bolt", finish: "foil" }
   ]);
   assert.equal(normalizeCardName("  Urza’s   Saga "), "urza's saga");
+  assert.equal(getLookupName("Ulamog, the Ceaseless Hunger // Ulamog, the Ceaseless Hunger"), "Ulamog, the Ceaseless Hunger");
+  assert.equal(getLookupName("Lightning Bolt"), "Lightning Bolt");
+  assert.equal(getFrontDisplayName("Treasure Map // Treasure Cove"), "Treasure Map");
+  assert.equal(getFrontDisplayName("Barkchannel Pathway//Tidechannel Pathway"), "Barkchannel Pathway");
+  assert.equal(getFrontDisplayName("藏宝图 // 宝藏海湾"), "藏宝图");
 });
 
 test("buildExcelRows exports a re-importable table with finish and price", () => {

@@ -18,4 +18,7 @@ test("key interactive regions expose accessible state", () => {
   assert.match(html, /id="resultCount"[^>]+aria-live="polite"/);
   assert.match(html, /data-color="all"[^>]+aria-pressed="true"/);
   assert.match(html, /data-mode="grid"[^>]+aria-pressed="true"/);
+  assert.match(html, /id="connectFolderBtn"/);
+  assert.match(html, /id="storageStatusLabel"/);
+  assert.match(html, /class="storage-note"[^>]+aria-live="polite"/);
 });
