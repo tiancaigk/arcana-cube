@@ -109,47 +109,49 @@
               <kbd>⌘ K</kbd>
             </label>
 
-            <div class="color-filters" id="colorFilters" aria-label="按颜色筛选">
-              <button class="color-filter active" data-color="all" aria-pressed="true">全部</button>
-              <button class="mana white" data-color="W" title="白色" aria-pressed="false">W</button>
-              <button class="mana blue" data-color="U" title="蓝色" aria-pressed="false">U</button>
-              <button class="mana black" data-color="B" title="黑色" aria-pressed="false">B</button>
-              <button class="mana red" data-color="R" title="红色" aria-pressed="false">R</button>
-              <button class="mana green" data-color="G" title="绿色" aria-pressed="false">G</button>
-              <button class="mana colorless" data-color="C" title="无色" aria-pressed="false">C</button>
-              <button class="mana multi" data-color="M" title="多色" aria-pressed="false">M</button>
-              <button class="mana land" data-color="L" title="地牌" aria-pressed="false">L</button>
-            </div>
+            <div class="toolbar-controls">
+              <div class="color-filters" id="colorFilters" aria-label="按颜色筛选">
+                <button class="color-filter active" data-color="all" aria-pressed="true">全部</button>
+                <button class="mana white" data-color="W" title="白色" aria-pressed="false">W</button>
+                <button class="mana blue" data-color="U" title="蓝色" aria-pressed="false">U</button>
+                <button class="mana black" data-color="B" title="黑色" aria-pressed="false">B</button>
+                <button class="mana red" data-color="R" title="红色" aria-pressed="false">R</button>
+                <button class="mana green" data-color="G" title="绿色" aria-pressed="false">G</button>
+                <button class="mana colorless" data-color="C" title="无色" aria-pressed="false">C</button>
+                <button class="mana multi" data-color="M" title="多色" aria-pressed="false">M</button>
+                <button class="mana land" data-color="L" title="地牌" aria-pressed="false">L</button>
+              </div>
 
-            <select id="typeFilter" aria-label="按类型筛选">
-              <option value="all">全部类型</option>
-              <option value="Creature">生物</option>
-              <option value="Instant">瞬间</option>
-              <option value="Sorcery">法术</option>
-              <option value="Artifact">神器</option>
-              <option value="Enchantment">结界</option>
-              <option value="Planeswalker">鹏洛客</option>
-              <option value="Land">地</option>
-            </select>
+              <select id="typeFilter" aria-label="按类型筛选">
+                <option value="all">全部类型</option>
+                <option value="Creature">生物</option>
+                <option value="Instant">瞬间</option>
+                <option value="Sorcery">法术</option>
+                <option value="Artifact">神器</option>
+                <option value="Enchantment">结界</option>
+                <option value="Planeswalker">鹏洛客</option>
+                <option value="Land">地</option>
+              </select>
 
-            <select id="finishFilter" aria-label="按闪卡状态筛选">
-              <option value="all">全部 Finish</option>
-              <option value="foil">仅 Foil</option>
-              <option value="nonfoil">仅 Non-Foil</option>
-            </select>
+              <select id="finishFilter" aria-label="按闪卡状态筛选">
+                <option value="all">全部 Finish</option>
+                <option value="foil">仅 Foil</option>
+                <option value="nonfoil">仅 Non-Foil</option>
+              </select>
 
-            <div class="language-toggle" id="nameLanguageToggle" aria-label="卡牌名语言">
-              <button class="active" data-name-language="en" title="显示英文卡牌名" aria-pressed="true">EN</button>
-              <button data-name-language="zh" title="显示中文卡牌名" aria-pressed="false">中</button>
-            </div>
+              <div class="language-toggle" id="nameLanguageToggle" aria-label="卡牌名语言">
+                <button class="active" data-name-language="en" title="显示英文卡牌名" aria-pressed="true">EN</button>
+                <button data-name-language="zh" title="显示中文卡牌名" aria-pressed="false">中</button>
+              </div>
 
-            <div class="view-toggle" aria-label="显示模式">
-              <button class="active" data-mode="grid" title="网格视图" aria-pressed="true">
-                <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="6" height="6"/><rect x="14" y="4" width="6" height="6"/><rect x="4" y="14" width="6" height="6"/><rect x="14" y="14" width="6" height="6"/></svg>
-              </button>
-              <button data-mode="list" title="列表视图" aria-pressed="false">
-                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 6h12M8 12h12M8 18h12M4 6h.01M4 12h.01M4 18h.01"/></svg>
-              </button>
+              <div class="view-toggle" aria-label="显示模式">
+                <button class="active" data-mode="grid" title="网格视图" aria-pressed="true">
+                  <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="6" height="6"/><rect x="14" y="4" width="6" height="6"/><rect x="4" y="14" width="6" height="6"/><rect x="14" y="14" width="6" height="6"/></svg>
+                </button>
+                <button data-mode="list" title="列表视图" aria-pressed="false">
+                  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 6h12M8 12h12M8 18h12M4 6h.01M4 12h.01M4 18h.01"/></svg>
+                </button>
+              </div>
             </div>
           </div>
 
