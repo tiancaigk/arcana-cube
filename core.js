@@ -97,6 +97,7 @@
       priceUpdatedAt: new Date().toISOString(),
       finishes,
       finish: chooseValidFinish({ finishes }, "foil"),
+      JapanPrint: false,
       addedAt: new Date().toISOString()
     };
   }
@@ -113,6 +114,11 @@
   function parseFinish(value) {
     const normalized = String(value || "").toLocaleLowerCase().replace(/[\s_-]+/g, "");
     return normalized === "nonfoil" || normalized === "非闪" ? "nonfoil" : "foil";
+  }
+
+  function parseJapanPrint(value) {
+    const normalized = String(value ?? "").trim().toLocaleLowerCase().replace(/[\s_-]+/g, "");
+    return normalized === "true" || normalized === "yes" || normalized === "y" || normalized === "1" || normalized === "日印" || normalized === "是";
   }
 
   function getAvailableFinishes(card) {
@@ -201,8 +207,9 @@
       const matchesColor = !filters.color || filters.color === "all" || bucket === filters.color;
       const matchesType = !filters.type || filters.type === "all" || (filters.type === "Land" ? isLandCard(card) : getPrimaryType(getFrontTypeLine(card)) === filters.type);
       const matchesFinish = !filters.finish || filters.finish === "all" || normalizeFinish(card.finish) === filters.finish;
+      const matchesJapanPrint = !filters.japanPrint || filters.japanPrint === "all" || (filters.japanPrint === "japan" ? card.JapanPrint === true : card.JapanPrint !== true);
       const haystack = `${card.name} ${getFrontTypeLine(card)} ${card.set}`.toLocaleLowerCase();
-      return matchesColor && matchesType && matchesFinish && (!query || haystack.includes(query));
+      return matchesColor && matchesType && matchesFinish && matchesJapanPrint && (!query || haystack.includes(query));
     });
   }
 
@@ -272,6 +279,7 @@
         ...normalizeLocalizedNames(currentCard),
         ...normalizeLocalizedNames(normalized)
       },
+      JapanPrint: currentCard.JapanPrint === true,
       finish: chooseValidFinish(normalized, currentCard.finish)
     };
   }
@@ -337,19 +345,21 @@
       setCode: String(row[0] ?? "").trim().toUpperCase(),
       collectorNumber: String(row[1] ?? "").trim(),
       expectedName: String(row[2] ?? "").trim(),
-      finish: parseFinish(row[3])
+      finish: parseFinish(row[3]),
+      JapanPrint: parseJapanPrint(row[5])
     })).filter((row) => row.setCode || row.collectorNumber || row.expectedName);
   }
 
   function buildExcelRows(cards) {
     return [
-      ["系列", "编号", "卡牌名称", "闪卡状态", "美元价格"],
+      ["系列", "编号", "卡牌名称", "闪卡状态", "美元价格", "日印"],
       ...cards.map((card) => [
         card.set || "",
         card.collectorNumber || "",
         card.name || "",
         normalizeFinish(card.finish) === "foil" ? "Foil" : "Non-Foil",
-        getUsdPrice(card, card.finish) || ""
+        getUsdPrice(card, card.finish) || "",
+        card.JapanPrint === true ? "是" : ""
       ])
     ];
   }
@@ -376,5 +386,5 @@
     };
   }
 
-  return { COLOR_ORDER, SORT_ORDER, PRICE_TTL_MS, parseDecklist, normalizeFinish, parseFinish, getAvailableFinishes, chooseValidFinish, normalizeLocalizedNames, getPreferredLocalizedName, normalizeScryfallCard, getOracleId, getFrontColors, getFrontTypeLine, getUsdPrice, getPriceNumber, needsPriceRefresh, getColorBucket, getPrimaryType, isLandCard, getCardBucket, computeStats, filterCards, sortCards, buildCardNameSearchUrl, buildPrintingsUrl, buildLocalizedNameSearchUrl, isPaperPrinting, filterOraclePrintings, filterPrintings, replacePrinting, normalizeCardName, getFrontDisplayName, getLookupName, prepareTextImportRows, parseExcelRows, buildExcelRows, buildBackup, parseBackup };
+  return { COLOR_ORDER, SORT_ORDER, PRICE_TTL_MS, parseDecklist, normalizeFinish, parseFinish, parseJapanPrint, getAvailableFinishes, chooseValidFinish, normalizeLocalizedNames, getPreferredLocalizedName, normalizeScryfallCard, getOracleId, getFrontColors, getFrontTypeLine, getUsdPrice, getPriceNumber, needsPriceRefresh, getColorBucket, getPrimaryType, isLandCard, getCardBucket, computeStats, filterCards, sortCards, buildCardNameSearchUrl, buildPrintingsUrl, buildLocalizedNameSearchUrl, isPaperPrinting, filterOraclePrintings, filterPrintings, replacePrinting, normalizeCardName, getFrontDisplayName, getLookupName, prepareTextImportRows, parseExcelRows, buildExcelRows, buildBackup, parseBackup };
 });

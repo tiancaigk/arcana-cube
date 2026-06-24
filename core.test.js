@@ -56,6 +56,16 @@ test("filterCards combines finish with the other filters", () => {
   assert.deepEqual(filterCards(sample, { query: "", color: "all", type: "all", finish: "foil" }).map((card) => card.name), ["Foil Bolt", "Legacy Foil"]);
 });
 
+test("filterCards combines JapanPrint with the other filters", () => {
+  const sample = [
+    { name: "Japanese Bolt", colors: ["R"], typeLine: "Instant", JapanPrint: true },
+    { name: "Regular Bolt", colors: ["R"], typeLine: "Instant", JapanPrint: false },
+    { name: "Legacy Bolt", colors: ["R"], typeLine: "Instant" }
+  ];
+  assert.deepEqual(filterCards(sample, { query: "bolt", color: "R", type: "Instant", japanPrint: "japan" }).map((card) => card.name), ["Japanese Bolt"]);
+  assert.deepEqual(filterCards(sample, { query: "", color: "all", type: "all", japanPrint: "nonjapan" }).map((card) => card.name), ["Regular Bolt", "Legacy Bolt"]);
+});
+
 test("getColorBucket recognizes multicolor and colorless", () => {
   assert.equal(getColorBucket(cards[1]), "M");
   assert.equal(getColorBucket(cards[2]), "C");
@@ -263,8 +273,8 @@ test("parseExcelRows detects headers and keeps identifiers as text", () => {
     ["2X2", 361, "Lightning Bolt"],
     ["", "", ""]
   ]), [
-    { rowNumber: 2, setCode: "LEA", collectorNumber: "001", expectedName: "Black Vise", finish: "foil" },
-    { rowNumber: 3, setCode: "2X2", collectorNumber: "361", expectedName: "Lightning Bolt", finish: "foil" }
+    { rowNumber: 2, setCode: "LEA", collectorNumber: "001", expectedName: "Black Vise", finish: "foil", JapanPrint: false },
+    { rowNumber: 3, setCode: "2X2", collectorNumber: "361", expectedName: "Lightning Bolt", finish: "foil", JapanPrint: false }
   ]);
   assert.equal(normalizeCardName("  Urza’s   Saga "), "urza's saga");
   assert.equal(getLookupName("Ulamog, the Ceaseless Hunger // Ulamog, the Ceaseless Hunger"), "Ulamog, the Ceaseless Hunger");
@@ -276,15 +286,15 @@ test("parseExcelRows detects headers and keeps identifiers as text", () => {
 
 test("buildExcelRows exports a re-importable table with finish and price", () => {
   const rows = buildExcelRows([
-    { set: "XLN", collectorNumber: "250", name: "Treasure Map // Treasure Cove", finish: "foil", prices: { usd: "0.55", usdFoil: "0.73" } },
+    { set: "XLN", collectorNumber: "250", name: "Treasure Map // Treasure Cove", finish: "foil", JapanPrint: true, prices: { usd: "0.55", usdFoil: "0.73" } },
     { set: "LEA", collectorNumber: "233", name: "Black Vise", finish: "nonfoil", prices: { usd: "25.00", usdFoil: "" } }
   ]);
-  assert.deepEqual(rows[0], ["系列", "编号", "卡牌名称", "闪卡状态", "美元价格"]);
-  assert.deepEqual(rows[1], ["XLN", "250", "Treasure Map // Treasure Cove", "Foil", "0.73"]);
-  assert.deepEqual(rows[2], ["LEA", "233", "Black Vise", "Non-Foil", "25.00"]);
-  assert.deepEqual(parseExcelRows(rows).map(({ setCode, collectorNumber, expectedName, finish }) => ({ setCode, collectorNumber, expectedName, finish })), [
-    { setCode: "XLN", collectorNumber: "250", expectedName: "Treasure Map // Treasure Cove", finish: "foil" },
-    { setCode: "LEA", collectorNumber: "233", expectedName: "Black Vise", finish: "nonfoil" }
+  assert.deepEqual(rows[0], ["系列", "编号", "卡牌名称", "闪卡状态", "美元价格", "日印"]);
+  assert.deepEqual(rows[1], ["XLN", "250", "Treasure Map // Treasure Cove", "Foil", "0.73", "是"]);
+  assert.deepEqual(rows[2], ["LEA", "233", "Black Vise", "Non-Foil", "25.00", ""]);
+  assert.deepEqual(parseExcelRows(rows).map(({ setCode, collectorNumber, expectedName, finish, JapanPrint }) => ({ setCode, collectorNumber, expectedName, finish, JapanPrint })), [
+    { setCode: "XLN", collectorNumber: "250", expectedName: "Treasure Map // Treasure Cove", finish: "foil", JapanPrint: true },
+    { setCode: "LEA", collectorNumber: "233", expectedName: "Black Vise", finish: "nonfoil", JapanPrint: false }
   ]);
 });
 

@@ -161,7 +161,12 @@ select { height: 40px; min-width: 126px; padding: 0 30px 0 12px; border: 1px sol
 .card-item:hover .remove-card { opacity: 1; }
 .remove-card:focus-visible { opacity: 1; }
 .card-info { min-height: 76px; display: grid; grid-template-rows: auto auto auto; gap: 5px; padding: 10px 3px 0; }
-.card-name-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 8px; }
+.card-name-row { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 7px; }
+.japan-print-toggle { width: 12px; height: 12px; display: grid; place-items: center; padding: 0; border: 0; border-radius: 50%; background: transparent; color: var(--muted-2); }
+.japan-print-toggle span { width: 8px; height: 8px; display: block; border: 1px solid currentColor; border-radius: 50%; background: transparent; transition: background .16s ease, border-color .16s ease, box-shadow .16s ease; }
+.japan-print-toggle.active { color: var(--accent); }
+.japan-print-toggle.active span { background: currentColor; box-shadow: 0 0 9px rgba(217,181,111,.24); }
+.japan-print-toggle:hover { color: var(--accent-bright); }
 .card-name { overflow: hidden; color: #dedbd3; font-size: 11px; font-weight: 500; line-height: 1.35; text-overflow: ellipsis; white-space: nowrap; }
 .card-cost { flex: none; color: var(--accent); font: 400 8px/1.5 "DM Mono", monospace; }
 .card-meta { min-width: 0; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 8px; color: var(--muted-2); font: 400 8px/1 "DM Mono", monospace; text-transform: uppercase; }
@@ -191,8 +196,10 @@ select { height: 40px; min-width: 126px; padding: 0 30px 0 12px; border: 1px sol
 .list-mode .card-item:last-child { border-bottom: 0; }
 .list-mode .card-item:hover { background: rgba(217,181,111,.055); }
 .list-mode .card-image-wrap { display: none; }
-.list-mode .card-info { min-height: 0; display: grid; grid-column: 2; grid-row: 1; grid-template-columns: minmax(190px, 1.7fr) 58px minmax(120px, .95fr) 56px minmax(170px, 1.15fr) 78px; grid-template-rows: 1fr; align-items: center; gap: 12px; padding: 7px 8px 7px 4px; }
+.list-mode .card-info { min-height: 0; display: grid; grid-column: 2; grid-row: 1; grid-template-columns: 18px minmax(190px, 1.7fr) 58px minmax(120px, .95fr) 56px minmax(170px, 1.15fr) 78px; grid-template-rows: 1fr; align-items: center; gap: 12px; padding: 7px 8px 7px 4px; }
 .list-mode .card-name-row, .list-mode .card-meta { display: contents; }
+.list-mode .japan-print-toggle { justify-self: center; width: 14px; height: 14px; }
+.list-mode .japan-print-toggle span { width: 9px; height: 9px; }
 .list-mode .card-name { min-width: 0; color: var(--text); font-size: 12px; line-height: 1.2; }
 .list-mode .card-cost { justify-self: end; color: var(--accent); font-size: 9px; line-height: 1; white-space: nowrap; }
 .list-mode .card-meta { margin-top: 0; }

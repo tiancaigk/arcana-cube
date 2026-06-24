@@ -67,7 +67,7 @@
       loaded.cards = normalizeStoredCards(loaded.cards || []);
       return loaded;
     })(),
-    filters: { query: "", color: "all", type: "all", finish: "all" },
+    filters: { query: "", color: "all", type: "all", finish: "all", japanPrint: "all" },
     mode: "grid",
     nameLanguage: loadNameLanguage(),
     nameLocalization: {
@@ -106,7 +106,7 @@
 
   const elements = {
     statsGrid: $("#statsGrid"), cardGrid: $("#cardGrid"), resultCount: $("#resultCount"),
-    emptyState: $("#emptyState"), searchInput: $("#searchInput"), typeFilter: $("#typeFilter"), finishFilter: $("#finishFilter"),
+    emptyState: $("#emptyState"), searchInput: $("#searchInput"), typeFilter: $("#typeFilter"), finishFilter: $("#finishFilter"), japanPrintFilter: $("#japanPrintFilter"),
     collectionView: $("#collectionView"), analyticsView: $("#analyticsView"),
     addCardDialog: $("#addCardDialog"), importDialog: $("#importDialog"), editCubeDialog: $("#editCubeDialog"),
     toastRegion: $("#toastRegion"), cardNameInput: $("#cardNameInput"), lookupButton: $("#lookupButton"),
@@ -147,7 +147,8 @@
       frontColors: getFrontColors(card),
       frontTypeLine: getFrontTypeLine(card),
       finishes: getAvailableFinishes(card),
-      finish: chooseValidFinish(card, card.finish)
+      finish: chooseValidFinish(card, card.finish),
+      JapanPrint: card.JapanPrint === true
     })));
   }
 
@@ -422,6 +423,7 @@
     const cardImage = $(".card-image", node);
     const finishButton = $("[data-toggle-finish]", node);
     const printingButton = $("[data-change-printing]", node);
+    const japanPrintButton = $("[data-toggle-japan-print]", node);
     const removeButton = $("[data-remove]", node);
     if (fallbackName) fallbackName.textContent = displayName;
     if (cardName) {
@@ -431,6 +433,11 @@
     if (cardImage) cardImage.alt = displayName;
     if (finishButton && !finishButton.disabled) finishButton.title = `切换 ${displayName} 的 Foil 状态`;
     if (printingButton) printingButton.title = `选择 ${displayName} 的其他版本`;
+    if (japanPrintButton) {
+      const marked = japanPrintButton.getAttribute("aria-pressed") === "true";
+      japanPrintButton.title = marked ? "取消日印标记" : "标记为日印";
+      japanPrintButton.setAttribute("aria-label", marked ? `取消 ${displayName} 的日印标记` : `标记 ${displayName} 为日印`);
+    }
     if (removeButton) removeButton.setAttribute("aria-label", `移除 ${displayName}`);
   }
 
@@ -594,6 +601,7 @@
     if (state.filters.color !== "all") labels.push(`颜色：${colorLabel(state.filters.color)}`);
     if (state.filters.type !== "all") labels.push(`类型：${typeLabel(state.filters.type)}`);
     if (state.filters.finish !== "all") labels.push(`Finish：${state.filters.finish === "foil" ? "仅 Foil" : "仅 Non-Foil"}`);
+    if (state.filters.japanPrint !== "all") labels.push(`日印：${state.filters.japanPrint === "japan" ? "日印" : "非日印"}`);
     if (state.filters.query) labels.push(`搜索：“${state.filters.query}”`);
     $("#activeFilterText").textContent = labels.join(" · ") || "按颜色与类型整理";
   }
@@ -613,13 +621,14 @@
     const finishDisabled = availableFinishes.length < 2;
     const price = formatUsd(cardPrice(card));
     const displayName = cardDisplayName(card);
+    const japanPrint = card.JapanPrint === true;
     return `<article class="card-item" data-id="${escapeHtml(card.id)}" data-finish="${finish}" style="animation-delay:${Math.min(index * 18, 220)}ms">
       <div class="card-image-wrap">
         <div class="card-fallback"><span class="fallback-name">${escapeHtml(displayName)}</span><span class="fallback-type">${escapeHtml(card.typeLine)}</span></div>
         ${card.image ? `<img class="card-image" src="${escapeHtml(card.image)}" alt="${escapeHtml(displayName)}" loading="lazy" />` : ""}
       </div>
       <div class="card-info">
-        <div class="card-name-row"><span class="card-name" title="${escapeHtml(displayName)}">${escapeHtml(displayName)}</span><span class="card-cost">${escapeHtml(cost)}</span></div>
+        <div class="card-name-row"><button class="japan-print-toggle${japanPrint ? " active" : ""}" data-toggle-japan-print="${escapeHtml(card.id)}" title="${japanPrint ? "取消日印标记" : "标记为日印"}" aria-label="${japanPrint ? `取消 ${escapeHtml(displayName)} 的日印标记` : `标记 ${escapeHtml(displayName)} 为日印`}" aria-pressed="${japanPrint ? "true" : "false"}"><span></span></button><span class="card-name" title="${escapeHtml(displayName)}">${escapeHtml(displayName)}</span><span class="card-cost">${escapeHtml(cost)}</span></div>
         <div class="card-meta"><span>${escapeHtml(card.typeLine.split(" — ")[0])}</span><button class="finish-pill ${finish}" data-toggle-finish="${escapeHtml(card.id)}" ${finishDisabled ? "disabled" : ""} title="${finishDisabled ? `此版本仅支持 ${finish === "foil" ? "Foil" : "Non-Foil"}` : `切换 ${escapeHtml(displayName)} 的 Foil 状态`}">${finish === "foil" ? "Foil" : "Non-Foil"}</button></div>
         <div class="card-meta"><span>${escapeHtml(card.set)}${card.collectorNumber ? ` · ${escapeHtml(card.collectorNumber)}` : ""} · <span class="card-price">${escapeHtml(price)}</span></span><button class="printing-button" data-change-printing="${escapeHtml(card.id)}" title="选择 ${escapeHtml(displayName)} 的其他版本">选择版本</button></div>
       </div>
@@ -911,6 +920,17 @@
       renderPrintingFinishToggle(card);
     }
     toast("Finish 已更新", current.finish === "foil" ? "Foil" : "Non-Foil");
+  }
+
+  function toggleJapanPrint(cardId) {
+    const cardIndex = state.data.cards.findIndex((item) => item.id === cardId);
+    if (cardIndex < 0) return;
+    const current = state.data.cards[cardIndex];
+    current.JapanPrint = current.JapanPrint !== true;
+    state.data.cards[cardIndex] = current;
+    saveState();
+    renderCards();
+    toast("日印状态已更新", current.JapanPrint ? "已标记为日印" : "已标记为非日印");
   }
 
   function clearNameResults() {
@@ -1240,7 +1260,7 @@
     const rows = state.excelRows.filter((row) => row.importable && row.card);
     rows.forEach((row) => {
       const card = normalizeScryfallCard(row.card);
-      state.data.cards.push({ ...card, finish: chooseValidFinish(card, row.finish) });
+      state.data.cards.push({ ...card, finish: chooseValidFinish(card, row.finish), JapanPrint: row.JapanPrint === true });
     });
     state.data.cards = sortCards(state.data.cards);
     saveState();
@@ -1343,8 +1363,8 @@
     try {
       const XLSX = await loadSheetJs();
       const worksheet = XLSX.utils.aoa_to_sheet(buildExcelRows(state.data.cards));
-      worksheet["!cols"] = [{ wch: 10 }, { wch: 12 }, { wch: 34 }, { wch: 14 }, { wch: 12 }];
-      worksheet["!autofilter"] = { ref: `A1:E${state.data.cards.length + 1}` };
+      worksheet["!cols"] = [{ wch: 10 }, { wch: 12 }, { wch: 34 }, { wch: 14 }, { wch: 12 }, { wch: 8 }];
+      worksheet["!autofilter"] = { ref: `A1:F${state.data.cards.length + 1}` };
       const workbook = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(workbook, worksheet, "Cube 牌表");
       const fileName = `${state.data.meta.name.replace(/[\\/:*?"<>|]/g, "-") || "Cube牌表"}.xlsx`;
@@ -1443,10 +1463,11 @@
   }
 
   function clearFilters() {
-    state.filters = { query: "", color: "all", type: "all", finish: "all" };
+    state.filters = { query: "", color: "all", type: "all", finish: "all", japanPrint: "all" };
     elements.searchInput.value = "";
     elements.typeFilter.value = "all";
     elements.finishFilter.value = "all";
+    elements.japanPrintFilter.value = "all";
     $$("[data-color]").forEach((button) => {
       const active = button.dataset.color === "all";
       button.classList.toggle("active", active);
@@ -1491,6 +1512,7 @@
     elements.searchInput.addEventListener("input", (event) => { state.filters.query = event.target.value; renderCards(); });
     elements.typeFilter.addEventListener("change", (event) => { state.filters.type = event.target.value; renderCards(); });
     elements.finishFilter.addEventListener("change", (event) => { state.filters.finish = event.target.value; renderCards(); });
+    elements.japanPrintFilter.addEventListener("change", (event) => { state.filters.japanPrint = event.target.value; renderCards(); });
     $$("[data-color]").forEach((button) => button.addEventListener("click", () => {
       state.filters.color = button.dataset.color;
       $$("[data-color]").forEach((item) => {
@@ -1511,6 +1533,11 @@
     }));
     $$("[data-name-language]").forEach((button) => button.addEventListener("click", () => setNameLanguage(button.dataset.nameLanguage)));
     elements.cardGrid.addEventListener("click", (event) => {
+      const japanPrintButton = event.target.closest("[data-toggle-japan-print]");
+      if (japanPrintButton) {
+        toggleJapanPrint(japanPrintButton.dataset.toggleJapanPrint);
+        return;
+      }
       const finishButton = event.target.closest("[data-toggle-finish]");
       if (finishButton) {
         toggleCardFinish(finishButton.dataset.toggleFinish);
