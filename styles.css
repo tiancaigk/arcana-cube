@@ -170,7 +170,7 @@ select { height: 40px; min-width: 126px; padding: 0 30px 0 12px; border: 1px sol
 .printing-button { max-width: 72px; padding: 2px 0; overflow: hidden; border: 0; color: var(--accent); background: transparent; font: inherit; text-align: right; text-overflow: ellipsis; text-transform: uppercase; white-space: nowrap; }
 .printing-button:hover { color: var(--accent-bright); text-decoration: underline; text-underline-offset: 3px; }
 .finish-pill, .finish-toggle-button { border: 1px solid var(--line); border-radius: 999px; color: var(--muted); background: #171715; font: 600 8px/1 "DM Mono", monospace; letter-spacing: .06em; text-transform: uppercase; }
-.finish-pill { min-width: 72px; padding: 5px 8px; text-align: center; }
+.finish-pill { min-width: 56px; padding: 4px 6px; font-size: 7px; letter-spacing: .04em; text-align: center; }
 .finish-pill.foil, .finish-toggle-button.foil { border-color: rgba(143,205,217,.48); color: #f3dfad; background: linear-gradient(120deg, rgba(105,184,204,.15), rgba(221,157,205,.13) 48%, rgba(217,181,111,.15)); box-shadow: inset 0 0 0 1px rgba(238,194,221,.08), 0 0 10px rgba(108,190,211,.08); }
 .finish-pill.nonfoil, .finish-toggle-button.nonfoil { border-color: var(--line); color: var(--muted); background: #141412; }
 .finish-pill:hover, .finish-toggle-button:hover { transform: translateY(-1px); }
