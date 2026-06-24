@@ -187,11 +187,11 @@ select { height: 40px; min-width: 126px; padding: 0 30px 0 12px; border: 1px sol
 .list-mode .card-group-grid::-webkit-scrollbar { height: 8px; }
 .list-mode .card-group-grid::-webkit-scrollbar-track { background: #151513; }
 .list-mode .card-group-grid::-webkit-scrollbar-thumb { border: 2px solid #151513; border-radius: 8px; background: #615840; }
-.list-mode .card-item { min-width: 890px; display: grid; grid-template-columns: minmax(0, 1fr) 30px; align-items: center; min-height: 42px; border-bottom: 1px solid var(--line-soft); animation: none; transition: background .16s ease, border-color .16s ease; }
+.list-mode .card-item { min-width: 890px; display: grid; grid-template-columns: 30px minmax(0, 1fr); align-items: center; min-height: 42px; border-bottom: 1px solid var(--line-soft); animation: none; transition: background .16s ease, border-color .16s ease; }
 .list-mode .card-item:last-child { border-bottom: 0; }
 .list-mode .card-item:hover { background: rgba(217,181,111,.055); }
 .list-mode .card-image-wrap { display: none; }
-.list-mode .card-info { min-height: 0; display: grid; grid-template-columns: minmax(190px, 1.7fr) 58px minmax(120px, .95fr) 56px minmax(170px, 1.15fr) 78px; grid-template-rows: 1fr; align-items: center; gap: 12px; padding: 7px 8px 7px 14px; }
+.list-mode .card-info { min-height: 0; display: grid; grid-column: 2; grid-row: 1; grid-template-columns: minmax(190px, 1.7fr) 58px minmax(120px, .95fr) 56px minmax(170px, 1.15fr) 78px; grid-template-rows: 1fr; align-items: center; gap: 12px; padding: 7px 8px 7px 4px; }
 .list-mode .card-name-row, .list-mode .card-meta { display: contents; }
 .list-mode .card-name { min-width: 0; color: var(--text); font-size: 12px; line-height: 1.2; }
 .list-mode .card-cost { justify-self: end; color: var(--accent); font-size: 9px; line-height: 1; white-space: nowrap; }
@@ -199,7 +199,7 @@ select { height: 40px; min-width: 126px; padding: 0 30px 0 12px; border: 1px sol
 .list-mode .card-meta > span { color: var(--muted); font-size: 9px; line-height: 1.2; }
 .list-mode .finish-pill { justify-self: start; min-width: 48px; padding: 4px 6px; font-size: 7px; letter-spacing: .04em; }
 .list-mode .printing-button { justify-self: end; max-width: 78px; padding: 5px 0; font-size: 9px; }
-.list-mode .remove-card { position: static; justify-self: center; width: 22px; height: 22px; border-color: transparent; opacity: .58; background: transparent; color: var(--muted-2); backdrop-filter: none; font-size: 18px; }
+.list-mode .remove-card { position: static; grid-column: 1; grid-row: 1; justify-self: center; width: 22px; height: 22px; border-color: transparent; opacity: .58; background: transparent; color: var(--muted-2); backdrop-filter: none; font-size: 18px; }
 .list-mode .card-item:hover .remove-card, .list-mode .remove-card:focus-visible { opacity: 1; color: var(--danger); }
 
 .empty-state { padding: 80px 20px; border: 1px dashed var(--line); border-radius: 12px; text-align: center; }
