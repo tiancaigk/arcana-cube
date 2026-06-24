@@ -117,6 +117,10 @@ kbd { padding: 3px 6px; border: 1px solid var(--line); border-radius: 4px; color
 .mana:hover, .mana.active { opacity: 1; transform: translateY(-1px); box-shadow: 0 0 0 2px var(--surface), 0 0 0 3px currentColor; }
 .mana.white { color: #e9dcb4; background: #534e3f; }.mana.blue { color: #9dd4e8; background: #234552; }.mana.black { color: #c5b9cd; background: #3f3445; }.mana.red { color: #ef9c82; background: #5c3028; }.mana.green { color: #9bc59b; background: #294832; }.mana.colorless { color: #c4c2b9; background: #4a4a46; }.mana.multi { color: #e4bd69; background: #554625; }.mana.land { color: #cfad83; background: #4d3d2c; }
 select { height: 40px; min-width: 126px; padding: 0 30px 0 12px; border: 1px solid var(--line); border-radius: 10px; outline: 0; color: var(--muted); background: #171715; font-size: 11px; }
+.toolbar-controls select { flex: 0 0 auto; min-width: 0; padding: 0 24px 0 10px; }
+#typeFilter { width: 96px; }
+#finishFilter { width: 106px; }
+#japanPrintFilter { width: 92px; }
 .view-toggle, .language-toggle { height: 40px; display: flex; align-items: center; gap: 2px; padding: 4px; border: 1px solid var(--line); border-radius: 10px; background: #141412; }
 .view-toggle button, .language-toggle button { display: grid; place-items: center; height: 30px; padding: 0; border: 0; border-radius: 6px; color: var(--muted-2); background: transparent; }
 .view-toggle button { width: 30px; }
@@ -374,7 +378,8 @@ select { height: 40px; min-width: 126px; padding: 0 30px 0 12px; border: 1px sol
   .toolbar { align-items: stretch; padding: 9px; }
   .toolbar-controls { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
   .color-filters { grid-column: 1 / -1; width: 100%; padding: 5px 8px; }
-  #typeFilter, #finishFilter { width: 100%; min-width: 0; }
+  .toolbar-controls select { width: 100%; }
+  #typeFilter, #finishFilter, #japanPrintFilter { width: 100%; min-width: 0; }
   .language-toggle, .view-toggle { width: 100%; }
   .language-toggle button, .view-toggle button { flex: 1; }
   .card-group-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px 11px; }
