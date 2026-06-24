@@ -1438,13 +1438,6 @@
       else button.removeAttribute("aria-current");
     });
     if (view === "analytics") renderAnalytics();
-    setSidebarOpen(false);
-  }
-
-  function setSidebarOpen(open) {
-    $(".sidebar").classList.toggle("open", open);
-    $("#mobileMenu").setAttribute("aria-expanded", String(open));
-    $("#mobileMenu").setAttribute("aria-label", open ? "关闭菜单" : "打开菜单");
   }
 
   function bindTabKeyboard(selector) {
@@ -1505,7 +1498,6 @@
     elements.reloadFolderBtn.addEventListener("click", reloadFromDirectory);
     elements.disconnectFolderBtn.addEventListener("click", () => disconnectDirectoryMode());
     $("#clearFiltersBtn").addEventListener("click", clearFilters);
-    $("#mobileMenu").addEventListener("click", () => setSidebarOpen(!$(".sidebar").classList.contains("open")));
     $("#newCubeBtn").addEventListener("click", () => toast("即将支持", "多 Cube 管理已列入下一版"));
 
     $$(".nav-item").forEach((button) => button.addEventListener("click", () => setView(button.dataset.view)));
@@ -1589,9 +1581,7 @@
         if (openDialog && !(state.importing && openDialog === elements.importDialog)) {
           event.preventDefault();
           openDialog.close();
-          return;
         }
-        setSidebarOpen(false);
       }
     });
     $$("dialog").forEach((dialog) => dialog.addEventListener("click", (event) => {

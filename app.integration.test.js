@@ -14,7 +14,7 @@ test("application shell loads dependencies before app.js", () => {
 });
 
 test("key interactive regions expose accessible state", () => {
-  assert.match(html, /id="mobileMenu"[^>]+aria-controls="sidebar"[^>]+aria-expanded="false"/);
+  assert.match(html, /id="sidebar"/);
   assert.match(html, /id="resultCount"[^>]+aria-live="polite"/);
   assert.match(html, /data-color="all"[^>]+aria-pressed="true"/);
   assert.match(html, /data-mode="grid"[^>]+aria-pressed="true"/);
