@@ -5,6 +5,7 @@
 })(typeof globalThis !== "undefined" ? globalThis : this, function () {
   const COLOR_ORDER = ["W", "U", "B", "R", "G"];
   const SORT_ORDER = ["W", "U", "B", "R", "G", "C", "M", "L"];
+  const GUILD_ORDER = [["W", "U"], ["U", "B"], ["B", "R"], ["R", "G"], ["G", "W"], ["W", "B"], ["U", "R"], ["B", "G"], ["R", "W"], ["G", "U"]];
   const PRICE_TTL_MS = 24 * 60 * 60 * 1000;
 
   function parseDecklist(text) {
@@ -217,9 +218,32 @@
     return getCardBucket(card);
   }
 
+  function getColorSortSignature(card) {
+    return [...new Set(getFrontColors(card))]
+      .filter((color) => COLOR_ORDER.includes(color))
+      .sort((a, b) => COLOR_ORDER.indexOf(a) - COLOR_ORDER.indexOf(b))
+      .join("");
+  }
+
+  function getGuildSortIndex(card) {
+    const colors = [...new Set(getFrontColors(card))].filter((color) => COLOR_ORDER.includes(color));
+    if (colors.length !== 2) return GUILD_ORDER.length + colors.length;
+    const index = GUILD_ORDER.findIndex((pair) => pair.every((color) => colors.includes(color)));
+    return index === -1 ? GUILD_ORDER.length : index;
+  }
+
+  function compareMulticolorGroups(a, b) {
+    if (getSortBucket(a) !== "M" || getSortBucket(b) !== "M") return 0;
+    const guildDelta = getGuildSortIndex(a) - getGuildSortIndex(b);
+    if (guildDelta !== 0) return guildDelta;
+    return getColorSortSignature(a).localeCompare(getColorSortSignature(b), "en", { sensitivity: "base" });
+  }
+
   function compareCards(a, b) {
     const bucketDelta = SORT_ORDER.indexOf(getSortBucket(a)) - SORT_ORDER.indexOf(getSortBucket(b));
     if (bucketDelta !== 0) return bucketDelta;
+    const multicolorDelta = compareMulticolorGroups(a, b);
+    if (multicolorDelta !== 0) return multicolorDelta;
     const nameDelta = String(a.name || "").localeCompare(String(b.name || ""), "en", { sensitivity: "base", numeric: true });
     if (nameDelta !== 0) return nameDelta;
     const setDelta = String(a.set || "").localeCompare(String(b.set || ""), "en", { sensitivity: "base", numeric: true });

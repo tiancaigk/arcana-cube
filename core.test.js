@@ -105,6 +105,27 @@ test("sortCards orders by WUBRG, then colorless, multicolor, lands, then name", 
   assert.deepEqual(sorted.map((card) => card.name), ["Alpha", "Beta", "Gamma", "Delta", "Epsilon", "Zeta", "Artifact", "Hybrid", "Forest"]);
 });
 
+test("sortCards orders multicolor cards by guild pair, then name", () => {
+  const sorted = sortCards([
+    { name: "Simic Growth", colors: ["G", "U"], typeLine: "Creature" },
+    { name: "Boros Charm", colors: ["R", "W"], typeLine: "Instant" },
+    { name: "Azorius Signet", colors: ["U", "W"], typeLine: "Artifact" },
+    { name: "Aurelia", colors: ["W", "R"], typeLine: "Creature" },
+    { name: "Dimir Cutpurse", colors: ["U", "B"], typeLine: "Creature" },
+    { name: "Esper Charm", colors: ["W", "U", "B"], typeLine: "Instant" },
+    { name: "Azorius Arrester", colors: ["W", "U"], typeLine: "Creature" }
+  ]);
+  assert.deepEqual(sorted.map((card) => card.name), [
+    "Azorius Arrester",
+    "Azorius Signet",
+    "Dimir Cutpurse",
+    "Aurelia",
+    "Boros Charm",
+    "Simic Growth",
+    "Esper Charm"
+  ]);
+});
+
 test("double-faced cards use only the front face for sorting and filtering", () => {
   const treasureMap = { name: "Treasure Map", colors: [], typeLine: "Artifact // Land" };
   const sorted = sortCards([
