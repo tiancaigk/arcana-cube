@@ -146,6 +146,28 @@
     return typeof value === "string" && value.trim() ? value.trim() : "";
   }
 
+  function sanitizeImageFilePart(value) {
+    return String(value || "")
+      .trim()
+      .toLocaleLowerCase()
+      .normalize("NFKD")
+      .replace(/['’]/g, "")
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "")
+      .slice(0, 96);
+  }
+
+  function buildLocalImageFileName(card, extension = "png") {
+    const ext = sanitizeImageFilePart(extension).replace(/^jpeg$/, "jpg") || "png";
+    const stem = [
+      sanitizeImageFilePart(card && card.set || "custom"),
+      sanitizeImageFilePart(card && (card.collectorNumber || card.collector_number) || "na"),
+      sanitizeImageFilePart(getFrontDisplayName(card && card.name) || "card"),
+      sanitizeImageFilePart(card && (card.scryfallId || card.scryfall_id || card.id))
+    ].filter(Boolean).join("-");
+    return `${stem || "card"}.${ext}`;
+  }
+
   function getFrontColors(card) {
     return Array.isArray(card && card.frontColors) ? card.frontColors : (card && card.colors) || [];
   }
@@ -417,5 +439,5 @@
     };
   }
 
-  return { COLOR_ORDER, SORT_ORDER, PRICE_TTL_MS, parseDecklist, normalizeFinish, parseFinish, parseJapanPrint, getAvailableFinishes, chooseValidFinish, normalizeLocalizedNames, getPreferredLocalizedName, normalizeScryfallCard, getOracleId, getFrontColors, getFrontTypeLine, getUsdPrice, getPriceNumber, needsPriceRefresh, getColorBucket, getPrimaryType, isLandCard, getCardBucket, computeStats, filterCards, sortCards, buildCardNameSearchUrl, buildPrintingsUrl, buildLocalizedNameSearchUrl, isPaperPrinting, filterOraclePrintings, filterPrintings, replacePrinting, normalizeCardName, getFrontDisplayName, getLookupName, prepareTextImportRows, parseExcelRows, buildExcelRows, buildBackup, parseBackup };
+  return { COLOR_ORDER, SORT_ORDER, PRICE_TTL_MS, parseDecklist, normalizeFinish, parseFinish, parseJapanPrint, getAvailableFinishes, chooseValidFinish, normalizeLocalizedNames, getPreferredLocalizedName, normalizeScryfallCard, getOracleId, getFrontColors, getFrontTypeLine, getUsdPrice, getPriceNumber, needsPriceRefresh, getColorBucket, getPrimaryType, isLandCard, getCardBucket, computeStats, filterCards, sortCards, buildCardNameSearchUrl, buildPrintingsUrl, buildLocalizedNameSearchUrl, buildLocalImageFileName, isPaperPrinting, filterOraclePrintings, filterPrintings, replacePrinting, normalizeCardName, getFrontDisplayName, getLookupName, prepareTextImportRows, parseExcelRows, buildExcelRows, buildBackup, parseBackup };
 });

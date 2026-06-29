@@ -7,7 +7,7 @@
   const CUBE_FILE_NAME = "cube-data.json";
   const IMAGE_DIR_NAME = "images";
   const SHEETJS_URL = "https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js";
-  const { buildBackup, buildCardNameSearchUrl, buildExcelRows, buildLocalizedNameSearchUrl, buildPrintingsUrl, chooseValidFinish, computeStats, filterCards, filterOraclePrintings, filterPrintings, sortCards, getAvailableFinishes, getCardBucket, getFrontColors, getFrontDisplayName, getFrontTypeLine, getLookupName, getOracleId, getPreferredLocalizedName, getPriceNumber, getUsdPrice, isPaperPrinting, needsPriceRefresh, normalizeCardName, normalizeFinish, normalizeLocalizedNames, normalizeScryfallCard, parseBackup, parseDecklist, parseExcelRows, prepareTextImportRows, replacePrinting } = window.CubeCore;
+  const { buildBackup, buildCardNameSearchUrl, buildExcelRows, buildLocalizedNameSearchUrl, buildLocalImageFileName, buildPrintingsUrl, chooseValidFinish, computeStats, filterCards, filterOraclePrintings, filterPrintings, sortCards, getAvailableFinishes, getCardBucket, getFrontColors, getFrontDisplayName, getFrontTypeLine, getLookupName, getOracleId, getPreferredLocalizedName, getPriceNumber, getUsdPrice, isPaperPrinting, needsPriceRefresh, normalizeCardName, normalizeFinish, normalizeLocalizedNames, normalizeScryfallCard, parseBackup, parseDecklist, parseExcelRows, prepareTextImportRows, replacePrinting } = window.CubeCore;
   const { requestJson: scryfallRequest } = window.ScryfallClient;
   const cubeStorage = window.CubeStorage.createStorage(localStorage, STORAGE_KEY);
   const cubeHandleStore = window.CubeStorage.createHandleStore(window.indexedDB);
@@ -316,15 +316,6 @@
     if (state.storage.mode === "directory" && state.storage.directoryHandle) queueDirectorySave(snapshotCubeData(state.data));
   }
 
-  function sanitizeFilePart(value) {
-    return String(value || "")
-      .trim()
-      .toLowerCase()
-      .replace(/[^a-z0-9._-]+/g, "-")
-      .replace(/^-+|-+$/g, "")
-      .slice(0, 96) || "card";
-  }
-
   function imageExtensionFrom(url, blob) {
     const type = String(blob && blob.type || "").toLowerCase();
     if (type.includes("png")) return "png";
@@ -332,11 +323,6 @@
     if (type.includes("jpeg") || type.includes("jpg")) return "jpg";
     const match = String(url || "").split("?", 1)[0].match(/\.([a-z0-9]+)$/i);
     return match ? match[1].toLowerCase() : "png";
-  }
-
-  function imageFileBase(card) {
-    if (card.scryfallId) return sanitizeFilePart(card.scryfallId);
-    return sanitizeFilePart(`${card.set || "custom"}-${card.collectorNumber || ""}-${card.name || card.id || "card"}`);
   }
 
   function imageDownloadCandidates(card) {
@@ -385,7 +371,7 @@
     if (!candidates.length) return "missing";
     const { url, blob } = await fetchImageBlob(candidates);
     const extension = imageExtensionFrom(url, blob);
-    const fileName = `${imageFileBase(card)}.${extension}`;
+    const fileName = buildLocalImageFileName(card, extension);
     const imagesDir = await getImagesDirectoryHandle(true);
     const fileHandle = await imagesDir.getFileHandle(fileName, { create: true });
     const writable = await fileHandle.createWritable();

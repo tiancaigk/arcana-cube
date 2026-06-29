@@ -1,6 +1,6 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { buildBackup, buildCardNameSearchUrl, buildExcelRows, buildLocalizedNameSearchUrl, buildPrintingsUrl, chooseValidFinish, computeStats, filterCards, filterOraclePrintings, filterPrintings, getAvailableFinishes, getCardBucket, getColorBucket, getFrontDisplayName, getFrontTypeLine, getLookupName, getOracleId, getPreferredLocalizedName, getPriceNumber, getUsdPrice, isLandCard, isPaperPrinting, needsPriceRefresh, normalizeCardName, normalizeFinish, normalizeLocalizedNames, normalizeScryfallCard, parseBackup, parseDecklist, parseExcelRows, prepareTextImportRows, replacePrinting, sortCards } = require("./core.js");
+const { buildBackup, buildCardNameSearchUrl, buildExcelRows, buildLocalizedNameSearchUrl, buildLocalImageFileName, buildPrintingsUrl, chooseValidFinish, computeStats, filterCards, filterOraclePrintings, filterPrintings, getAvailableFinishes, getCardBucket, getColorBucket, getFrontDisplayName, getFrontTypeLine, getLookupName, getOracleId, getPreferredLocalizedName, getPriceNumber, getUsdPrice, isLandCard, isPaperPrinting, needsPriceRefresh, normalizeCardName, normalizeFinish, normalizeLocalizedNames, normalizeScryfallCard, parseBackup, parseDecklist, parseExcelRows, prepareTextImportRows, replacePrinting, sortCards } = require("./core.js");
 
 const cards = [
   { name: "Alpha", colors: ["W"], cmc: 1, typeLine: "Creature — Human", set: "TST" },
@@ -188,6 +188,21 @@ test("normalizeScryfallCard prefers high quality png image urls", () => {
   assert.equal(card.image, "https://cards.scryfall.io/png/front/a/b/image-card.png");
   assert.equal(card.remoteImage, "https://cards.scryfall.io/png/front/a/b/image-card.png");
   assert.equal(card.localImage, "");
+});
+
+test("buildLocalImageFileName uses a readable stable printing name", () => {
+  assert.equal(buildLocalImageFileName({
+    name: "Ulamog, the Ceaseless Hunger // Ulamog, the Ceaseless Hunger",
+    set: "SLD",
+    collectorNumber: "1122",
+    scryfallId: "11111111-2222-3333-4444-555555555555"
+  }, "png"), "sld-1122-ulamog-the-ceaseless-hunger-11111111-2222-3333-4444-555555555555.png");
+  assert.equal(buildLocalImageFileName({
+    name: "Chandra's Phoenix",
+    set: "PM12",
+    collectorNumber: "126★",
+    id: "fallback-id"
+  }, "jpeg"), "pm12-126-chandras-phoenix-fallback-id.jpg");
 });
 
 test("finish helpers respect the selected printing's availability", () => {
