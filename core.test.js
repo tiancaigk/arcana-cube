@@ -202,7 +202,7 @@ test("buildLocalImageFileName uses set, collector number, and card name", () => 
     set: "PM12",
     collectorNumber: "126★",
     id: "fallback-id"
-  }, "jpeg"), "pm12-126-chandras-phoenix.jpg");
+  }, "jpeg"), "pm12-126★-chandras-phoenix.jpg");
 });
 
 test("finish helpers respect the selected printing's availability", () => {

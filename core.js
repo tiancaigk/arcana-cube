@@ -157,11 +157,20 @@
       .slice(0, 96);
   }
 
+  function sanitizeCollectorNumberFilePart(value) {
+    return String(value || "")
+      .trim()
+      .replace(/[\\/:"<>|?*]+/g, "-")
+      .replace(/\s+/g, "")
+      .replace(/^-+|-+$/g, "")
+      .slice(0, 96);
+  }
+
   function buildLocalImageFileName(card, extension = "png") {
     const ext = sanitizeImageFilePart(extension).replace(/^jpeg$/, "jpg") || "png";
     const stem = [
       sanitizeImageFilePart(card && card.set || "custom"),
-      sanitizeImageFilePart(card && (card.collectorNumber || card.collector_number) || "na"),
+      sanitizeCollectorNumberFilePart(card && (card.collectorNumber || card.collector_number) || "na"),
       sanitizeImageFilePart(getFrontDisplayName(card && card.name) || "card")
     ].filter(Boolean).join("-");
     return `${stem || "card"}.${ext}`;
