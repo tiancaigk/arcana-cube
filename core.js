@@ -162,8 +162,7 @@
     const stem = [
       sanitizeImageFilePart(card && card.set || "custom"),
       sanitizeImageFilePart(card && (card.collectorNumber || card.collector_number) || "na"),
-      sanitizeImageFilePart(getFrontDisplayName(card && card.name) || "card"),
-      sanitizeImageFilePart(card && (card.scryfallId || card.scryfall_id || card.id))
+      sanitizeImageFilePart(getFrontDisplayName(card && card.name) || "card")
     ].filter(Boolean).join("-");
     return `${stem || "card"}.${ext}`;
   }

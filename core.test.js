@@ -190,19 +190,19 @@ test("normalizeScryfallCard prefers high quality png image urls", () => {
   assert.equal(card.localImage, "");
 });
 
-test("buildLocalImageFileName uses a readable stable printing name", () => {
+test("buildLocalImageFileName uses set, collector number, and card name", () => {
   assert.equal(buildLocalImageFileName({
     name: "Ulamog, the Ceaseless Hunger // Ulamog, the Ceaseless Hunger",
     set: "SLD",
     collectorNumber: "1122",
     scryfallId: "11111111-2222-3333-4444-555555555555"
-  }, "png"), "sld-1122-ulamog-the-ceaseless-hunger-11111111-2222-3333-4444-555555555555.png");
+  }, "png"), "sld-1122-ulamog-the-ceaseless-hunger.png");
   assert.equal(buildLocalImageFileName({
     name: "Chandra's Phoenix",
     set: "PM12",
     collectorNumber: "126★",
     id: "fallback-id"
-  }, "jpeg"), "pm12-126-chandras-phoenix-fallback-id.jpg");
+  }, "jpeg"), "pm12-126-chandras-phoenix.jpg");
 });
 
 test("finish helpers respect the selected printing's availability", () => {
