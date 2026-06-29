@@ -167,10 +167,16 @@
     const localImage = isLocalImagePath(card.localImage) ? card.localImage : (isLocalImagePath(card.image) ? card.image : "");
     const remoteSource = card.remoteImage || (isRemoteImageUrl(card.image) ? card.image : "");
     const remoteImage = preferPngImageUrl(remoteSource) || remoteSource;
+    const localBackImage = isLocalImagePath(card.localBackImage) ? card.localBackImage : (isLocalImagePath(card.backImage) ? card.backImage : "");
+    const remoteBackSource = card.remoteBackImage || (isRemoteImageUrl(card.backImage) ? card.backImage : "");
+    const remoteBackImage = preferPngImageUrl(remoteBackSource) || remoteBackSource;
     return {
       localImage,
       remoteImage,
-      image: localImage || card.image || remoteImage
+      image: localImage || card.image || remoteImage,
+      localBackImage,
+      remoteBackImage,
+      backImage: localBackImage || card.backImage || remoteBackImage
     };
   }
 
@@ -388,8 +394,10 @@
     return match ? match[1].toLowerCase() : "png";
   }
 
-  function imageDownloadCandidates(card) {
-    const source = card.remoteImage || (isRemoteImageUrl(card.image) ? card.image : "");
+  function imageDownloadCandidates(card, face = "front") {
+    const source = face === "back"
+      ? card.remoteBackImage || (isRemoteImageUrl(card.backImage) ? card.backImage : "")
+      : card.remoteImage || (isRemoteImageUrl(card.image) ? card.image : "");
     const png = preferPngImageUrl(source);
     return [...new Set([png, source].filter(isRemoteImageUrl))];
   }
@@ -422,29 +430,39 @@
     throw lastError || new Error("没有可下载的图片地址");
   }
 
-  async function cacheCardImage(card) {
-    if (card.localImage && await localImageExists(card.localImage)) {
-      if (card.image !== card.localImage) {
-        card.image = card.localImage;
+  async function cacheCardFaceImage(card, face = "front") {
+    const localKey = face === "back" ? "localBackImage" : "localImage";
+    const imageKey = face === "back" ? "backImage" : "image";
+    const remoteKey = face === "back" ? "remoteBackImage" : "remoteImage";
+    if (card[localKey] && await localImageExists(card[localKey])) {
+      if (card[imageKey] !== card[localKey]) {
+        card[imageKey] = card[localKey];
         return "updated";
       }
       return "skipped";
     }
-    const candidates = imageDownloadCandidates(card);
+    const candidates = imageDownloadCandidates(card, face);
     if (!candidates.length) return "missing";
     const { url, blob } = await fetchImageBlob(candidates);
     const extension = imageExtensionFrom(url, blob);
-    const fileName = buildLocalImageFileName(card, extension);
+    const fileName = buildLocalImageFileName(card, extension, face);
     const imagesDir = await getImagesDirectoryHandle(true);
     const fileHandle = await imagesDir.getFileHandle(fileName, { create: true });
     const writable = await fileHandle.createWritable();
     await writable.write(blob);
     await writable.close();
     const localImage = `${IMAGE_DIR_NAME}/${fileName}`;
-    card.remoteImage = url;
-    card.localImage = localImage;
-    card.image = localImage;
+    card[remoteKey] = url;
+    card[localKey] = localImage;
+    card[imageKey] = localImage;
     return "updated";
+  }
+
+  async function cacheCardImage(card) {
+    const results = [];
+    results.push(await cacheCardFaceImage(card, "front"));
+    if (imageDownloadCandidates(card, "back").length || card.localBackImage) results.push(await cacheCardFaceImage(card, "back"));
+    return results.includes("updated") ? "updated" : (results.includes("missing") ? "missing" : "skipped");
   }
 
   async function cacheAllImages() {
@@ -461,7 +479,7 @@
     renderStorageStatus();
     let updated = 0;
     let failed = 0;
-    const targets = state.data.cards.filter((card) => imageDownloadCandidates(card).length || card.localImage);
+    const targets = state.data.cards.filter((card) => imageDownloadCandidates(card).length || card.localImage || imageDownloadCandidates(card, "back").length || card.localBackImage);
     try {
       for (let index = 0; index < targets.length; index += 1) {
         if (elements.cacheImagesBtn) elements.cacheImagesBtn.textContent = `下载卡图 ${index + 1}/${targets.length}`;
@@ -830,15 +848,19 @@
     const card = state.data.cards.find((item) => item.id === cardId);
     if (!card || !card.image) return;
     const displayName = cardDisplayName(card);
-    elements.imagePreview.src = card.image;
-    elements.imagePreview.alt = displayName;
+    const images = [
+      { src: card.image, alt: `${displayName} 正面` },
+      { src: card.backImage, alt: `${displayName} 背面` }
+    ].filter((item) => item.src);
+    elements.imagePreview.classList.toggle("two-sided", images.length > 1);
+    elements.imagePreview.innerHTML = images.map((item) => `<img src="${escapeHtml(item.src)}" alt="${escapeHtml(item.alt)}" />`).join("");
     elements.imagePreviewDialog.showModal();
   }
 
   function closeImagePreview() {
     elements.imagePreviewDialog.close();
-    elements.imagePreview.removeAttribute("src");
-    elements.imagePreview.alt = "";
+    elements.imagePreview.innerHTML = "";
+    elements.imagePreview.classList.remove("two-sided");
   }
 
   function cardTemplate(card, index) {
@@ -1826,8 +1848,8 @@
     });
     elements.imagePreviewDialog.addEventListener("click", closeImagePreview);
     elements.imagePreviewDialog.addEventListener("cancel", () => {
-      elements.imagePreview.removeAttribute("src");
-      elements.imagePreview.alt = "";
+      elements.imagePreview.innerHTML = "";
+      elements.imagePreview.classList.remove("two-sided");
     });
     elements.addCardDialog.addEventListener("close", clearNameResults);
     elements.printingDialog.addEventListener("close", () => {

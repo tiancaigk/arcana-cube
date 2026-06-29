@@ -248,8 +248,10 @@ select { height: 40px; min-width: 126px; padding: 0 30px 0 12px; border: 1px sol
 .modal.add-card-dialog { width: min(680px, calc(100vw - 28px)); overflow: hidden; }
 .modal::backdrop { background: rgba(5,5,4,.75); backdrop-filter: blur(8px); }
 .modal-card { padding: 26px; background: linear-gradient(145deg, #22211d, #171715); }
-.image-preview-dialog { width: min(520px, calc(100vw - 36px)); max-height: calc(100vh - 36px); padding: 0; border: 0; background: transparent; overflow: visible; cursor: zoom-out; }
+.image-preview-dialog { width: min(1080px, calc(100vw - 36px)); max-height: calc(100vh - 36px); padding: 0; border: 0; background: transparent; overflow: visible; cursor: zoom-out; }
 .image-preview-dialog::backdrop { background: rgba(3,3,3,.82); backdrop-filter: blur(10px); }
+.image-preview-content { display: grid; grid-template-columns: minmax(0, min(520px, calc(100vw - 36px))); justify-content: center; gap: 18px; }
+.image-preview-content.two-sided { grid-template-columns: repeat(2, minmax(0, 520px)); }
 .image-preview-dialog img { width: 100%; max-height: calc(100vh - 36px); display: block; border-radius: 4.8% / 3.5%; box-shadow: 0 24px 90px rgba(0,0,0,.72); object-fit: contain; }
 .modal-card.wide { min-width: min(650px, calc(100vw - 28px)); }
 .modal-header { display: flex; justify-content: space-between; }

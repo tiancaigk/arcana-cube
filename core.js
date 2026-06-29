@@ -68,8 +68,11 @@
 
   function normalizeScryfallCard(card) {
     const face = card.card_faces && card.card_faces[0];
+    const backFace = card.card_faces && card.card_faces[1];
     const imageUris = card.image_uris || (face && face.image_uris) || {};
+    const backImageUris = (backFace && backFace.image_uris) || {};
     const remoteImage = imageUris.png || imageUris.large || imageUris.normal || imageUris.small || "";
+    const remoteBackImage = backImageUris.png || backImageUris.large || backImageUris.normal || backImageUris.small || "";
     const frontColors = (face && face.colors) || card.colors || [];
     const frontTypeLine = (face && face.type_line) || card.type_line || "Unknown";
     const finishes = getAvailableFinishes(card);
@@ -92,6 +95,9 @@
       image: remoteImage,
       remoteImage,
       localImage: "",
+      backImage: remoteBackImage,
+      remoteBackImage,
+      localBackImage: "",
       scryfallUri: card.scryfall_uri || "",
       prices: {
         usd: normalizePrice(card.prices && card.prices.usd),
@@ -166,12 +172,14 @@
       .slice(0, 96);
   }
 
-  function buildLocalImageFileName(card, extension = "png") {
+  function buildLocalImageFileName(card, extension = "png", face = "front") {
     const ext = sanitizeImageFilePart(extension).replace(/^jpeg$/, "jpg") || "png";
+    const faceSuffix = face === "back" ? "back" : "";
     const stem = [
       sanitizeImageFilePart(card && card.set || "custom"),
       sanitizeCollectorNumberFilePart(card && (card.collectorNumber || card.collector_number) || "na"),
-      sanitizeImageFilePart(getFrontDisplayName(card && card.name) || "card")
+      sanitizeImageFilePart(getFrontDisplayName(card && card.name) || "card"),
+      faceSuffix
     ].filter(Boolean).join("-");
     return `${stem || "card"}.${ext}`;
   }
@@ -330,6 +338,7 @@
     const normalized = normalizeScryfallCard(printing);
     const samePrinting = currentCard.scryfallId && normalized.scryfallId && currentCard.scryfallId === normalized.scryfallId;
     const localImage = samePrinting ? currentCard.localImage || "" : "";
+    const localBackImage = samePrinting ? currentCard.localBackImage || "" : "";
     return {
       ...normalized,
       id: currentCard.id,
@@ -340,6 +349,8 @@
       },
       localImage,
       image: localImage || normalized.image,
+      localBackImage,
+      backImage: localBackImage || normalized.backImage,
       JapanPrint: currentCard.JapanPrint === true,
       finish: chooseValidFinish(normalized, currentCard.finish)
     };
