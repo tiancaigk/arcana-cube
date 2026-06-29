@@ -5,6 +5,7 @@
   const NAME_LANGUAGE_KEY = "arcana-cube-card-name-language";
   const DIRECTORY_HANDLE_KEY = "cube-directory-handle";
   const CUBE_FILE_NAME = "cube-data.json";
+  const IMAGE_DIR_NAME = "images";
   const SHEETJS_URL = "https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js";
   const { buildBackup, buildCardNameSearchUrl, buildExcelRows, buildLocalizedNameSearchUrl, buildPrintingsUrl, chooseValidFinish, computeStats, filterCards, filterOraclePrintings, filterPrintings, sortCards, getAvailableFinishes, getCardBucket, getFrontColors, getFrontDisplayName, getFrontTypeLine, getLookupName, getOracleId, getPreferredLocalizedName, getPriceNumber, getUsdPrice, isPaperPrinting, needsPriceRefresh, normalizeCardName, normalizeFinish, normalizeLocalizedNames, normalizeScryfallCard, parseBackup, parseDecklist, parseExcelRows, prepareTextImportRows, replacePrinting } = window.CubeCore;
   const { requestJson: scryfallRequest } = window.ScryfallClient;
@@ -91,6 +92,7 @@
     nameSearchController: null,
     printingController: null,
     refreshingPrices: false,
+    imageCaching: false,
     storage: {
       mode: "browser",
       supported: typeof window.showDirectoryPicker === "function",
@@ -118,7 +120,7 @@
     excelFileInput: $("#excelFileInput"), excelFileName: $("#excelFileName"), excelPreview: $("#excelPreview"),
     excelSummary: $("#excelSummary"), excelPreviewBody: $("#excelPreviewBody"), excelDropZone: $("#excelDropZone"),
     lookupResult: $("#lookupResult"), backupFileInput: $("#backupFileInput"),
-    connectFolderBtn: $("#connectFolderBtn"), reloadFolderBtn: $("#reloadFolderBtn"), disconnectFolderBtn: $("#disconnectFolderBtn"),
+    connectFolderBtn: $("#connectFolderBtn"), cacheImagesBtn: $("#cacheImagesBtn"), reloadFolderBtn: $("#reloadFolderBtn"), disconnectFolderBtn: $("#disconnectFolderBtn"),
     storageStatusLabel: $("#storageStatusLabel"), storageStatusDetail: $("#storageStatusDetail"),
     nameLanguageToggle: $("#nameLanguageToggle")
   };
@@ -139,9 +141,38 @@
     }
   }
 
+  function isRemoteImageUrl(value) {
+    return /^https?:\/\//i.test(String(value || ""));
+  }
+
+  function isLocalImagePath(value) {
+    return String(value || "").startsWith(`${IMAGE_DIR_NAME}/`);
+  }
+
+  function preferPngImageUrl(url) {
+    const value = String(url || "");
+    if (!isRemoteImageUrl(value)) return "";
+    if (!/cards\.scryfall\.io/i.test(value)) return value;
+    return value
+      .replace(/\/(?:small|normal|large)\//, "/png/")
+      .replace(/\.(?:jpg|jpeg)(\?[^/?#]*)?$/i, ".png$1");
+  }
+
+  function normalizeImageFields(card) {
+    const localImage = isLocalImagePath(card.localImage) ? card.localImage : (isLocalImagePath(card.image) ? card.image : "");
+    const remoteSource = card.remoteImage || (isRemoteImageUrl(card.image) ? card.image : "");
+    const remoteImage = preferPngImageUrl(remoteSource) || remoteSource;
+    return {
+      localImage,
+      remoteImage,
+      image: localImage || card.image || remoteImage
+    };
+  }
+
   function normalizeStoredCards(cards) {
     return sortCards(cards.map((card) => ({
       ...card,
+      ...normalizeImageFields(card),
       oracleId: getOracleId(card),
       localizedNames: normalizeLocalizedNames(card),
       frontColors: getFrontColors(card),
@@ -195,6 +226,10 @@
     return directoryHandle.getFileHandle(CUBE_FILE_NAME, { create });
   }
 
+  async function getImagesDirectoryHandle(create = false) {
+    return state.storage.directoryHandle.getDirectoryHandle(IMAGE_DIR_NAME, { create });
+  }
+
   async function readCubeDataFile(directoryHandle) {
     try {
       const fileHandle = await getCubeFileHandle(directoryHandle, false);
@@ -222,6 +257,12 @@
       elements.connectFolderBtn.textContent = connectLabel;
       elements.connectFolderBtn.disabled = !state.storage.supported;
       elements.connectFolderBtn.title = state.storage.supported ? connectLabel : "当前浏览器不支持文件夹写入";
+    }
+    if (elements.cacheImagesBtn) {
+      const active = state.storage.mode === "directory";
+      elements.cacheImagesBtn.classList.toggle("hidden", !active);
+      elements.cacheImagesBtn.disabled = state.imageCaching;
+      if (!state.imageCaching) elements.cacheImagesBtn.textContent = "下载本地卡图";
     }
     if (elements.reloadFolderBtn) elements.reloadFolderBtn.classList.toggle("hidden", state.storage.mode !== "directory");
     if (elements.disconnectFolderBtn) elements.disconnectFolderBtn.classList.toggle("hidden", state.storage.mode !== "directory");
@@ -273,6 +314,128 @@
       toast("保存失败", "浏览器存储空间可能不足", true);
     }
     if (state.storage.mode === "directory" && state.storage.directoryHandle) queueDirectorySave(snapshotCubeData(state.data));
+  }
+
+  function sanitizeFilePart(value) {
+    return String(value || "")
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9._-]+/g, "-")
+      .replace(/^-+|-+$/g, "")
+      .slice(0, 96) || "card";
+  }
+
+  function imageExtensionFrom(url, blob) {
+    const type = String(blob && blob.type || "").toLowerCase();
+    if (type.includes("png")) return "png";
+    if (type.includes("webp")) return "webp";
+    if (type.includes("jpeg") || type.includes("jpg")) return "jpg";
+    const match = String(url || "").split("?", 1)[0].match(/\.([a-z0-9]+)$/i);
+    return match ? match[1].toLowerCase() : "png";
+  }
+
+  function imageFileBase(card) {
+    if (card.scryfallId) return sanitizeFilePart(card.scryfallId);
+    return sanitizeFilePart(`${card.set || "custom"}-${card.collectorNumber || ""}-${card.name || card.id || "card"}`);
+  }
+
+  function imageDownloadCandidates(card) {
+    const source = card.remoteImage || (isRemoteImageUrl(card.image) ? card.image : "");
+    const png = preferPngImageUrl(source);
+    return [...new Set([png, source].filter(isRemoteImageUrl))];
+  }
+
+  async function localImageExists(localImage) {
+    if (!isLocalImagePath(localImage) || !state.storage.directoryHandle) return false;
+    try {
+      const imagesDir = await getImagesDirectoryHandle(false);
+      await imagesDir.getFileHandle(localImage.slice(`${IMAGE_DIR_NAME}/`.length), { create: false });
+      return true;
+    } catch (error) {
+      if (isMissingEntryError(error)) return false;
+      throw error;
+    }
+  }
+
+  async function fetchImageBlob(candidates) {
+    let lastError;
+    for (const url of candidates) {
+      try {
+        const response = await fetch(url);
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const blob = await response.blob();
+        if (!blob.size) throw new Error("图片为空");
+        return { url, blob };
+      } catch (error) {
+        lastError = error;
+      }
+    }
+    throw lastError || new Error("没有可下载的图片地址");
+  }
+
+  async function cacheCardImage(card) {
+    if (card.localImage && await localImageExists(card.localImage)) {
+      if (card.image !== card.localImage) {
+        card.image = card.localImage;
+        return "updated";
+      }
+      return "skipped";
+    }
+    const candidates = imageDownloadCandidates(card);
+    if (!candidates.length) return "missing";
+    const { url, blob } = await fetchImageBlob(candidates);
+    const extension = imageExtensionFrom(url, blob);
+    const fileName = `${imageFileBase(card)}.${extension}`;
+    const imagesDir = await getImagesDirectoryHandle(true);
+    const fileHandle = await imagesDir.getFileHandle(fileName, { create: true });
+    const writable = await fileHandle.createWritable();
+    await writable.write(blob);
+    await writable.close();
+    const localImage = `${IMAGE_DIR_NAME}/${fileName}`;
+    card.remoteImage = url;
+    card.localImage = localImage;
+    card.image = localImage;
+    return "updated";
+  }
+
+  async function cacheAllImages() {
+    if (state.imageCaching) return;
+    if (state.storage.mode !== "directory" || !state.storage.directoryHandle) {
+      toast("请先连接文件夹", "本地卡图需要写入 Cube 文件夹", true);
+      return;
+    }
+    if (!await requestDirectoryPermission(state.storage.directoryHandle, "readwrite")) {
+      toast("无法写入文件夹", "请重新授权这个 Cube 文件夹", true);
+      return;
+    }
+    state.imageCaching = true;
+    renderStorageStatus();
+    let updated = 0;
+    let failed = 0;
+    const targets = state.data.cards.filter((card) => imageDownloadCandidates(card).length || card.localImage);
+    try {
+      for (let index = 0; index < targets.length; index += 1) {
+        if (elements.cacheImagesBtn) elements.cacheImagesBtn.textContent = `下载卡图 ${index + 1}/${targets.length}`;
+        try {
+          const result = await cacheCardImage(targets[index]);
+          if (result === "updated") updated += 1;
+        } catch (error) {
+          failed += 1;
+        }
+        if (updated && index % 20 === 19) {
+          saveState();
+          renderCards();
+        }
+      }
+      if (updated) {
+        saveState();
+        render();
+      }
+      toast("卡图下载完成", `已更新 ${updated} 张，本次失败 ${failed} 张${targets.length ? "" : "，没有可下载图片"}`);
+    } finally {
+      state.imageCaching = false;
+      renderStorageStatus();
+    }
   }
 
   async function reloadFromDirectory() {
@@ -1495,6 +1658,7 @@
     $("#restoreBtn").addEventListener("click", () => elements.backupFileInput.click());
     elements.backupFileInput.addEventListener("change", (event) => restoreJsonBackup(event.target.files[0]));
     elements.connectFolderBtn.addEventListener("click", connectCubeFolder);
+    elements.cacheImagesBtn.addEventListener("click", cacheAllImages);
     elements.reloadFolderBtn.addEventListener("click", reloadFromDirectory);
     elements.disconnectFolderBtn.addEventListener("click", () => disconnectDirectoryMode());
     $("#clearFiltersBtn").addEventListener("click", clearFilters);

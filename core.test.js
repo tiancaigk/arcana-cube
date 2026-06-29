@@ -173,6 +173,23 @@ test("normalizeScryfallCard keeps the exact printing number", () => {
   assert.equal(getPriceNumber({ prices: { usd: "1.23", usdFoil: "" }, finish: "foil" }), null);
 });
 
+test("normalizeScryfallCard prefers high quality png image urls", () => {
+  const card = normalizeScryfallCard({
+    id: "image-card",
+    name: "Image Card",
+    set: "tst",
+    type_line: "Artifact",
+    image_uris: {
+      normal: "https://cards.scryfall.io/normal/front/a/b/image-card.jpg",
+      large: "https://cards.scryfall.io/large/front/a/b/image-card.jpg",
+      png: "https://cards.scryfall.io/png/front/a/b/image-card.png"
+    }
+  });
+  assert.equal(card.image, "https://cards.scryfall.io/png/front/a/b/image-card.png");
+  assert.equal(card.remoteImage, "https://cards.scryfall.io/png/front/a/b/image-card.png");
+  assert.equal(card.localImage, "");
+});
+
 test("finish helpers respect the selected printing's availability", () => {
   const nonfoilOnly = normalizeScryfallCard({ id: "regular", name: "Regular", set: "tst", type_line: "Artifact", finishes: ["nonfoil"], foil: false, nonfoil: true, prices: { usd: "1.00" } });
   assert.deepEqual(getAvailableFinishes(nonfoilOnly), ["nonfoil"]);
@@ -226,6 +243,16 @@ test("replacePrinting preserves cached localized names", () => {
   const replaced = replacePrinting(current, { id: "new-printing", name: "Lightning Bolt", set: "clu", collector_number: "141", type_line: "Instant", finishes: ["foil", "nonfoil"] });
   assert.equal(replaced.id, "cube-card");
   assert.deepEqual(replaced.localizedNames, { zhs: "闪电击" });
+});
+
+test("replacePrinting preserves local images only for the same Scryfall printing", () => {
+  const current = { id: "cube-card", scryfallId: "same-printing", addedAt: "2026-01-01T00:00:00.000Z", name: "Card", localImage: "images/same-printing.png", image: "images/same-printing.png", finish: "foil" };
+  const same = replacePrinting(current, { id: "same-printing", name: "Card", set: "tst", collector_number: "1", type_line: "Artifact", image_uris: { png: "https://cards.scryfall.io/png/front/a/b/same.png" } });
+  assert.equal(same.localImage, "images/same-printing.png");
+  assert.equal(same.image, "images/same-printing.png");
+  const different = replacePrinting(current, { id: "new-printing", name: "Card", set: "tst", collector_number: "2", type_line: "Artifact", image_uris: { png: "https://cards.scryfall.io/png/front/a/b/new.png" } });
+  assert.equal(different.localImage, "");
+  assert.equal(different.image, "https://cards.scryfall.io/png/front/a/b/new.png");
 });
 
 test("prices refresh when missing or older than 24 hours", () => {

@@ -69,6 +69,7 @@
   function normalizeScryfallCard(card) {
     const face = card.card_faces && card.card_faces[0];
     const imageUris = card.image_uris || (face && face.image_uris) || {};
+    const remoteImage = imageUris.png || imageUris.large || imageUris.normal || imageUris.small || "";
     const frontColors = (face && face.colors) || card.colors || [];
     const frontTypeLine = (face && face.type_line) || card.type_line || "Unknown";
     const finishes = getAvailableFinishes(card);
@@ -88,7 +89,9 @@
       set: (card.set || "custom").toUpperCase(),
       collectorNumber: card.collector_number || "",
       rarity: card.rarity || "common",
-      image: imageUris.normal || imageUris.large || imageUris.small || "",
+      image: remoteImage,
+      remoteImage,
+      localImage: "",
       scryfallUri: card.scryfall_uri || "",
       prices: {
         usd: normalizePrice(card.prices && card.prices.usd),
@@ -295,6 +298,8 @@
 
   function replacePrinting(currentCard, printing) {
     const normalized = normalizeScryfallCard(printing);
+    const samePrinting = currentCard.scryfallId && normalized.scryfallId && currentCard.scryfallId === normalized.scryfallId;
+    const localImage = samePrinting ? currentCard.localImage || "" : "";
     return {
       ...normalized,
       id: currentCard.id,
@@ -303,6 +308,8 @@
         ...normalizeLocalizedNames(currentCard),
         ...normalizeLocalizedNames(normalized)
       },
+      localImage,
+      image: localImage || normalized.image,
       JapanPrint: currentCard.JapanPrint === true,
       finish: chooseValidFinish(normalized, currentCard.finish)
     };
