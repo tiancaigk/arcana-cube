@@ -119,7 +119,7 @@
     textPreview: $("#textPreview"), textSummary: $("#textSummary"), textPreviewBody: $("#textPreviewBody"),
     excelFileInput: $("#excelFileInput"), excelFileName: $("#excelFileName"), excelPreview: $("#excelPreview"),
     excelSummary: $("#excelSummary"), excelPreviewBody: $("#excelPreviewBody"), excelDropZone: $("#excelDropZone"),
-    lookupResult: $("#lookupResult"), backupFileInput: $("#backupFileInput"),
+    lookupResult: $("#lookupResult"), backupFileInput: $("#backupFileInput"), imagePreviewDialog: $("#imagePreviewDialog"), imagePreview: $("#imagePreview"),
     connectFolderBtn: $("#connectFolderBtn"), cacheImagesBtn: $("#cacheImagesBtn"), reloadFolderBtn: $("#reloadFolderBtn"), disconnectFolderBtn: $("#disconnectFolderBtn"),
     storageStatusLabel: $("#storageStatusLabel"), storageStatusDetail: $("#storageStatusDetail"),
     nameLanguageToggle: $("#nameLanguageToggle")
@@ -763,6 +763,21 @@
     return ({ W: "白色", U: "蓝色", B: "黑色", R: "红色", G: "绿色", C: "无色", M: "多色", L: "地牌" })[key] || "其他";
   }
 
+  function openImagePreview(cardId) {
+    const card = state.data.cards.find((item) => item.id === cardId);
+    if (!card || !card.image) return;
+    const displayName = cardDisplayName(card);
+    elements.imagePreview.src = card.image;
+    elements.imagePreview.alt = displayName;
+    elements.imagePreviewDialog.showModal();
+  }
+
+  function closeImagePreview() {
+    elements.imagePreviewDialog.close();
+    elements.imagePreview.removeAttribute("src");
+    elements.imagePreview.alt = "";
+  }
+
   function cardTemplate(card, index) {
     const cost = (card.manaCost || "").replace(/[{}]/g, "").replace(/(?=\D)/g, " ").trim();
     const finish = normalizeFinish(card.finish);
@@ -774,7 +789,7 @@
     return `<article class="card-item" data-id="${escapeHtml(card.id)}" data-finish="${finish}" style="animation-delay:${Math.min(index * 18, 220)}ms">
       <div class="card-image-wrap">
         <div class="card-fallback"><span class="fallback-name">${escapeHtml(displayName)}</span><span class="fallback-type">${escapeHtml(card.typeLine)}</span></div>
-        ${card.image ? `<img class="card-image" src="${escapeHtml(card.image)}" alt="${escapeHtml(displayName)}" loading="lazy" />` : ""}
+        ${card.image ? `<button type="button" class="card-image-button" data-preview-image="${escapeHtml(card.id)}" aria-label="查看 ${escapeHtml(displayName)} 大图"><img class="card-image" src="${escapeHtml(card.image)}" alt="${escapeHtml(displayName)}" loading="lazy" /></button>` : ""}
       </div>
       <div class="card-info">
         <div class="card-name-row"><button class="japan-print-toggle${japanPrint ? " active" : ""}" data-toggle-japan-print="${escapeHtml(card.id)}" title="${japanPrint ? "取消日印标记" : "标记为日印"}" aria-label="${japanPrint ? `取消 ${escapeHtml(displayName)} 的日印标记` : `标记 ${escapeHtml(displayName)} 为日印`}" aria-pressed="${japanPrint ? "true" : "false"}"><span></span></button><span class="card-name" title="${escapeHtml(displayName)}">${escapeHtml(displayName)}</span><span class="card-cost${cost ? "" : " empty"}">${escapeHtml(cost)}</span></div>
@@ -1675,6 +1690,11 @@
     }));
     $$("[data-name-language]").forEach((button) => button.addEventListener("click", () => setNameLanguage(button.dataset.nameLanguage)));
     elements.cardGrid.addEventListener("click", (event) => {
+      const imageButton = event.target.closest("[data-preview-image]");
+      if (imageButton) {
+        openImagePreview(imageButton.dataset.previewImage);
+        return;
+      }
       const japanPrintButton = event.target.closest("[data-toggle-japan-print]");
       if (japanPrintButton) {
         toggleJapanPrint(japanPrintButton.dataset.toggleJapanPrint);
@@ -1739,6 +1759,11 @@
     }));
     elements.importDialog.addEventListener("cancel", (event) => {
       if (state.importing) event.preventDefault();
+    });
+    elements.imagePreviewDialog.addEventListener("click", closeImagePreview);
+    elements.imagePreviewDialog.addEventListener("cancel", () => {
+      elements.imagePreview.removeAttribute("src");
+      elements.imagePreview.alt = "";
     });
     elements.addCardDialog.addEventListener("close", clearNameResults);
     elements.printingDialog.addEventListener("close", () => {
