@@ -120,7 +120,7 @@
     excelFileInput: $("#excelFileInput"), excelFileName: $("#excelFileName"), excelPreview: $("#excelPreview"),
     excelSummary: $("#excelSummary"), excelPreviewBody: $("#excelPreviewBody"), excelDropZone: $("#excelDropZone"),
     lookupResult: $("#lookupResult"), backupFileInput: $("#backupFileInput"), imagePreviewDialog: $("#imagePreviewDialog"), imagePreview: $("#imagePreview"),
-    connectFolderBtn: $("#connectFolderBtn"), cacheImagesBtn: $("#cacheImagesBtn"), reloadFolderBtn: $("#reloadFolderBtn"), disconnectFolderBtn: $("#disconnectFolderBtn"),
+    connectFolderBtn: $("#connectFolderBtn"), cacheImagesBtn: $("#cacheImagesBtn"), syncFolderBtn: $("#syncFolderBtn"), reloadFolderBtn: $("#reloadFolderBtn"), disconnectFolderBtn: $("#disconnectFolderBtn"),
     storageStatusLabel: $("#storageStatusLabel"), storageStatusDetail: $("#storageStatusDetail"),
     nameLanguageToggle: $("#nameLanguageToggle")
   };
@@ -264,6 +264,11 @@
       elements.cacheImagesBtn.disabled = state.imageCaching;
       if (!state.imageCaching) elements.cacheImagesBtn.textContent = "下载本地卡图";
     }
+    if (elements.syncFolderBtn) {
+      const active = state.storage.mode === "directory";
+      elements.syncFolderBtn.classList.toggle("hidden", !active);
+      elements.syncFolderBtn.disabled = state.imageCaching;
+    }
     if (elements.reloadFolderBtn) elements.reloadFolderBtn.classList.toggle("hidden", state.storage.mode !== "directory");
     if (elements.disconnectFolderBtn) elements.disconnectFolderBtn.classList.toggle("hidden", state.storage.mode !== "directory");
 
@@ -314,6 +319,28 @@
       toast("保存失败", "浏览器存储空间可能不足", true);
     }
     if (state.storage.mode === "directory" && state.storage.directoryHandle) queueDirectorySave(snapshotCubeData(state.data));
+  }
+
+  async function syncCurrentDataToDirectory() {
+    if (state.storage.mode !== "directory" || !state.storage.directoryHandle) {
+      toast("请先连接文件夹", "需要选择 Cube 文件夹后才能写入本地文件", true);
+      return;
+    }
+    const count = state.data.cards.length;
+    if (!window.confirm(`将当前网页中的 ${count} 张牌写入 ${state.storage.directoryName}/${CUBE_FILE_NAME}，覆盖文件夹里的旧数据。是否继续？`)) return;
+    try {
+      if (!await requestDirectoryPermission(state.storage.directoryHandle, "readwrite")) {
+        toast("无法写入文件夹", "请重新授权这个 Cube 文件夹", true);
+        return;
+      }
+      const snapshot = snapshotCubeData(state.data);
+      await writeCubeDataFile(state.storage.directoryHandle, snapshot);
+      localMirrorSave();
+      renderStorageStatus();
+      toast("已写入文件夹", `${state.storage.directoryName}/${CUBE_FILE_NAME} 已保存 ${count} 张牌`);
+    } catch (error) {
+      toast("写入失败", error.message || "无法写入 Cube 文件夹", true);
+    }
   }
 
   function imageExtensionFrom(url, blob) {
@@ -1660,6 +1687,7 @@
     elements.backupFileInput.addEventListener("change", (event) => restoreJsonBackup(event.target.files[0]));
     elements.connectFolderBtn.addEventListener("click", connectCubeFolder);
     elements.cacheImagesBtn.addEventListener("click", cacheAllImages);
+    elements.syncFolderBtn.addEventListener("click", syncCurrentDataToDirectory);
     elements.reloadFolderBtn.addEventListener("click", reloadFromDirectory);
     elements.disconnectFolderBtn.addEventListener("click", () => disconnectDirectoryMode());
     $("#clearFiltersBtn").addEventListener("click", clearFilters);
