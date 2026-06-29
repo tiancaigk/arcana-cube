@@ -95,6 +95,7 @@
     imageCaching: false,
     folderSync: {
       syncing: false,
+      dirty: false,
       lastResult: null
     },
     storage: {
@@ -272,7 +273,9 @@
       const active = state.storage.mode === "directory";
       elements.syncFolderBtn.classList.toggle("hidden", !active);
       elements.syncFolderBtn.disabled = state.imageCaching || state.folderSync.syncing;
-      if (elements.syncFolderLabel) elements.syncFolderLabel.textContent = state.folderSync.syncing ? "正在写入…" : (state.folderSync.lastResult && state.folderSync.lastResult.ok ? "已写入文件夹" : "写入文件夹");
+      if (elements.syncFolderLabel) {
+        elements.syncFolderLabel.textContent = state.folderSync.syncing ? "正在写入…" : (!state.folderSync.dirty && state.folderSync.lastResult && state.folderSync.lastResult.ok ? "已写入文件夹" : "写入文件夹");
+      }
     }
     if (elements.reloadFolderBtn) elements.reloadFolderBtn.classList.toggle("hidden", state.storage.mode !== "directory");
     if (elements.disconnectFolderBtn) elements.disconnectFolderBtn.classList.toggle("hidden", state.storage.mode !== "directory");
@@ -280,6 +283,10 @@
     if (!elements.storageStatusLabel || !elements.storageStatusDetail) return;
     if (state.storage.mode === "directory") {
       elements.storageStatusLabel.textContent = "已同步到文件夹";
+      if (state.folderSync.dirty && state.folderSync.lastResult && state.folderSync.lastResult.ok) {
+        elements.storageStatusDetail.textContent = `${state.storage.directoryName}/${CUBE_FILE_NAME} · 有未写入更改`;
+        return;
+      }
       if (state.folderSync.lastResult) {
         const result = state.folderSync.lastResult;
         elements.storageStatusDetail.textContent = result.ok
@@ -330,7 +337,13 @@
     } catch (error) {
       toast("保存失败", "浏览器存储空间可能不足", true);
     }
-    if (state.storage.mode === "directory" && state.storage.directoryHandle) queueDirectorySave(snapshotCubeData(state.data));
+    if (state.storage.mode === "directory" && state.storage.directoryHandle) {
+      if (state.folderSync.lastResult && state.folderSync.lastResult.ok) {
+        state.folderSync = { ...state.folderSync, dirty: true };
+        renderStorageStatus();
+      }
+      queueDirectorySave(snapshotCubeData(state.data));
+    }
   }
 
   async function syncCurrentDataToDirectory() {
@@ -340,11 +353,11 @@
     }
     const count = state.data.cards.length;
     if (!window.confirm(`将当前网页中的 ${count} 张牌写入 ${state.storage.directoryName}/${CUBE_FILE_NAME}，覆盖文件夹里的旧数据。是否继续？`)) return;
-    state.folderSync = { syncing: true, lastResult: null };
+    state.folderSync = { syncing: true, dirty: false, lastResult: null };
     renderStorageStatus();
     try {
       if (!await requestDirectoryPermission(state.storage.directoryHandle, "readwrite")) {
-        state.folderSync = { syncing: false, lastResult: { ok: false, message: "没有文件夹写入权限" } };
+        state.folderSync = { syncing: false, dirty: true, lastResult: { ok: false, message: "没有文件夹写入权限" } };
         renderStorageStatus();
         toast("无法写入文件夹", "请重新授权这个 Cube 文件夹", true);
         return;
@@ -354,12 +367,13 @@
       localMirrorSave();
       state.folderSync = {
         syncing: false,
+        dirty: false,
         lastResult: { ok: true, count, time: new Date().toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit", second: "2-digit" }) }
       };
       renderStorageStatus();
       toast("已写入文件夹", `${state.storage.directoryName}/${CUBE_FILE_NAME} 已保存 ${count} 张牌`);
     } catch (error) {
-      state.folderSync = { syncing: false, lastResult: { ok: false, message: error.message || "无法写入 Cube 文件夹" } };
+      state.folderSync = { syncing: false, dirty: true, lastResult: { ok: false, message: error.message || "无法写入 Cube 文件夹" } };
       renderStorageStatus();
       toast("写入失败", error.message || "无法写入 Cube 文件夹", true);
     }
