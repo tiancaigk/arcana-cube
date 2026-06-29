@@ -163,6 +163,15 @@
       .replace(/\.(?:jpg|jpeg)(\?[^/?#]*)?$/i, ".png$1");
   }
 
+  function isLocalHttpPage() {
+    return location.protocol === "http:" && /^(localhost|127\.0\.0\.1|\[::1\])$/i.test(location.hostname);
+  }
+
+  function imageFetchUrl(url) {
+    if (!isLocalHttpPage() || !/cards\.scryfall\.io/i.test(String(url || ""))) return url;
+    return `/image-proxy?url=${encodeURIComponent(url)}`;
+  }
+
   function normalizeImageFields(card) {
     const localImage = isLocalImagePath(card.localImage) ? card.localImage : (isLocalImagePath(card.image) ? card.image : "");
     const remoteSource = card.remoteImage || (isRemoteImageUrl(card.image) ? card.image : "");
@@ -418,7 +427,7 @@
     let lastError;
     for (const url of candidates) {
       try {
-        const response = await fetch(url);
+        const response = await fetch(imageFetchUrl(url));
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
         const blob = await response.blob();
         if (!blob.size) throw new Error("图片为空");
