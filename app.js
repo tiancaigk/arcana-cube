@@ -93,6 +93,10 @@
     printingController: null,
     refreshingPrices: false,
     imageCaching: false,
+    folderSync: {
+      syncing: false,
+      lastResult: null
+    },
     storage: {
       mode: "browser",
       supported: typeof window.showDirectoryPicker === "function",
@@ -120,7 +124,7 @@
     excelFileInput: $("#excelFileInput"), excelFileName: $("#excelFileName"), excelPreview: $("#excelPreview"),
     excelSummary: $("#excelSummary"), excelPreviewBody: $("#excelPreviewBody"), excelDropZone: $("#excelDropZone"),
     lookupResult: $("#lookupResult"), backupFileInput: $("#backupFileInput"), imagePreviewDialog: $("#imagePreviewDialog"), imagePreview: $("#imagePreview"),
-    connectFolderBtn: $("#connectFolderBtn"), cacheImagesBtn: $("#cacheImagesBtn"), syncFolderBtn: $("#syncFolderBtn"), reloadFolderBtn: $("#reloadFolderBtn"), disconnectFolderBtn: $("#disconnectFolderBtn"),
+    connectFolderBtn: $("#connectFolderBtn"), cacheImagesBtn: $("#cacheImagesBtn"), syncFolderBtn: $("#syncFolderBtn"), syncFolderLabel: $("#syncFolderLabel"), reloadFolderBtn: $("#reloadFolderBtn"), disconnectFolderBtn: $("#disconnectFolderBtn"),
     storageStatusLabel: $("#storageStatusLabel"), storageStatusDetail: $("#storageStatusDetail"),
     nameLanguageToggle: $("#nameLanguageToggle")
   };
@@ -267,7 +271,8 @@
     if (elements.syncFolderBtn) {
       const active = state.storage.mode === "directory";
       elements.syncFolderBtn.classList.toggle("hidden", !active);
-      elements.syncFolderBtn.disabled = state.imageCaching;
+      elements.syncFolderBtn.disabled = state.imageCaching || state.folderSync.syncing;
+      if (elements.syncFolderLabel) elements.syncFolderLabel.textContent = state.folderSync.syncing ? "正在写入…" : (state.folderSync.lastResult && state.folderSync.lastResult.ok ? "已写入文件夹" : "写入文件夹");
     }
     if (elements.reloadFolderBtn) elements.reloadFolderBtn.classList.toggle("hidden", state.storage.mode !== "directory");
     if (elements.disconnectFolderBtn) elements.disconnectFolderBtn.classList.toggle("hidden", state.storage.mode !== "directory");
@@ -275,7 +280,14 @@
     if (!elements.storageStatusLabel || !elements.storageStatusDetail) return;
     if (state.storage.mode === "directory") {
       elements.storageStatusLabel.textContent = "已同步到文件夹";
-      elements.storageStatusDetail.textContent = `${state.storage.directoryName}/${CUBE_FILE_NAME}`;
+      if (state.folderSync.lastResult) {
+        const result = state.folderSync.lastResult;
+        elements.storageStatusDetail.textContent = result.ok
+          ? `${state.storage.directoryName}/${CUBE_FILE_NAME} · ${result.count} 张 · ${result.time}`
+          : `写入失败：${result.message}`;
+      } else {
+        elements.storageStatusDetail.textContent = `${state.storage.directoryName}/${CUBE_FILE_NAME}`;
+      }
       return;
     }
     elements.storageStatusLabel.textContent = "已保存在此浏览器";
@@ -328,17 +340,27 @@
     }
     const count = state.data.cards.length;
     if (!window.confirm(`将当前网页中的 ${count} 张牌写入 ${state.storage.directoryName}/${CUBE_FILE_NAME}，覆盖文件夹里的旧数据。是否继续？`)) return;
+    state.folderSync = { syncing: true, lastResult: null };
+    renderStorageStatus();
     try {
       if (!await requestDirectoryPermission(state.storage.directoryHandle, "readwrite")) {
+        state.folderSync = { syncing: false, lastResult: { ok: false, message: "没有文件夹写入权限" } };
+        renderStorageStatus();
         toast("无法写入文件夹", "请重新授权这个 Cube 文件夹", true);
         return;
       }
       const snapshot = snapshotCubeData(state.data);
       await writeCubeDataFile(state.storage.directoryHandle, snapshot);
       localMirrorSave();
+      state.folderSync = {
+        syncing: false,
+        lastResult: { ok: true, count, time: new Date().toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit", second: "2-digit" }) }
+      };
       renderStorageStatus();
       toast("已写入文件夹", `${state.storage.directoryName}/${CUBE_FILE_NAME} 已保存 ${count} 张牌`);
     } catch (error) {
+      state.folderSync = { syncing: false, lastResult: { ok: false, message: error.message || "无法写入 Cube 文件夹" } };
+      renderStorageStatus();
       toast("写入失败", error.message || "无法写入 Cube 文件夹", true);
     }
   }
