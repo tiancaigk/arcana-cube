@@ -2,12 +2,15 @@
   "use strict";
 
   const STORAGE_KEY = "arcana-cube-v1";
+  const PRICE_HISTORY_STORAGE_KEY = "arcana-cube-price-history-v1";
   const NAME_LANGUAGE_KEY = "arcana-cube-card-name-language";
   const DIRECTORY_HANDLE_KEY = "cube-directory-handle";
   const CUBE_FILE_NAME = "cube-data.json";
+  const PRICE_HISTORY_FILE_NAME = "price-history.json";
   const IMAGE_DIR_NAME = "images";
   const SHEETJS_URL = "https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js";
   const { buildBackup, buildCardNameSearchUrl, buildExcelRows, buildLocalizedNameSearchUrl, buildLocalImageFileName, buildPrintingsUrl, chooseValidFinish, computeStats, filterCards, filterOraclePrintings, filterPrintings, sortCards, getAvailableFinishes, getCardBucket, getFrontColors, getFrontDisplayName, getFrontTypeLine, getLookupName, getOracleId, getPreferredLocalizedName, getPriceNumber, getUsdPrice, isPaperPrinting, needsPriceRefresh, normalizeCardName, normalizeFinish, normalizeLocalizedNames, normalizeScryfallCard, parseBackup, parseDecklist, parseExcelRows, prepareTextImportRows, replacePrinting } = window.CubeCore;
+  const { cardSeries, emptyPriceHistory, normalizePriceHistory, parsePriceHistoryData, recordDailySnapshot, totalSeries, wrapPriceHistoryData } = window.CubePriceHistory;
   const { requestJson: scryfallRequest } = window.ScryfallClient;
   const cubeStorage = window.CubeStorage.createStorage(localStorage, STORAGE_KEY);
   const cubeHandleStore = window.CubeStorage.createHandleStore(window.indexedDB);
@@ -68,6 +71,7 @@
       loaded.cards = normalizeStoredCards(loaded.cards || []);
       return loaded;
     })(),
+    priceHistory: loadPriceHistoryState(),
     filters: { query: "", color: "all", type: "all", finish: "all", japanPrint: "all" },
     mode: "grid",
     nameLanguage: loadNameLanguage(),
@@ -125,6 +129,7 @@
     excelFileInput: $("#excelFileInput"), excelFileName: $("#excelFileName"), excelPreview: $("#excelPreview"),
     excelSummary: $("#excelSummary"), excelPreviewBody: $("#excelPreviewBody"), excelDropZone: $("#excelDropZone"),
     lookupResult: $("#lookupResult"), backupFileInput: $("#backupFileInput"), imagePreviewDialog: $("#imagePreviewDialog"), imagePreview: $("#imagePreview"),
+    priceHistoryDialog: $("#priceHistoryDialog"), priceHistoryContent: $("#priceHistoryContent"),
     connectFolderBtn: $("#connectFolderBtn"), cacheImagesBtn: $("#cacheImagesBtn"), syncFolderBtn: $("#syncFolderBtn"), syncFolderLabel: $("#syncFolderLabel"), reloadFolderBtn: $("#reloadFolderBtn"), disconnectFolderBtn: $("#disconnectFolderBtn"),
     storageStatusLabel: $("#storageStatusLabel"), storageStatusDetail: $("#storageStatusDetail"),
     nameLanguageToggle: $("#nameLanguageToggle")
@@ -207,6 +212,15 @@
     return cubeStorage.load(defaultState);
   }
 
+  function loadPriceHistoryState() {
+    try {
+      const saved = JSON.parse(localStorage.getItem(PRICE_HISTORY_STORAGE_KEY));
+      return normalizePriceHistory(saved);
+    } catch (error) {
+      return emptyPriceHistory();
+    }
+  }
+
   function snapshotCubeData(data) {
     if (typeof structuredClone === "function") return structuredClone(data);
     return JSON.parse(JSON.stringify(data));
@@ -222,8 +236,16 @@
     if (typeof state.data.meta.description !== "string") state.data.meta.description = defaultState.meta.description;
   }
 
+  function applyPriceHistoryData(data) {
+    state.priceHistory = normalizePriceHistory(data);
+  }
+
   function localMirrorSave() {
     cubeStorage.save(state.data);
+  }
+
+  function savePriceHistoryLocal() {
+    localStorage.setItem(PRICE_HISTORY_STORAGE_KEY, JSON.stringify(normalizePriceHistory(state.priceHistory)));
   }
 
   async function queryDirectoryPermission(directoryHandle, mode = "readwrite") {
@@ -244,6 +266,10 @@
 
   async function getCubeFileHandle(directoryHandle, create = false) {
     return directoryHandle.getFileHandle(CUBE_FILE_NAME, { create });
+  }
+
+  async function getPriceHistoryFileHandle(directoryHandle, create = false) {
+    return directoryHandle.getFileHandle(PRICE_HISTORY_FILE_NAME, { create });
   }
 
   async function getImagesDirectoryHandle(create = false) {
@@ -268,6 +294,27 @@
     const fileHandle = await getCubeFileHandle(directoryHandle, true);
     const writable = await fileHandle.createWritable();
     await writable.write(JSON.stringify(window.CubeStorage.wrapWorkspaceData(data), null, 2));
+    await writable.close();
+  }
+
+  async function readPriceHistoryFile(directoryHandle) {
+    try {
+      const fileHandle = await getPriceHistoryFileHandle(directoryHandle, false);
+      const file = await fileHandle.getFile();
+      const text = await file.text();
+      if (!text.trim()) return emptyPriceHistory();
+      return parsePriceHistoryData(text);
+    } catch (error) {
+      if (isMissingEntryError(error)) return null;
+      if (error instanceof SyntaxError) throw new Error("price-history.json 不是有效的 JSON");
+      throw error;
+    }
+  }
+
+  async function writePriceHistoryFile(directoryHandle, priceHistory) {
+    const fileHandle = await getPriceHistoryFileHandle(directoryHandle, true);
+    const writable = await fileHandle.createWritable();
+    await writable.write(JSON.stringify(wrapPriceHistoryData(priceHistory), null, 2));
     await writable.close();
   }
 
@@ -339,7 +386,10 @@
   async function queueDirectorySave(snapshot) {
     state.storage.writeQueue = state.storage.writeQueue
       .catch(() => {})
-      .then(() => writeCubeDataFile(state.storage.directoryHandle, snapshot))
+      .then(async () => {
+        await writeCubeDataFile(state.storage.directoryHandle, snapshot);
+        await writePriceHistoryFile(state.storage.directoryHandle, state.priceHistory);
+      })
       .catch(async () => {
         await disconnectDirectoryMode("文件夹写入失败，后续会继续保存在浏览器");
       });
@@ -349,6 +399,7 @@
   function saveState() {
     try {
       localMirrorSave();
+      savePriceHistoryLocal();
     } catch (error) {
       toast("保存失败", "浏览器存储空间可能不足", true);
     }
@@ -379,14 +430,16 @@
       }
       const snapshot = snapshotCubeData(state.data);
       await writeCubeDataFile(state.storage.directoryHandle, snapshot);
+      await writePriceHistoryFile(state.storage.directoryHandle, state.priceHistory);
       localMirrorSave();
+      savePriceHistoryLocal();
       state.folderSync = {
         syncing: false,
         dirty: false,
         lastResult: { ok: true, count, time: new Date().toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit", second: "2-digit" }) }
       };
       renderStorageStatus();
-      toast("已写入文件夹", `${state.storage.directoryName}/${CUBE_FILE_NAME} 已保存 ${count} 张牌`);
+      toast("已写入文件夹", `${state.storage.directoryName}/${CUBE_FILE_NAME} 与 ${PRICE_HISTORY_FILE_NAME} 已保存`);
     } catch (error) {
       state.folderSync = { syncing: false, dirty: true, lastResult: { ok: false, message: error.message || "无法写入 Cube 文件夹" } };
       renderStorageStatus();
@@ -527,11 +580,14 @@
         toast("没有找到数据文件", `${state.storage.directoryName} 里还没有 ${CUBE_FILE_NAME}`, true);
         return;
       }
+      const priceHistoryData = await readPriceHistoryFile(state.storage.directoryHandle);
       applyCubeData(fileData);
+      applyPriceHistoryData(priceHistoryData || emptyPriceHistory());
       localMirrorSave();
+      savePriceHistoryLocal();
       render();
       renderStorageStatus();
-      toast("已从文件夹载入", `${state.storage.directoryName}/${CUBE_FILE_NAME}`);
+      toast("已从文件夹载入", `${state.storage.directoryName}/${CUBE_FILE_NAME}${priceHistoryData ? ` 与 ${PRICE_HISTORY_FILE_NAME}` : ""}`);
     } catch (error) {
       toast("载入失败", error.message || "无法读取 Cube 文件夹", true);
     }
@@ -549,12 +605,20 @@
         return;
       }
       const fileData = await readCubeDataFile(directoryHandle);
+      const priceHistoryData = await readPriceHistoryFile(directoryHandle);
       if (fileData) {
         const shouldLoad = window.confirm(`发现现有的 ${CUBE_FILE_NAME}。\n确定要载入文件里的 Cube 吗？\n选择“取消”会用当前牌表覆盖文件内容。`);
-        if (shouldLoad) applyCubeData(fileData);
-        else await writeCubeDataFile(directoryHandle, snapshotCubeData(state.data));
+        if (shouldLoad) {
+          applyCubeData(fileData);
+          if (priceHistoryData) applyPriceHistoryData(priceHistoryData);
+          else await writePriceHistoryFile(directoryHandle, state.priceHistory);
+        } else {
+          await writeCubeDataFile(directoryHandle, snapshotCubeData(state.data));
+          await writePriceHistoryFile(directoryHandle, state.priceHistory);
+        }
       } else {
         await writeCubeDataFile(directoryHandle, snapshotCubeData(state.data));
+        await writePriceHistoryFile(directoryHandle, state.priceHistory);
       }
       state.storage.mode = "directory";
       state.storage.directoryHandle = directoryHandle;
@@ -562,9 +626,10 @@
       state.storage.rememberedDirectoryName = directoryHandle.name || "";
       await cubeHandleStore.save(DIRECTORY_HANDLE_KEY, directoryHandle).catch(() => false);
       localMirrorSave();
+      savePriceHistoryLocal();
       render();
       renderStorageStatus();
-      toast("已连接文件夹", `后续修改会自动写入 ${state.storage.directoryName}/${CUBE_FILE_NAME}`);
+      toast("已连接文件夹", `后续修改会自动写入 ${state.storage.directoryName}/${CUBE_FILE_NAME} 与 ${PRICE_HISTORY_FILE_NAME}`);
     } catch (error) {
       if (error && error.name === "AbortError") return;
       toast("连接失败", error.message || "无法连接 Cube 文件夹", true);
@@ -588,12 +653,17 @@
         return;
       }
       const fileData = await readCubeDataFile(directoryHandle);
+      const priceHistoryData = await readPriceHistoryFile(directoryHandle);
       state.storage.mode = "directory";
       state.storage.directoryHandle = directoryHandle;
       state.storage.directoryName = directoryHandle.name || "";
       if (fileData) {
         applyCubeData(fileData);
         localMirrorSave();
+      }
+      if (priceHistoryData) {
+        applyPriceHistoryData(priceHistoryData);
+        savePriceHistoryLocal();
       }
       render();
     } catch (error) {
@@ -763,7 +833,9 @@
   function renderStats() {
     const stats = computeStats(state.data.cards);
     const priceInfo = priceStatus(state.data.cards);
-    const priceAction = `<button type="button" class="stat-action icon-only${state.refreshingPrices ? " loading" : ""}" data-refresh-prices ${state.refreshingPrices ? "disabled" : ""} aria-label="${state.refreshingPrices ? "正在更新价格" : "手动更新价格"}" title="${state.refreshingPrices ? "正在更新价格" : "手动更新价格"}">
+    const priceAction = `<button type="button" class="stat-action icon-only" data-show-total-history aria-label="查看总价历史" title="查看总价历史">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 19h16"/><path d="M6 15l4-5 4 3 4-7"/></svg>
+    </button><button type="button" class="stat-action icon-only${state.refreshingPrices ? " loading" : ""}" data-refresh-prices ${state.refreshingPrices ? "disabled" : ""} aria-label="${state.refreshingPrices ? "正在更新价格" : "手动更新价格"}" title="${state.refreshingPrices ? "正在更新价格" : "手动更新价格"}">
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11a8 8 0 1 1-2.35-5.65"/><path d="M20 4v7h-7"/></svg>
     </button>`;
     const cards = [
@@ -816,6 +888,64 @@
     return `最近更新 ${updated}${missing ? ` · 缺价 ${missing} 张` : ""}`;
   }
 
+  function formatHistoryDate(date) {
+    const parsed = new Date(`${date}T00:00:00`);
+    if (Number.isNaN(parsed.getTime())) return date;
+    return new Intl.DateTimeFormat("zh-CN", { month: "numeric", day: "numeric" }).format(parsed);
+  }
+
+  function renderPriceHistoryPanel({ title, subtitle, points, emptyText }) {
+    const series = (points || []).filter((point) => Number.isFinite(Number(point.usd)));
+    if (!series.length) {
+      return `<section class="price-history-panel empty">
+        <div class="price-history-head"><div><span>PRICE HISTORY</span><strong>${escapeHtml(title)}</strong></div><small>${escapeHtml(subtitle || "")}</small></div>
+        <p>${escapeHtml(emptyText || "暂无价格历史。点击“更新价格”后会记录今天的快照。")}</p>
+      </section>`;
+    }
+    const width = 520;
+    const height = 190;
+    const padX = 34;
+    const padY = 26;
+    const values = series.map((point) => Number(point.usd));
+    const rawMin = Math.min(...values);
+    const rawMax = Math.max(...values);
+    const min = rawMin === rawMax ? Math.max(0, rawMin - Math.max(1, rawMin * 0.05)) : rawMin;
+    const max = rawMin === rawMax ? rawMax + Math.max(1, rawMax * 0.05) : rawMax;
+    const range = max - min || 1;
+    const xFor = (index) => series.length === 1 ? width / 2 : padX + index * ((width - padX * 2) / (series.length - 1));
+    const yFor = (value) => height - padY - ((value - min) / range) * (height - padY * 2);
+    const coords = series.map((point, index) => ({ ...point, x: xFor(index), y: yFor(Number(point.usd)) }));
+    const polyline = coords.map((point) => `${point.x.toFixed(1)},${point.y.toFixed(1)}`).join(" ");
+    const first = series[0];
+    const latest = series[series.length - 1];
+    return `<section class="price-history-panel">
+      <div class="price-history-head"><div><span>PRICE HISTORY</span><strong>${escapeHtml(title)}</strong></div><small>${escapeHtml(subtitle || `${series.length} 个每日快照`)}</small></div>
+      <svg class="price-chart" viewBox="0 0 ${width} ${height}" role="img" aria-label="${escapeHtml(title)} 价格历史曲线">
+        <path class="price-grid-line" d="M${padX} ${padY}H${width - padX}M${padX} ${height - padY}H${width - padX}"/>
+        <text x="${padX}" y="${padY - 8}" class="price-axis">${escapeHtml(formatUsd(max))}</text>
+        <text x="${padX}" y="${height - 8}" class="price-axis">${escapeHtml(formatUsd(min))}</text>
+        <polyline class="price-line" points="${polyline}"/>
+        ${coords.map((point) => `<circle class="price-point" cx="${point.x.toFixed(1)}" cy="${point.y.toFixed(1)}" r="3.2"><title>${escapeHtml(point.date)} · ${escapeHtml(formatUsd(point.usd))}</title></circle>`).join("")}
+      </svg>
+      <div class="price-history-summary"><span>${escapeHtml(formatHistoryDate(first.date))} ${escapeHtml(formatUsd(first.usd))}</span><strong>${escapeHtml(formatHistoryDate(latest.date))} ${escapeHtml(formatUsd(latest.usd))}</strong></div>
+    </section>`;
+  }
+
+  function openTotalPriceHistory() {
+    const points = totalSeries(state.priceHistory);
+    elements.priceHistoryContent.innerHTML = renderPriceHistoryPanel({
+      title: "Cube 总价",
+      subtitle: `${points.length} 个每日快照`,
+      points,
+      emptyText: "暂无总价历史。点击总价旁边的刷新按钮后，会记录今天的 Cube 总价。"
+    });
+    elements.priceHistoryDialog.showModal();
+  }
+
+  function recordCurrentPriceHistory() {
+    state.priceHistory = recordDailySnapshot(state.priceHistory, state.data.cards);
+  }
+
   function renderCards() {
     const cards = sortCards(filterCards(state.data.cards, state.filters));
     elements.resultCount.textContent = cards.length;
@@ -857,19 +987,27 @@
     const card = state.data.cards.find((item) => item.id === cardId);
     if (!card || !card.image) return;
     const displayName = cardDisplayName(card);
+    const finish = normalizeFinish(card.finish);
     const images = [
       { src: card.image, alt: `${displayName} 正面` },
       { src: card.backImage, alt: `${displayName} 背面` }
     ].filter((item) => item.src);
-    elements.imagePreview.classList.toggle("two-sided", images.length > 1);
-    elements.imagePreview.innerHTML = images.map((item) => `<img src="${escapeHtml(item.src)}" alt="${escapeHtml(item.alt)}" />`).join("");
+    const points = cardSeries(state.priceHistory, card, finish);
+    elements.imagePreview.innerHTML = `<div class="preview-image-grid${images.length > 1 ? " two-sided" : ""}">
+      ${images.map((item) => `<img src="${escapeHtml(item.src)}" alt="${escapeHtml(item.alt)}" />`).join("")}
+    </div>
+    ${renderPriceHistoryPanel({
+      title: `${displayName} · ${finish === "foil" ? "Foil" : "Non-Foil"}`,
+      subtitle: `${card.set}${card.collectorNumber ? ` · ${card.collectorNumber}` : ""}`,
+      points,
+      emptyText: "这张牌当前版本还没有历史价格。点击总价旁边的刷新按钮后会记录。"
+    })}`;
     elements.imagePreviewDialog.showModal();
   }
 
   function closeImagePreview() {
     elements.imagePreviewDialog.close();
     elements.imagePreview.innerHTML = "";
-    elements.imagePreview.classList.remove("two-sided");
   }
 
   function cardTemplate(card, index) {
@@ -1032,10 +1170,19 @@
   async function refreshStalePrices(force = false) {
     if (state.refreshingPrices) return;
     const targets = state.data.cards.filter((card) => force || needsPriceRefresh(card));
-    if (!targets.length) return;
+    if (!targets.length) {
+      if (force) {
+        recordCurrentPriceHistory();
+        saveState();
+        renderStats();
+        toast("价格历史已记录", "当前牌表没有需要刷新的价格，已保存今天的快照");
+      }
+      return;
+    }
     state.refreshingPrices = true;
     renderStats();
     let updated = false;
+    let failed = false;
     try {
       const uniqueTargets = [...new Map(targets.map((card) => [printingKey(card.set, card.collectorNumber), { setCode: card.set, collectorNumber: card.collectorNumber }])).values()];
       const cardsByPrinting = await lookupPrintingBatch(uniqueTargets);
@@ -1055,15 +1202,21 @@
       });
     } catch (error) {
       // Price refresh is best-effort and should not block local use.
+      failed = true;
       if (force) toast("价格更新失败", "暂时无法连接 Scryfall，请稍后重试", true);
     } finally {
       state.refreshingPrices = false;
     }
-    if (updated) {
+    if (failed) {
+      renderStats();
+      return;
+    }
+    if (force) recordCurrentPriceHistory();
+    if (updated || force) {
       state.data.cards = sortCards(state.data.cards);
       saveState();
       render();
-      if (force) toast("价格已更新", `已检查 ${targets.length} 张牌的最新价格`);
+      if (force) toast("价格已更新", `已检查 ${targets.length} 张牌，并保存今天的价格历史`);
       return;
     }
     renderStats();
@@ -1729,6 +1882,11 @@
 
   function bindEvents() {
     elements.statsGrid.addEventListener("click", (event) => {
+      const historyButton = event.target.closest("[data-show-total-history]");
+      if (historyButton) {
+        openTotalPriceHistory();
+        return;
+      }
       const button = event.target.closest("[data-refresh-prices]");
       if (button) refreshStalePrices(true);
     });
@@ -1855,10 +2013,11 @@
     elements.importDialog.addEventListener("cancel", (event) => {
       if (state.importing) event.preventDefault();
     });
-    elements.imagePreviewDialog.addEventListener("click", closeImagePreview);
+    elements.imagePreviewDialog.addEventListener("click", (event) => {
+      if (event.target === elements.imagePreviewDialog || event.target.closest(".preview-image-grid img")) closeImagePreview();
+    });
     elements.imagePreviewDialog.addEventListener("cancel", () => {
       elements.imagePreview.innerHTML = "";
-      elements.imagePreview.classList.remove("two-sided");
     });
     elements.addCardDialog.addEventListener("close", clearNameResults);
     elements.printingDialog.addEventListener("close", () => {
