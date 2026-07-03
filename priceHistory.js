@@ -139,6 +139,26 @@
       .filter((point) => point.usd !== null);
   }
 
+  function priceTrend(points) {
+    const series = (points || []).filter((point) => normalizeUsd(point && point.usd) !== null);
+    if (series.length < 2) return null;
+    const previous = series[series.length - 2];
+    const latest = series[series.length - 1];
+    const previousUsd = normalizeUsd(previous.usd);
+    const latestUsd = normalizeUsd(latest.usd);
+    const delta = Math.round((latestUsd - previousUsd) * 100) / 100;
+    if (!delta) return null;
+    return {
+      direction: delta > 0 ? "up" : "down",
+      delta,
+      previousUsd,
+      latestUsd,
+      previousDate: previous.date,
+      latestDate: latest.date,
+      percent: previousUsd ? Math.round(delta / previousUsd * 10000) / 100 : null
+    };
+  }
+
   function wrapPriceHistoryData(history) {
     return {
       format: PRICE_HISTORY_FORMAT,
@@ -163,6 +183,7 @@
     emptyPriceHistory,
     normalizePriceHistory,
     parsePriceHistoryData,
+    priceTrend,
     recordDailySnapshot,
     totalSeries,
     wrapPriceHistoryData

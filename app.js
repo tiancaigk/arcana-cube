@@ -10,7 +10,7 @@
   const IMAGE_DIR_NAME = "images";
   const SHEETJS_URL = "https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js";
   const { buildBackup, buildCardNameSearchUrl, buildExcelRows, buildLocalizedNameSearchUrl, buildLocalImageFileName, buildPrintingsUrl, chooseValidFinish, computeStats, filterCards, filterOraclePrintings, filterPrintings, sortCards, getAvailableFinishes, getCardBucket, getFrontColors, getFrontDisplayName, getFrontTypeLine, getLookupName, getOracleId, getPreferredLocalizedName, getPriceNumber, getUsdPrice, isPaperPrinting, needsPriceRefresh, normalizeCardName, normalizeFinish, normalizeLocalizedNames, normalizeScryfallCard, parseBackup, parseDecklist, parseExcelRows, prepareTextImportRows, replacePrinting } = window.CubeCore;
-  const { cardSeries, emptyPriceHistory, normalizePriceHistory, parsePriceHistoryData, recordDailySnapshot, totalSeries, wrapPriceHistoryData } = window.CubePriceHistory;
+  const { cardSeries, emptyPriceHistory, normalizePriceHistory, parsePriceHistoryData, priceTrend, recordDailySnapshot, totalSeries, wrapPriceHistoryData } = window.CubePriceHistory;
   const { requestJson: scryfallRequest } = window.ScryfallClient;
   const cubeStorage = window.CubeStorage.createStorage(localStorage, STORAGE_KEY);
   const cubeHandleStore = window.CubeStorage.createHandleStore(window.indexedDB);
@@ -833,6 +833,7 @@
   function renderStats() {
     const stats = computeStats(state.data.cards);
     const priceInfo = priceStatus(state.data.cards);
+    const totalPriceTrend = priceTrend(totalSeries(state.priceHistory));
     const priceAction = `<button type="button" class="stat-action icon-only" data-show-total-history aria-label="查看总价历史" title="查看总价历史">
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 19h16"/><path d="M6 15l4-5 4 3 4-7"/></svg>
     </button><button type="button" class="stat-action icon-only${state.refreshingPrices ? " loading" : ""}" data-refresh-prices ${state.refreshingPrices ? "disabled" : ""} aria-label="${state.refreshingPrices ? "正在更新价格" : "手动更新价格"}" title="${state.refreshingPrices ? "正在更新价格" : "手动更新价格"}">
@@ -843,7 +844,7 @@
       ["平均费用", stats.averageCmc.toFixed(2), "CMC", "地牌不计入", "curve"],
       ["生物", stats.creatures, "张", `${percent(stats.creatures, stats.total)}% 的牌表`, "creature"],
       ["地牌", stats.lands, "张", `${percent(stats.lands, stats.total)}% 的牌表`, "land"],
-      ["总价", formatUsd(cubeValue(state.data.cards)), "USD", priceInfo, "cards", priceAction]
+      ["总价", `${formatUsd(cubeValue(state.data.cards))}${priceTrendBadge(totalPriceTrend)}`, "USD", priceInfo, "cards", priceAction]
     ];
     const icons = {
       cards: '<rect x="5" y="3" width="14" height="18" rx="2"/><path d="M9 7h6M9 11h6"/>',
@@ -872,6 +873,15 @@
 
   function cardPrice(card) {
     return getUsdPrice(card, card.finish);
+  }
+
+  function priceTrendBadge(trend) {
+    if (!trend) return "";
+    const directionLabel = trend.direction === "up" ? "上涨" : "下跌";
+    const arrow = trend.direction === "up" ? "▲" : "▼";
+    const percent = trend.percent === null ? "" : `，${Math.abs(trend.percent).toFixed(2)}%`;
+    const title = `较上次记录${directionLabel} ${formatUsd(Math.abs(trend.delta))}${percent}`;
+    return `<span class="price-trend ${trend.direction}" title="${escapeHtml(title)}" aria-label="${escapeHtml(title)}">${arrow}</span>`;
   }
 
   function cubeValue(cards) {
@@ -1016,6 +1026,7 @@
     const availableFinishes = getAvailableFinishes(card);
     const finishDisabled = availableFinishes.length < 2;
     const price = formatUsd(cardPrice(card));
+    const trend = priceTrend(cardSeries(state.priceHistory, card, finish));
     const displayName = cardDisplayName(card);
     const japanPrint = card.JapanPrint === true;
     return `<article class="card-item" data-id="${escapeHtml(card.id)}" data-finish="${finish}" style="animation-delay:${Math.min(index * 18, 220)}ms">
@@ -1026,7 +1037,7 @@
       <div class="card-info">
         <div class="card-name-row"><button class="japan-print-toggle${japanPrint ? " active" : ""}" data-toggle-japan-print="${escapeHtml(card.id)}" title="${japanPrint ? "取消日印标记" : "标记为日印"}" aria-label="${japanPrint ? `取消 ${escapeHtml(displayName)} 的日印标记` : `标记 ${escapeHtml(displayName)} 为日印`}" aria-pressed="${japanPrint ? "true" : "false"}"><span></span></button><span class="card-name" title="${escapeHtml(displayName)}">${escapeHtml(displayName)}</span><span class="card-cost${cost ? "" : " empty"}">${escapeHtml(cost)}</span></div>
         <div class="card-meta"><span>${escapeHtml(card.typeLine.split(" — ")[0])}</span><button class="finish-pill ${finish}" data-toggle-finish="${escapeHtml(card.id)}" ${finishDisabled ? "disabled" : ""} title="${finishDisabled ? `此版本仅支持 ${finish === "foil" ? "Foil" : "Non-Foil"}` : `切换 ${escapeHtml(displayName)} 的 Foil 状态`}">${finish === "foil" ? "Foil" : "Non-Foil"}</button></div>
-        <div class="card-meta"><span>${escapeHtml(card.set)}${card.collectorNumber ? ` · ${escapeHtml(card.collectorNumber)}` : ""} · <span class="card-price">${escapeHtml(price)}</span></span><button class="printing-button" data-change-printing="${escapeHtml(card.id)}" title="选择 ${escapeHtml(displayName)} 的其他版本">选择版本</button></div>
+        <div class="card-meta"><span>${escapeHtml(card.set)}${card.collectorNumber ? ` · ${escapeHtml(card.collectorNumber)}` : ""} · <span class="card-price">${escapeHtml(price)}${priceTrendBadge(trend)}</span></span><button class="printing-button" data-change-printing="${escapeHtml(card.id)}" title="选择 ${escapeHtml(displayName)} 的其他版本">选择版本</button></div>
       </div>
       <button class="remove-card" data-remove="${escapeHtml(card.id)}" title="从 Cube 移除" aria-label="移除 ${escapeHtml(displayName)}">−</button>
     </article>`;

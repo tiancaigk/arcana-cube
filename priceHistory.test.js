@@ -1,6 +1,6 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { cardPriceKey, cardSeries, dateKey, emptyPriceHistory, normalizePriceHistory, parsePriceHistoryData, recordDailySnapshot, totalSeries, wrapPriceHistoryData } = require("./priceHistory.js");
+const { cardPriceKey, cardSeries, dateKey, emptyPriceHistory, normalizePriceHistory, parsePriceHistoryData, priceTrend, recordDailySnapshot, totalSeries, wrapPriceHistoryData } = require("./priceHistory.js");
 
 test("dateKey formats local calendar dates", () => {
   assert.equal(dateKey(new Date(2026, 6, 2, 23, 59)), "2026-07-02");
@@ -43,6 +43,30 @@ test("totalSeries sorts snapshots and skips invalid entries", () => {
     { date: "2026-07-01", usd: 8 },
     { date: "2026-07-03", usd: 1 }
   ]);
+});
+
+test("priceTrend compares the latest two history points", () => {
+  assert.deepEqual(priceTrend([
+    { date: "2026-07-01", usd: 10 },
+    { date: "2026-07-02", usd: 12.5 }
+  ]), {
+    direction: "up",
+    delta: 2.5,
+    previousUsd: 10,
+    latestUsd: 12.5,
+    previousDate: "2026-07-01",
+    latestDate: "2026-07-02",
+    percent: 25
+  });
+  assert.equal(priceTrend([
+    { date: "2026-07-01", usd: 10 },
+    { date: "2026-07-02", usd: 10 }
+  ]), null);
+  assert.equal(priceTrend([{ date: "2026-07-01", usd: 10 }]), null);
+  assert.equal(priceTrend([
+    { date: "2026-07-01", usd: 10 },
+    { date: "2026-07-02", usd: 9.25 }
+  ]).direction, "down");
 });
 
 test("price history files wrap and parse round-trip data", () => {
