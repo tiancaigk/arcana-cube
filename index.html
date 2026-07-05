@@ -129,41 +129,46 @@
                 <button class="mana land" data-color="L" title="地牌" aria-pressed="false">L</button>
               </div>
 
-              <select id="typeFilter" aria-label="按类型筛选">
-                <option value="all">全部类别</option>
-                <option value="Creature">生物</option>
-                <option value="Instant">瞬间</option>
-                <option value="Sorcery">法术</option>
-                <option value="Artifact">神器</option>
-                <option value="Enchantment">结界</option>
-                <option value="Planeswalker">鹏洛客</option>
-                <option value="Land">地</option>
-              </select>
+              <div class="attribute-filters" aria-label="属性筛选">
+                <span class="attribute-label">属性</span>
+                <select id="typeFilter" aria-label="按类型筛选">
+                  <option value="all">全部类别</option>
+                  <option value="Creature">生物</option>
+                  <option value="Instant">瞬间</option>
+                  <option value="Sorcery">法术</option>
+                  <option value="Artifact">神器</option>
+                  <option value="Enchantment">结界</option>
+                  <option value="Planeswalker">鹏洛客</option>
+                  <option value="Land">地</option>
+                </select>
 
-              <select id="finishFilter" aria-label="按闪卡状态筛选">
-                <option value="all">表面工艺</option>
-                <option value="foil">仅 Foil</option>
-                <option value="nonfoil">仅 Non-Foil</option>
-              </select>
+                <select id="finishFilter" aria-label="按闪卡状态筛选">
+                  <option value="all">表面工艺</option>
+                  <option value="foil">仅 Foil</option>
+                  <option value="nonfoil">仅 Non-Foil</option>
+                </select>
 
-              <select id="japanPrintFilter" aria-label="按日印状态筛选">
-                <option value="all">印刷产地</option>
-                <option value="japan">日印</option>
-                <option value="nonjapan">非日印</option>
-              </select>
-
-              <div class="language-toggle" id="nameLanguageToggle" aria-label="卡牌名语言">
-                <button class="active" data-name-language="en" title="显示英文卡牌名" aria-pressed="true">EN</button>
-                <button data-name-language="zh" title="显示中文卡牌名" aria-pressed="false">中</button>
+                <select id="japanPrintFilter" aria-label="按日印状态筛选">
+                  <option value="all">印刷产地</option>
+                  <option value="japan">日印</option>
+                  <option value="nonjapan">非日印</option>
+                </select>
               </div>
 
-              <div class="view-toggle" aria-label="显示模式">
-                <button class="active" data-mode="grid" title="网格视图" aria-pressed="true">
-                  <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="6" height="6"/><rect x="14" y="4" width="6" height="6"/><rect x="4" y="14" width="6" height="6"/><rect x="14" y="14" width="6" height="6"/></svg>
-                </button>
-                <button data-mode="list" title="列表视图" aria-pressed="false">
-                  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 6h12M8 12h12M8 18h12M4 6h.01M4 12h.01M4 18h.01"/></svg>
-                </button>
+              <div class="display-controls">
+                <div class="language-toggle" id="nameLanguageToggle" aria-label="卡牌名语言">
+                  <button class="active" data-name-language="en" title="显示英文卡牌名" aria-pressed="true">EN</button>
+                  <button data-name-language="zh" title="显示中文卡牌名" aria-pressed="false">中</button>
+                </div>
+
+                <div class="view-toggle" aria-label="显示模式">
+                  <button class="active" data-mode="grid" title="网格视图" aria-pressed="true">
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="6" height="6"/><rect x="14" y="4" width="6" height="6"/><rect x="4" y="14" width="6" height="6"/><rect x="14" y="14" width="6" height="6"/></svg>
+                  </button>
+                  <button data-mode="list" title="列表视图" aria-pressed="false">
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 6h12M8 12h12M8 18h12M4 6h.01M4 12h.01M4 18h.01"/></svg>
+                  </button>
+                </div>
               </div>
             </div>
           </div>
