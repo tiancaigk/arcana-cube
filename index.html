@@ -54,6 +54,10 @@
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4h12l2 2v14H5Z"/><path d="M8 4v6h8V4M8 20v-6h8v6"/></svg>
             备份 JSON
           </button>
+          <button class="quiet-button" id="changeLogBtn">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 4h12v16H6Z"/><path d="M9 8h6M9 12h6M9 16h4"/></svg>
+            改动记录
+          </button>
           <button class="quiet-button" id="restoreBtn">
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12a8 8 0 1 0 3-6.2L4 8"/><path d="M4 3v5h5"/></svg>
             恢复备份
@@ -298,8 +302,16 @@
       </div>
     </dialog>
 
+    <dialog id="changeLogDialog" class="modal change-log-dialog">
+      <div class="modal-card change-log-modal">
+        <div class="modal-header"><div><span>CHANGE LOG</span><h2>改动记录</h2></div><button type="button" class="close-button" data-close-dialog aria-label="关闭">×</button></div>
+        <div id="changeLogContent" class="change-log-content"></div>
+      </div>
+    </dialog>
+
     <script src="core.js"></script>
     <script src="priceHistory.js"></script>
+    <script src="changeLog.js"></script>
     <script src="storage.js"></script>
     <script src="scryfall.js"></script>
     <script src="app.js"></script>

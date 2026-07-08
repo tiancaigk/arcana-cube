@@ -252,6 +252,7 @@ select { height: 40px; min-width: 126px; padding: 0 30px 0 12px; border: 1px sol
 .modal.import-dialog { width: min(900px, calc(100vw - 28px)); overflow: hidden; }
 .modal.add-card-dialog { width: min(680px, calc(100vw - 28px)); overflow: hidden; }
 .modal.price-history-dialog { width: min(680px, calc(100vw - 28px)); overflow: hidden; }
+.modal.change-log-dialog { width: min(760px, calc(100vw - 28px)); overflow: hidden; }
 .modal::backdrop { background: rgba(5,5,4,.75); backdrop-filter: blur(8px); }
 .modal-card { padding: 26px; background: linear-gradient(145deg, #22211d, #171715); }
 .image-preview-dialog { width: min(1080px, calc(100vw - 36px)); max-height: calc(100vh - 36px); padding: 0; border: 0; background: transparent; overflow: auto; }
@@ -275,6 +276,13 @@ select { height: 40px; min-width: 126px; padding: 0 30px 0 12px; border: 1px sol
 .price-point { fill: #181816; stroke: var(--accent-bright); stroke-width: 1.8; }
 .price-history-summary { display: flex; justify-content: space-between; gap: 14px; margin-top: 3px; color: var(--muted-2); font: 10px/1.2 "DM Mono", monospace; }
 .price-history-summary strong { color: var(--accent-bright); font-weight: 500; }
+.change-log-modal { max-height: min(82vh, 760px); display: flex; flex-direction: column; overflow: hidden; }
+.change-log-content { min-height: 160px; overflow: auto; display: grid; gap: 8px; padding-right: 4px; }
+.change-log-entry { display: grid; grid-template-columns: 92px minmax(0, 1fr); gap: 12px; padding: 11px 12px; border: 1px solid var(--line-soft); border-radius: 10px; background: rgba(17,17,15,.62); }
+.change-log-entry time { color: var(--accent-dark); font: 500 9px/1.4 "DM Mono", monospace; }
+.change-log-entry strong { display: block; color: var(--text); font-size: 12px; font-weight: 500; line-height: 1.35; }
+.change-log-entry small { display: block; margin-top: 4px; color: var(--muted-2); font: 400 9px/1.35 "DM Mono", monospace; overflow-wrap: anywhere; }
+.change-log-empty { margin: 0; padding: 18px; border: 1px solid var(--line-soft); border-radius: 10px; color: var(--muted); background: rgba(17,17,15,.62); font-size: 12px; line-height: 1.7; }
 .modal-card.wide { min-width: min(650px, calc(100vw - 28px)); }
 .modal-header { display: flex; justify-content: space-between; }
 .modal-header span { display: block; margin-bottom: 7px; }

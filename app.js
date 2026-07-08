@@ -3,14 +3,17 @@
 
   const STORAGE_KEY = "arcana-cube-v1";
   const PRICE_HISTORY_STORAGE_KEY = "arcana-cube-price-history-v1";
+  const CHANGE_LOG_STORAGE_KEY = "arcana-cube-change-log-v1";
   const NAME_LANGUAGE_KEY = "arcana-cube-card-name-language";
   const DIRECTORY_HANDLE_KEY = "cube-directory-handle";
   const CUBE_FILE_NAME = "cube-data.json";
   const PRICE_HISTORY_FILE_NAME = "price-history.json";
+  const CHANGE_LOG_FILE_NAME = "change-log.json";
   const IMAGE_DIR_NAME = "images";
   const SHEETJS_URL = "https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js";
   const { buildBackup, buildCardNameSearchUrl, buildExcelRows, buildLocalizedNameSearchUrl, buildLocalImageFileName, buildPrintingsUrl, chooseValidFinish, computeStats, filterCards, filterOraclePrintings, filterPrintings, sortCards, getAvailableFinishes, getCardBucket, getFrontColors, getFrontDisplayName, getFrontTypeLine, getLookupName, getOracleId, getPreferredLocalizedName, getPriceNumber, getUsdPrice, isPaperPrinting, needsPriceRefresh, normalizeCardName, normalizeFinish, normalizeLocalizedNames, normalizeScryfallCard, parseBackup, parseDecklist, parseExcelRows, prepareTextImportRows, replacePrinting } = window.CubeCore;
   const { cardSeries, emptyPriceHistory, normalizePriceHistory, parsePriceHistoryData, priceTrend, recordDailySnapshot, totalSeries, wrapPriceHistoryData } = window.CubePriceHistory;
+  const { appendChange, emptyChangeLog, latestEntries, normalizeChangeLog, parseChangeLogData, wrapChangeLogData } = window.CubeChangeLog;
   const { requestJson: scryfallRequest } = window.ScryfallClient;
   const cubeStorage = window.CubeStorage.createStorage(localStorage, STORAGE_KEY);
   const cubeHandleStore = window.CubeStorage.createHandleStore(window.indexedDB);
@@ -72,6 +75,7 @@
       return loaded;
     })(),
     priceHistory: loadPriceHistoryState(),
+    changeLog: loadChangeLogState(),
     filters: { query: "", color: "all", type: "all", finish: "all", japanPrint: "all" },
     mode: "grid",
     nameLanguage: loadNameLanguage(),
@@ -130,6 +134,7 @@
     excelSummary: $("#excelSummary"), excelPreviewBody: $("#excelPreviewBody"), excelDropZone: $("#excelDropZone"),
     lookupResult: $("#lookupResult"), backupFileInput: $("#backupFileInput"), imagePreviewDialog: $("#imagePreviewDialog"), imagePreview: $("#imagePreview"),
     priceHistoryDialog: $("#priceHistoryDialog"), priceHistoryContent: $("#priceHistoryContent"),
+    changeLogBtn: $("#changeLogBtn"), changeLogDialog: $("#changeLogDialog"), changeLogContent: $("#changeLogContent"),
     connectFolderBtn: $("#connectFolderBtn"), cacheImagesBtn: $("#cacheImagesBtn"), syncFolderBtn: $("#syncFolderBtn"), syncFolderLabel: $("#syncFolderLabel"), reloadFolderBtn: $("#reloadFolderBtn"), disconnectFolderBtn: $("#disconnectFolderBtn"),
     storageStatusLabel: $("#storageStatusLabel"), storageStatusDetail: $("#storageStatusDetail"),
     nameLanguageToggle: $("#nameLanguageToggle")
@@ -221,6 +226,15 @@
     }
   }
 
+  function loadChangeLogState() {
+    try {
+      const saved = JSON.parse(localStorage.getItem(CHANGE_LOG_STORAGE_KEY));
+      return normalizeChangeLog(saved);
+    } catch (error) {
+      return emptyChangeLog();
+    }
+  }
+
   function snapshotCubeData(data) {
     if (typeof structuredClone === "function") return structuredClone(data);
     return JSON.parse(JSON.stringify(data));
@@ -240,12 +254,50 @@
     state.priceHistory = normalizePriceHistory(data);
   }
 
+  function applyChangeLogData(data) {
+    state.changeLog = normalizeChangeLog(data);
+  }
+
   function localMirrorSave() {
     cubeStorage.save(state.data);
   }
 
   function savePriceHistoryLocal() {
     localStorage.setItem(PRICE_HISTORY_STORAGE_KEY, JSON.stringify(normalizePriceHistory(state.priceHistory)));
+  }
+
+  function saveChangeLogLocal() {
+    localStorage.setItem(CHANGE_LOG_STORAGE_KEY, JSON.stringify(normalizeChangeLog(state.changeLog)));
+  }
+
+  function cardLogInfo(card) {
+    if (!card) return null;
+    return {
+      id: card.id || "",
+      name: card.name || "",
+      set: card.set || "",
+      collectorNumber: card.collectorNumber || ""
+    };
+  }
+
+  function recordChange(type, summary, details = {}, options = {}) {
+    state.changeLog = appendChange(state.changeLog, {
+      type,
+      summary,
+      card: details.card || null,
+      before: details.before || null,
+      after: details.after || null,
+      meta: details.meta || null
+    });
+    if (options.persist === false) return;
+    try {
+      saveChangeLogLocal();
+    } catch (error) {
+      // Change logging is best-effort and should not block Cube edits.
+    }
+    if (state.storage.mode === "directory" && state.storage.directoryHandle) {
+      queueDirectorySave(snapshotCubeData(state.data));
+    }
   }
 
   async function queryDirectoryPermission(directoryHandle, mode = "readwrite") {
@@ -270,6 +322,10 @@
 
   async function getPriceHistoryFileHandle(directoryHandle, create = false) {
     return directoryHandle.getFileHandle(PRICE_HISTORY_FILE_NAME, { create });
+  }
+
+  async function getChangeLogFileHandle(directoryHandle, create = false) {
+    return directoryHandle.getFileHandle(CHANGE_LOG_FILE_NAME, { create });
   }
 
   async function getImagesDirectoryHandle(create = false) {
@@ -315,6 +371,27 @@
     const fileHandle = await getPriceHistoryFileHandle(directoryHandle, true);
     const writable = await fileHandle.createWritable();
     await writable.write(JSON.stringify(wrapPriceHistoryData(priceHistory), null, 2));
+    await writable.close();
+  }
+
+  async function readChangeLogFile(directoryHandle) {
+    try {
+      const fileHandle = await getChangeLogFileHandle(directoryHandle, false);
+      const file = await fileHandle.getFile();
+      const text = await file.text();
+      if (!text.trim()) return emptyChangeLog();
+      return parseChangeLogData(text);
+    } catch (error) {
+      if (isMissingEntryError(error)) return null;
+      if (error instanceof SyntaxError) throw new Error("change-log.json 不是有效的 JSON");
+      throw error;
+    }
+  }
+
+  async function writeChangeLogFile(directoryHandle, changeLog) {
+    const fileHandle = await getChangeLogFileHandle(directoryHandle, true);
+    const writable = await fileHandle.createWritable();
+    await writable.write(JSON.stringify(wrapChangeLogData(changeLog), null, 2));
     await writable.close();
   }
 
@@ -389,6 +466,7 @@
       .then(async () => {
         await writeCubeDataFile(state.storage.directoryHandle, snapshot);
         await writePriceHistoryFile(state.storage.directoryHandle, state.priceHistory);
+        await writeChangeLogFile(state.storage.directoryHandle, state.changeLog);
       })
       .catch(async () => {
         await disconnectDirectoryMode("文件夹写入失败，后续会继续保存在浏览器");
@@ -400,6 +478,7 @@
     try {
       localMirrorSave();
       savePriceHistoryLocal();
+      saveChangeLogLocal();
     } catch (error) {
       toast("保存失败", "浏览器存储空间可能不足", true);
     }
@@ -431,15 +510,18 @@
       const snapshot = snapshotCubeData(state.data);
       await writeCubeDataFile(state.storage.directoryHandle, snapshot);
       await writePriceHistoryFile(state.storage.directoryHandle, state.priceHistory);
+      recordChange("storage.synced", `写入文件夹：${count} 张牌`, { meta: { count } }, { persist: false });
+      await writeChangeLogFile(state.storage.directoryHandle, state.changeLog);
       localMirrorSave();
       savePriceHistoryLocal();
+      saveChangeLogLocal();
       state.folderSync = {
         syncing: false,
         dirty: false,
         lastResult: { ok: true, count, time: new Date().toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit", second: "2-digit" }) }
       };
       renderStorageStatus();
-      toast("已写入文件夹", `${state.storage.directoryName}/${CUBE_FILE_NAME} 与 ${PRICE_HISTORY_FILE_NAME} 已保存`);
+      toast("已写入文件夹", `${state.storage.directoryName}/${CUBE_FILE_NAME}、${PRICE_HISTORY_FILE_NAME} 与 ${CHANGE_LOG_FILE_NAME} 已保存`);
     } catch (error) {
       state.folderSync = { syncing: false, dirty: true, lastResult: { ok: false, message: error.message || "无法写入 Cube 文件夹" } };
       renderStorageStatus();
@@ -556,9 +638,13 @@
           renderCards();
         }
       }
+      if (updated || failed) recordChange("images.cached", `下载本地卡图：更新 ${updated}，失败 ${failed}`, { meta: { updated, failed, total: targets.length } }, { persist: false });
       if (updated) {
         saveState();
         render();
+      } else if (failed) {
+        saveChangeLogLocal();
+        if (state.storage.mode === "directory" && state.storage.directoryHandle) queueDirectorySave(snapshotCubeData(state.data));
       }
       toast("卡图下载完成", `已更新 ${updated} 张，本次失败 ${failed} 张${targets.length ? "" : "，没有可下载图片"}`);
     } finally {
@@ -581,13 +667,17 @@
         return;
       }
       const priceHistoryData = await readPriceHistoryFile(state.storage.directoryHandle);
+      const changeLogData = await readChangeLogFile(state.storage.directoryHandle);
       applyCubeData(fileData);
       applyPriceHistoryData(priceHistoryData || emptyPriceHistory());
+      applyChangeLogData(changeLogData || emptyChangeLog());
       localMirrorSave();
       savePriceHistoryLocal();
+      saveChangeLogLocal();
       render();
       renderStorageStatus();
-      toast("已从文件夹载入", `${state.storage.directoryName}/${CUBE_FILE_NAME}${priceHistoryData ? ` 与 ${PRICE_HISTORY_FILE_NAME}` : ""}`);
+      recordChange("storage.reloaded", "从文件夹重新载入 Cube", { meta: { count: state.data.cards.length } });
+      toast("已从文件夹载入", `${state.storage.directoryName}/${CUBE_FILE_NAME}`);
     } catch (error) {
       toast("载入失败", error.message || "无法读取 Cube 文件夹", true);
     }
@@ -606,19 +696,24 @@
       }
       const fileData = await readCubeDataFile(directoryHandle);
       const priceHistoryData = await readPriceHistoryFile(directoryHandle);
+      const changeLogData = await readChangeLogFile(directoryHandle);
       if (fileData) {
         const shouldLoad = window.confirm(`发现现有的 ${CUBE_FILE_NAME}。\n确定要载入文件里的 Cube 吗？\n选择“取消”会用当前牌表覆盖文件内容。`);
         if (shouldLoad) {
           applyCubeData(fileData);
           if (priceHistoryData) applyPriceHistoryData(priceHistoryData);
           else await writePriceHistoryFile(directoryHandle, state.priceHistory);
+          if (changeLogData) applyChangeLogData(changeLogData);
+          else await writeChangeLogFile(directoryHandle, state.changeLog);
         } else {
           await writeCubeDataFile(directoryHandle, snapshotCubeData(state.data));
           await writePriceHistoryFile(directoryHandle, state.priceHistory);
+          await writeChangeLogFile(directoryHandle, state.changeLog);
         }
       } else {
         await writeCubeDataFile(directoryHandle, snapshotCubeData(state.data));
         await writePriceHistoryFile(directoryHandle, state.priceHistory);
+        await writeChangeLogFile(directoryHandle, state.changeLog);
       }
       state.storage.mode = "directory";
       state.storage.directoryHandle = directoryHandle;
@@ -627,9 +722,11 @@
       await cubeHandleStore.save(DIRECTORY_HANDLE_KEY, directoryHandle).catch(() => false);
       localMirrorSave();
       savePriceHistoryLocal();
+      saveChangeLogLocal();
       render();
       renderStorageStatus();
-      toast("已连接文件夹", `后续修改会自动写入 ${state.storage.directoryName}/${CUBE_FILE_NAME} 与 ${PRICE_HISTORY_FILE_NAME}`);
+      recordChange("storage.connected", `已连接文件夹：${state.storage.directoryName}`, { meta: { directoryName: state.storage.directoryName } });
+      toast("已连接文件夹", `后续修改会自动写入 ${state.storage.directoryName}`);
     } catch (error) {
       if (error && error.name === "AbortError") return;
       toast("连接失败", error.message || "无法连接 Cube 文件夹", true);
@@ -654,6 +751,7 @@
       }
       const fileData = await readCubeDataFile(directoryHandle);
       const priceHistoryData = await readPriceHistoryFile(directoryHandle);
+      const changeLogData = await readChangeLogFile(directoryHandle);
       state.storage.mode = "directory";
       state.storage.directoryHandle = directoryHandle;
       state.storage.directoryName = directoryHandle.name || "";
@@ -664,6 +762,10 @@
       if (priceHistoryData) {
         applyPriceHistoryData(priceHistoryData);
         savePriceHistoryLocal();
+      }
+      if (changeLogData) {
+        applyChangeLogData(changeLogData);
+        saveChangeLogLocal();
       }
       render();
     } catch (error) {
@@ -952,6 +1054,30 @@
     elements.priceHistoryDialog.showModal();
   }
 
+  function formatLogTime(time) {
+    const parsed = new Date(time);
+    if (Number.isNaN(parsed.getTime())) return time || "";
+    return new Intl.DateTimeFormat("zh-CN", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" }).format(parsed);
+  }
+
+  function openChangeLogDialog() {
+    const entries = latestEntries(state.changeLog, 100);
+    elements.changeLogContent.innerHTML = entries.length ? entries.map((entry) => `
+      <article class="change-log-entry">
+        <time>${escapeHtml(formatLogTime(entry.time))}</time>
+        <div><strong>${escapeHtml(entry.summary || entry.type)}</strong><small>${escapeHtml(changeLogDetail(entry))}</small></div>
+      </article>
+    `).join("") : `<p class="change-log-empty">还没有记录。之后添加、删除、换版本、导入、更新价格等操作会自动写入这里。</p>`;
+    elements.changeLogDialog.showModal();
+  }
+
+  function changeLogDetail(entry) {
+    const parts = [];
+    if (entry.type) parts.push(entry.type);
+    if (entry.card && entry.card.name) parts.push(entry.card.set && entry.card.collectorNumber ? `${entry.card.name} · ${entry.card.set} ${entry.card.collectorNumber}` : entry.card.name);
+    return parts.join(" · ");
+  }
+
   function recordCurrentPriceHistory() {
     state.priceHistory = recordDailySnapshot(state.priceHistory, state.data.cards);
   }
@@ -1201,6 +1327,7 @@
     if (!targets.length) {
       if (force) {
         recordCurrentPriceHistory();
+        recordChange("prices.recorded", "记录价格历史：无需刷新", { meta: { checked: 0 } }, { persist: false });
         saveState();
         renderStats();
         toast("价格历史已记录", "当前牌表没有需要刷新的价格，已保存今天的快照");
@@ -1240,6 +1367,7 @@
       return;
     }
     if (force) recordCurrentPriceHistory();
+    if (force) recordChange("prices.refreshed", `更新价格：检查 ${targets.length} 张牌`, { meta: { checked: targets.length, updated } }, { persist: false });
     if (updated || force) {
       state.data.cards = sortCards(state.data.cards);
       saveState();
@@ -1334,7 +1462,13 @@
     const printing = state.printings.find((item) => item.id === scryfallId);
     if (cardIndex < 0 || !printing) return;
     const current = state.data.cards[cardIndex];
-    state.data.cards[cardIndex] = replacePrinting(current, printing);
+    const next = replacePrinting(current, printing);
+    state.data.cards[cardIndex] = next;
+    recordChange("card.versionChanged", `${current.name} 版本从 ${current.set} · ${current.collectorNumber} 改为 ${next.set} · ${next.collectorNumber}`, {
+      card: cardLogInfo(next),
+      before: { set: current.set, collectorNumber: current.collectorNumber, finish: current.finish },
+      after: { set: next.set, collectorNumber: next.collectorNumber, finish: next.finish }
+    }, { persist: false });
     saveState();
     render();
     elements.printingDialog.close();
@@ -1350,8 +1484,14 @@
       toast("无法切换", `此版本仅支持 ${available[0] === "foil" ? "Foil" : "Non-Foil"}`, true);
       return;
     }
+    const before = normalizeFinish(current.finish);
     current.finish = normalizeFinish(current.finish) === "foil" ? "nonfoil" : "foil";
     state.data.cards[cardIndex] = current;
+    recordChange("card.finishChanged", `${current.name} 从 ${before === "foil" ? "Foil" : "Non-Foil"} 切换为 ${current.finish === "foil" ? "Foil" : "Non-Foil"}`, {
+      card: cardLogInfo(current),
+      before: { finish: before },
+      after: { finish: current.finish }
+    }, { persist: false });
     saveState();
     render();
     if (state.editingCardId === cardId && elements.printingDialog.open) {
@@ -1365,8 +1505,14 @@
     const cardIndex = state.data.cards.findIndex((item) => item.id === cardId);
     if (cardIndex < 0) return;
     const current = state.data.cards[cardIndex];
+    const before = current.JapanPrint === true;
     current.JapanPrint = current.JapanPrint !== true;
     state.data.cards[cardIndex] = current;
+    recordChange("card.japanPrintChanged", `${current.name} ${current.JapanPrint ? "标记为日印" : "取消日印标记"}`, {
+      card: cardLogInfo(current),
+      before: { JapanPrint: before },
+      after: { JapanPrint: current.JapanPrint === true }
+    }, { persist: false });
     saveState();
     renderCards();
     toast("日印状态已更新", current.JapanPrint ? "已标记为日印" : "已标记为非日印");
@@ -1404,6 +1550,7 @@
   function addCard(card) {
     state.data.cards.unshift(card);
     state.data.cards = sortCards(state.data.cards);
+    recordChange("card.added", `添加卡牌：${card.name}`, { card: cardLogInfo(card), after: cardLogInfo(card) }, { persist: false });
     saveState();
     render();
   }
@@ -1702,6 +1849,7 @@
       state.data.cards.push({ ...card, finish: chooseValidFinish(card, row.finish), JapanPrint: row.JapanPrint === true });
     });
     state.data.cards = sortCards(state.data.cards);
+    recordChange("import.excel", `Excel 导入 ${rows.length} 张牌`, { meta: { count: rows.length } }, { persist: false });
     saveState();
     render();
     elements.importDialog.close();
@@ -1779,6 +1927,7 @@
     const rows = state.textRows.filter((row) => row.importable && row.card);
     rows.forEach((row) => state.data.cards.push(normalizeScryfallCard(row.card)));
     state.data.cards = sortCards(state.data.cards);
+    recordChange("import.text", `文本导入 ${rows.length} 张牌`, { meta: { count: rows.length } }, { persist: false });
     saveState();
     render();
     elements.importDialog.close();
@@ -1844,6 +1993,7 @@
         notes: typeof restored.notes === "string" ? restored.notes : "",
         cards: normalizeStoredCards(restored.cards)
       };
+      recordChange("backup.restored", `恢复 JSON 备份：${state.data.cards.length} 张牌`, { meta: { count: state.data.cards.length, name: restored.meta.name } }, { persist: false });
       saveState();
       clearFilters();
       render();
@@ -1859,6 +2009,7 @@
     const index = state.data.cards.findIndex((card) => card.id === id);
     if (index < 0) return;
     const [removed] = state.data.cards.splice(index, 1);
+    recordChange("card.removed", `移除卡牌：${removed.name}`, { card: cardLogInfo(removed), before: cardLogInfo(removed) }, { persist: false });
     saveState();
     render();
     toast("已移除", removed.name, false, {
@@ -1867,6 +2018,7 @@
         if (state.data.cards.some((card) => card.id === removed.id)) return;
         state.data.cards.push(removed);
         state.data.cards = sortCards(state.data.cards);
+        recordChange("card.removeUndone", `撤销移除：${removed.name}`, { card: cardLogInfo(removed), after: cardLogInfo(removed) }, { persist: false });
         saveState();
         render();
         toast("已恢复", removed.name);
@@ -1944,6 +2096,7 @@
     elements.excelDropZone.addEventListener("drop", (event) => chooseExcelFile(event.dataTransfer.files[0]));
     $("#exportBtn").addEventListener("click", exportData);
     $("#backupBtn").addEventListener("click", downloadJsonBackup);
+    elements.changeLogBtn.addEventListener("click", openChangeLogDialog);
     $("#restoreBtn").addEventListener("click", () => elements.backupFileInput.click());
     elements.backupFileInput.addEventListener("change", (event) => restoreJsonBackup(event.target.files[0]));
     elements.connectFolderBtn.addEventListener("click", connectCubeFolder);
