@@ -956,6 +956,23 @@
     state.priceHistory = recordDailySnapshot(state.priceHistory, state.data.cards);
   }
 
+  function excelPriceExtras(card) {
+    const trend = priceTrend(cardSeries(state.priceHistory, card, card.finish));
+    return {
+      previousPrice: trend ? trend.previousUsd.toFixed(2) : "",
+      priceDelta: trend ? trend.delta.toFixed(2) : "",
+      pricePercent: trend && trend.percent !== null ? `${trend.percent.toFixed(2)}%` : "",
+      imageStatus: cardImageStatus(card)
+    };
+  }
+
+  function cardImageStatus(card) {
+    const missing = [];
+    if (!card.localImage) missing.push("正面图");
+    if (card.backImage && !card.localBackImage) missing.push("背面图");
+    return missing.length ? `缺${missing.join("、")}` : "完整";
+  }
+
   function renderCards() {
     const cards = sortCards(filterCards(state.data.cards, state.filters));
     elements.resultCount.textContent = cards.length;
@@ -1784,9 +1801,17 @@
   async function exportData() {
     try {
       const XLSX = await loadSheetJs();
-      const worksheet = XLSX.utils.aoa_to_sheet(buildExcelRows(state.data.cards));
-      worksheet["!cols"] = [{ wch: 10 }, { wch: 12 }, { wch: 34 }, { wch: 14 }, { wch: 12 }, { wch: 8 }];
-      worksheet["!autofilter"] = { ref: `A1:F${state.data.cards.length + 1}` };
+      const extras = {
+        byCardId: Object.fromEntries(state.data.cards.map((card) => [card.id, excelPriceExtras(card)]))
+      };
+      const rows = buildExcelRows(state.data.cards, extras);
+      const worksheet = XLSX.utils.aoa_to_sheet(rows);
+      worksheet["!cols"] = [
+        { wch: 10 }, { wch: 12 }, { wch: 34 }, { wch: 14 }, { wch: 12 }, { wch: 8 },
+        { wch: 18 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 22 }, { wch: 38 },
+        { wch: 36 }, { wch: 36 }, { wch: 16 }
+      ];
+      worksheet["!autofilter"] = { ref: `A1:O${rows.length}` };
       const workbook = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(workbook, worksheet, "Cube 牌表");
       const fileName = `${state.data.meta.name.replace(/[\\/:*?"<>|]/g, "-") || "Cube牌表"}.xlsx`;

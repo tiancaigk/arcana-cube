@@ -372,12 +372,18 @@ test("parseExcelRows detects headers and keeps identifiers as text", () => {
 
 test("buildExcelRows exports a re-importable table with finish and price", () => {
   const rows = buildExcelRows([
-    { set: "XLN", collectorNumber: "250", name: "Treasure Map // Treasure Cove", finish: "foil", JapanPrint: true, prices: { usd: "0.55", usdFoil: "0.73" } },
-    { set: "LEA", collectorNumber: "233", name: "Black Vise", finish: "nonfoil", prices: { usd: "25.00", usdFoil: "" } }
-  ]);
-  assert.deepEqual(rows[0], ["系列", "编号", "卡牌名称", "闪卡状态", "美元价格", "日印"]);
-  assert.deepEqual(rows[1], ["XLN", "250", "Treasure Map // Treasure Cove", "Foil", "0.73", "是"]);
-  assert.deepEqual(rows[2], ["LEA", "233", "Black Vise", "Non-Foil", "25.00", ""]);
+    { id: "treasure", set: "XLN", collectorNumber: "250", name: "Treasure Map // Treasure Cove", localizedNames: { zhs: "藏宝图" }, finish: "foil", JapanPrint: true, prices: { usd: "0.55", usdFoil: "0.73" }, priceUpdatedAt: "2026-07-08T00:00:00.000Z", scryfallId: "treasure-id", localImage: "images/xln-250-treasure-map.png", localBackImage: "images/xln-250-treasure-map-back.png" },
+    { id: "vise", set: "LEA", collectorNumber: "233", name: "Black Vise", finish: "nonfoil", prices: { usd: "25.00", usdFoil: "" } }
+  ], {
+    byCardId: {
+      treasure: { previousPrice: "0.70", priceDelta: "0.03", pricePercent: "4.29%", imageStatus: "完整" },
+      vise: { imageStatus: "缺正面图" }
+    }
+  });
+  assert.deepEqual(rows[0], ["系列", "编号", "卡牌名称", "闪卡状态", "美元价格", "日印", "中文名", "上次价格", "价格变化", "变化百分比", "价格更新时间", "Scryfall ID", "本地正面图", "本地背面图", "图片状态"]);
+  assert.deepEqual(rows[1], ["XLN", "250", "Treasure Map // Treasure Cove", "Foil", "0.73", "是", "藏宝图", "0.70", "0.03", "4.29%", "2026-07-08T00:00:00.000Z", "treasure-id", "images/xln-250-treasure-map.png", "images/xln-250-treasure-map-back.png", "完整"]);
+  assert.deepEqual(rows[2].slice(0, 7), ["LEA", "233", "Black Vise", "Non-Foil", "25.00", "", ""]);
+  assert.equal(rows[2][14], "缺正面图");
   assert.deepEqual(parseExcelRows(rows).map(({ setCode, collectorNumber, expectedName, finish, JapanPrint }) => ({ setCode, collectorNumber, expectedName, finish, JapanPrint })), [
     { setCode: "XLN", collectorNumber: "250", expectedName: "Treasure Map // Treasure Cove", finish: "foil", JapanPrint: true },
     { setCode: "LEA", collectorNumber: "233", expectedName: "Black Vise", finish: "nonfoil", JapanPrint: false }

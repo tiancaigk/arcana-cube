@@ -422,17 +422,31 @@
     })).filter((row) => row.setCode || row.collectorNumber || row.expectedName);
   }
 
-  function buildExcelRows(cards) {
+  function buildExcelRows(cards, extras = {}) {
+    const extrasByCardId = extras && extras.byCardId ? extras.byCardId : {};
+    const extraFor = (card) => extrasByCardId[card && card.id] || {};
     return [
-      ["系列", "编号", "卡牌名称", "闪卡状态", "美元价格", "日印"],
-      ...cards.map((card) => [
-        card.set || "",
-        card.collectorNumber || "",
-        card.name || "",
-        normalizeFinish(card.finish) === "foil" ? "Foil" : "Non-Foil",
-        getUsdPrice(card, card.finish) || "",
-        card.JapanPrint === true ? "是" : ""
-      ])
+      ["系列", "编号", "卡牌名称", "闪卡状态", "美元价格", "日印", "中文名", "上次价格", "价格变化", "变化百分比", "价格更新时间", "Scryfall ID", "本地正面图", "本地背面图", "图片状态"],
+      ...cards.map((card) => {
+        const extra = extraFor(card);
+        return [
+          card.set || "",
+          card.collectorNumber || "",
+          card.name || "",
+          normalizeFinish(card.finish) === "foil" ? "Foil" : "Non-Foil",
+          getUsdPrice(card, card.finish) || "",
+          card.JapanPrint === true ? "是" : "",
+          getPreferredLocalizedName(card),
+          extra.previousPrice || "",
+          extra.priceDelta || "",
+          extra.pricePercent || "",
+          card.priceUpdatedAt || "",
+          card.scryfallId || "",
+          card.localImage || "",
+          card.localBackImage || "",
+          extra.imageStatus || ""
+        ];
+      })
     ];
   }
 
