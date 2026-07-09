@@ -27,4 +27,5 @@ test("key interactive regions expose accessible state", () => {
   assert.match(html, /id="priceHistoryDialog"/);
   assert.match(html, /id="changeLogDialog"/);
   assert.match(html, /id="manaCurveScope"/);
+  assert.match(html, /id="analyticsAllColor"/);
 });

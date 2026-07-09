@@ -1190,6 +1190,12 @@
   function renderAnalytics() {
     const stats = computeStats(state.data.cards);
     const colorNames = { W: "白色", U: "蓝色", B: "黑色", R: "红色", G: "绿色", C: "无色", M: "多色", L: "地牌" };
+    const allColorButton = $("#analyticsAllColor");
+    if (allColorButton) {
+      const active = state.analyticsColor === "all";
+      allColorButton.classList.toggle("active", active);
+      allColorButton.setAttribute("aria-pressed", active ? "true" : "false");
+    }
     const maxColor = Math.max(1, ...Object.values(stats.colors));
     $("#colorAnalysis").innerHTML = Object.entries(stats.colors).map(([key, value]) => `
       <button type="button" class="color-row${state.analyticsColor === key ? " active" : ""}" data-analytics-color="${key}" data-color-bucket="${key}" aria-pressed="${state.analyticsColor === key ? "true" : "false"}" title="查看${colorNames[key]}的法力曲线">
@@ -2121,10 +2127,10 @@
     elements.typeFilter.addEventListener("change", (event) => { state.filters.type = event.target.value; renderCards(); });
     elements.finishFilter.addEventListener("change", (event) => { state.filters.finish = event.target.value; renderCards(); });
     elements.japanPrintFilter.addEventListener("change", (event) => { state.filters.japanPrint = event.target.value; renderCards(); });
-    $("#colorAnalysis").addEventListener("click", (event) => {
+    $("#analyticsView").addEventListener("click", (event) => {
       const button = event.target.closest("[data-analytics-color]");
       if (!button) return;
-      state.analyticsColor = state.analyticsColor === button.dataset.analyticsColor ? "all" : button.dataset.analyticsColor;
+      state.analyticsColor = button.dataset.analyticsColor === "all" || state.analyticsColor === button.dataset.analyticsColor ? "all" : button.dataset.analyticsColor;
       renderAnalytics();
     });
     $$("[data-color]").forEach((button) => button.addEventListener("click", () => {
