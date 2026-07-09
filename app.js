@@ -1216,7 +1216,7 @@
     const typeEntries = Object.entries(stats.types).sort((a, b) => b[1] - a[1]);
     const maxType = Math.max(1, ...typeEntries.map(([, count]) => count));
     $("#typeAnalysis").innerHTML = typeEntries.map(([key, value]) => `
-      <div class="type-row"><span class="type-name">${typeNames[key] || key}</span><div class="analysis-track"><div class="analysis-fill" style="width:${value / maxType * 100}%"></div></div><span class="analysis-value">${value}</span></div>`).join("");
+      <div class="type-row" data-card-type="${escapeHtml(key)}"><span class="type-name">${typeNames[key] || key}</span><div class="analysis-track"><div class="analysis-fill" style="width:${value / maxType * 100}%"></div></div><span class="analysis-value">${value}</span></div>`).join("");
     $("#cubeNotes").value = state.data.notes || "";
   }
 

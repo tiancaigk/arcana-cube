@@ -243,10 +243,19 @@ select { height: 40px; min-width: 126px; padding: 0 30px 0 12px; border: 1px sol
 .color-row[data-color-bucket="M"] { --bucket-color: #e4bd69; --bucket-fill: #c7983d; --bucket-dim: #6d5525; --bucket-bright: #f2d58b; }
 .color-row[data-color-bucket="L"] { --bucket-color: #cfad83; --bucket-fill: #9d7550; --bucket-dim: #5d452f; --bucket-bright: #e6c7a0; }
 .color-row-all { --bucket-color: var(--accent); --bucket-fill: var(--accent); --bucket-dim: #504326; --bucket-bright: var(--accent-bright); padding-bottom: 13px; border-bottom: 1px solid var(--line-soft); }
+.type-row[data-card-type="Creature"] { --bucket-color: #9bc59b; --bucket-fill: #67a371; --bucket-dim: #365d3d; }
+.type-row[data-card-type="Instant"] { --bucket-color: #9dd4e8; --bucket-fill: #5fa8c8; --bucket-dim: #315b6b; }
+.type-row[data-card-type="Sorcery"] { --bucket-color: #ef9c82; --bucket-fill: #d06d55; --bucket-dim: #72382d; }
+.type-row[data-card-type="Artifact"] { --bucket-color: #c4c2b9; --bucket-fill: #929088; --bucket-dim: #55544f; }
+.type-row[data-card-type="Enchantment"] { --bucket-color: #e4bd69; --bucket-fill: #c7983d; --bucket-dim: #6d5525; }
+.type-row[data-card-type="Planeswalker"] { --bucket-color: #c5b9cd; --bucket-fill: #8e7b9a; --bucket-dim: #51445b; }
+.type-row[data-card-type="Land"] { --bucket-color: #cfad83; --bucket-fill: #9d7550; --bucket-dim: #5d452f; }
+.type-row[data-card-type="Other"] { --bucket-color: #a9a79f; --bucket-fill: #7c7970; --bucket-dim: #46443e; }
 .color-row .color-name { color: var(--bucket-color, var(--muted)); }
+.type-row .type-name { color: var(--bucket-color, var(--muted)); }
 .color-row:hover .color-name, .color-row.active .color-name { color: var(--text); }
 .color-row:hover .analysis-track, .color-row.active .analysis-track { background: #171714; box-shadow: inset 0 0 0 1px rgba(217,181,111,.12); }
-.color-row .analysis-fill { background: linear-gradient(90deg, var(--bucket-dim, var(--accent-dark)), var(--bucket-fill, var(--accent))); }
+.color-row .analysis-fill, .type-row .analysis-fill { background: linear-gradient(90deg, var(--bucket-dim, var(--accent-dark)), var(--bucket-fill, var(--accent))); }
 .color-row.active .analysis-fill { background: linear-gradient(90deg, var(--bucket-fill, var(--accent)), var(--bucket-bright, var(--accent-bright))); }
 .color-name, .type-name { color: var(--muted); font-size: 11px; }
 .analysis-track { display: block; height: 7px; border-radius: 6px; background: #11110f; overflow: hidden; }
