@@ -32,6 +32,21 @@
     };
   }
 
+  function createSerialWriteQueue(onError = () => {}) {
+    let tail = Promise.resolve();
+    return {
+      enqueue(task, context) {
+        tail = tail
+          .then(() => task())
+          .catch((error) => Promise.resolve(onError(error, context)).catch(() => {}));
+        return tail;
+      },
+      flush() {
+        return tail;
+      }
+    };
+  }
+
   function wrapWorkspaceData(data) {
     if (!isCubeData(data)) throw new Error("Cube 数据格式无效");
     return {
@@ -109,5 +124,5 @@
     };
   }
 
-  return { WORKSPACE_FORMAT, WORKSPACE_VERSION, createStorage, createHandleStore, isCubeData, parseWorkspaceData, wrapWorkspaceData };
+  return { WORKSPACE_FORMAT, WORKSPACE_VERSION, createStorage, createSerialWriteQueue, createHandleStore, isCubeData, parseWorkspaceData, wrapWorkspaceData };
 });

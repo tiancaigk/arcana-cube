@@ -1,6 +1,6 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { WORKSPACE_FORMAT, createHandleStore, createStorage, isCubeData, parseWorkspaceData, wrapWorkspaceData } = require("./storage.js");
+const { WORKSPACE_FORMAT, createHandleStore, createSerialWriteQueue, createStorage, isCubeData, parseWorkspaceData, wrapWorkspaceData } = require("./storage.js");
 
 function memoryStorage(initial = null) {
   let value = initial;
@@ -33,6 +33,20 @@ test("workspace file helpers wrap and parse Cube data", () => {
   assert.deepEqual(parseWorkspaceData(JSON.stringify(wrapped)), data);
   assert.deepEqual(parseWorkspaceData(JSON.stringify(data)), data);
   assert.throws(() => parseWorkspaceData(JSON.stringify({ nope: true })), /无效/);
+});
+
+test("serial write queue preserves order and recovers after a failed task", async () => {
+  const events = [];
+  const failures = [];
+  const queue = createSerialWriteQueue(async (error, context) => {
+    failures.push(`${context}:${error.message}`);
+  });
+  queue.enqueue(async () => { events.push("first:start"); await Promise.resolve(); events.push("first:end"); }, "first");
+  queue.enqueue(async () => { events.push("second:start"); throw new Error("disk full"); }, "second");
+  queue.enqueue(async () => { events.push("third:start"); events.push("third:end"); }, "third");
+  await queue.flush();
+  assert.deepEqual(events, ["first:start", "first:end", "second:start", "third:start", "third:end"]);
+  assert.deepEqual(failures, ["second:disk full"]);
 });
 
 test("handle store degrades gracefully when indexedDB is unavailable", async () => {

@@ -10,6 +10,8 @@
   const PRICE_HISTORY_FILE_NAME = "price-history.json";
   const CHANGE_LOG_FILE_NAME = "change-log.json";
   const IMAGE_DIR_NAME = "images";
+  const IMAGE_FETCH_TIMEOUT_MS = 25000;
+  const IMAGE_CACHE_CHECKPOINT = 100;
   const SHEETJS_URL = "https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js";
   const { buildBackup, buildCardNameSearchUrl, buildExcelRows, buildLocalizedNameSearchUrl, buildLocalImageFileName, buildPrintingsUrl, chooseValidFinish, computeStats, filterCards, filterOraclePrintings, filterPrintings, sortCards, getAvailableFinishes, getCardBucket, getFrontColors, getFrontDisplayName, getFrontTypeLine, getLookupName, getOracleId, getPreferredLocalizedName, getPriceNumber, getUsdPrice, isPaperPrinting, needsPriceRefresh, normalizeCardName, normalizeFinish, normalizeLocalizedNames, normalizeScryfallCard, parseBackup, parseDecklist, parseExcelRows, prepareTextImportRows, replacePrinting } = window.CubeCore;
   const { cardSeries, dailyPriceChanges, dateKey, emptyPriceHistory, normalizePriceHistory, parsePriceHistoryData, priceTrend, recordDailySnapshot, totalSeries, wrapPriceHistoryData } = window.CubePriceHistory;
@@ -113,7 +115,11 @@
       directoryHandle: null,
       directoryName: "",
       rememberedDirectoryName: "",
-      writeQueue: Promise.resolve()
+      writeQueue: window.CubeStorage.createSerialWriteQueue(async (_error, directoryHandle) => {
+        if (state.storage.directoryHandle === directoryHandle) {
+          await disconnectDirectoryMode("文件夹写入失败，后续会继续保存在浏览器");
+        }
+      })
     }
   };
 
@@ -462,17 +468,20 @@
   }
 
   async function queueDirectorySave(snapshot) {
-    state.storage.writeQueue = state.storage.writeQueue
-      .catch(() => {})
-      .then(async () => {
-        await writeCubeDataFile(state.storage.directoryHandle, snapshot);
-        await writePriceHistoryFile(state.storage.directoryHandle, state.priceHistory);
-        await writeChangeLogFile(state.storage.directoryHandle, state.changeLog);
-      })
-      .catch(async () => {
-        await disconnectDirectoryMode("文件夹写入失败，后续会继续保存在浏览器");
-      });
-    return state.storage.writeQueue;
+    const directoryHandle = state.storage.directoryHandle;
+    if (!directoryHandle) return Promise.resolve();
+    const priceHistory = normalizePriceHistory(state.priceHistory);
+    const changeLog = normalizeChangeLog(state.changeLog);
+    return state.storage.writeQueue.enqueue(async () => {
+      await writeCubeDataFile(directoryHandle, snapshot);
+      await writePriceHistoryFile(directoryHandle, priceHistory);
+      await writeChangeLogFile(directoryHandle, changeLog);
+    }, directoryHandle);
+  }
+
+  async function flushDirectoryWrites(directoryHandle) {
+    await state.storage.writeQueue.flush();
+    return state.storage.mode === "directory" && state.storage.directoryHandle === directoryHandle;
   }
 
   function saveState() {
@@ -497,22 +506,24 @@
       toast("请先连接文件夹", "需要选择 Cube 文件夹后才能写入本地文件", true);
       return;
     }
+    const directoryHandle = state.storage.directoryHandle;
     const count = state.data.cards.length;
     if (!window.confirm(`将当前网页中的 ${count} 张牌写入 ${state.storage.directoryName}/${CUBE_FILE_NAME}，覆盖文件夹里的旧数据。是否继续？`)) return;
     state.folderSync = { syncing: true, dirty: false, lastResult: null };
     renderStorageStatus();
     try {
-      if (!await requestDirectoryPermission(state.storage.directoryHandle, "readwrite")) {
+      if (!await flushDirectoryWrites(directoryHandle)) throw new Error("自动保存失败，文件夹连接已断开");
+      if (!await requestDirectoryPermission(directoryHandle, "readwrite")) {
         state.folderSync = { syncing: false, dirty: true, lastResult: { ok: false, message: "没有文件夹写入权限" } };
         renderStorageStatus();
         toast("无法写入文件夹", "请重新授权这个 Cube 文件夹", true);
         return;
       }
       const snapshot = snapshotCubeData(state.data);
-      await writeCubeDataFile(state.storage.directoryHandle, snapshot);
-      await writePriceHistoryFile(state.storage.directoryHandle, state.priceHistory);
+      await writeCubeDataFile(directoryHandle, snapshot);
+      await writePriceHistoryFile(directoryHandle, state.priceHistory);
       recordChange("storage.synced", `写入文件夹：${count} 张牌`, { meta: { count } }, { persist: false });
-      await writeChangeLogFile(state.storage.directoryHandle, state.changeLog);
+      await writeChangeLogFile(directoryHandle, state.changeLog);
       localMirrorSave();
       savePriceHistoryLocal();
       saveChangeLogLocal();
@@ -562,14 +573,18 @@
   async function fetchImageBlob(candidates) {
     let lastError;
     for (const url of candidates) {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), IMAGE_FETCH_TIMEOUT_MS);
       try {
-        const response = await fetch(imageFetchUrl(url));
+        const response = await fetch(imageFetchUrl(url), { signal: controller.signal });
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
         const blob = await response.blob();
         if (!blob.size) throw new Error("图片为空");
         return { url, blob };
       } catch (error) {
         lastError = error;
+      } finally {
+        clearTimeout(timeout);
       }
     }
     throw lastError || new Error("没有可下载的图片地址");
@@ -634,9 +649,8 @@
         } catch (error) {
           failed += 1;
         }
-        if (updated && index % 20 === 19) {
+        if (updated && (index + 1) % IMAGE_CACHE_CHECKPOINT === 0) {
           saveState();
-          renderCards();
         }
       }
       if (updated || failed) recordChange("images.cached", `下载本地卡图：更新 ${updated}，失败 ${failed}`, { meta: { updated, failed, total: targets.length } }, { persist: false });
@@ -656,19 +670,21 @@
 
   async function reloadFromDirectory() {
     if (!state.storage.directoryHandle) return;
+    const directoryHandle = state.storage.directoryHandle;
     if (!window.confirm(`从 ${state.storage.directoryName}/${CUBE_FILE_NAME} 重新载入会覆盖当前 Cube，是否继续？`)) return;
     try {
-      if (!await requestDirectoryPermission(state.storage.directoryHandle, "readwrite")) {
+      if (!await flushDirectoryWrites(directoryHandle)) return;
+      if (!await requestDirectoryPermission(directoryHandle, "readwrite")) {
         toast("无法读取文件夹", "请重新授权这个 Cube 文件夹", true);
         return;
       }
-      const fileData = await readCubeDataFile(state.storage.directoryHandle);
+      const fileData = await readCubeDataFile(directoryHandle);
       if (!fileData) {
         toast("没有找到数据文件", `${state.storage.directoryName} 里还没有 ${CUBE_FILE_NAME}`, true);
         return;
       }
-      const priceHistoryData = await readPriceHistoryFile(state.storage.directoryHandle);
-      const changeLogData = await readChangeLogFile(state.storage.directoryHandle);
+      const priceHistoryData = await readPriceHistoryFile(directoryHandle);
+      const changeLogData = await readChangeLogFile(directoryHandle);
       applyCubeData(fileData);
       applyPriceHistoryData(priceHistoryData || emptyPriceHistory());
       applyChangeLogData(changeLogData || emptyChangeLog());
@@ -690,6 +706,7 @@
       return;
     }
     try {
+      await state.storage.writeQueue.flush();
       const directoryHandle = await window.showDirectoryPicker({ mode: "readwrite" });
       if (!await requestDirectoryPermission(directoryHandle, "readwrite")) {
         toast("没有获得权限", "需要允许读写该文件夹才能自动保存", true);
@@ -1735,14 +1752,27 @@
   function loadSheetJs() {
     if (window.XLSX) return Promise.resolve(window.XLSX);
     if (sheetJsLoader) return sheetJsLoader;
-    sheetJsLoader = new Promise((resolve, reject) => {
+    const loader = new Promise((resolve, reject) => {
       const script = document.createElement("script");
       script.src = SHEETJS_URL;
-      script.onload = () => resolve(window.XLSX);
-      script.onerror = () => reject(new Error("Excel 解析组件加载失败，请检查网络后重试"));
+      script.onload = () => {
+        if (window.XLSX) resolve(window.XLSX);
+        else {
+          script.remove();
+          reject(new Error("Excel 解析组件加载失败，请检查网络后重试"));
+        }
+      };
+      script.onerror = () => {
+        script.remove();
+        reject(new Error("Excel 解析组件加载失败，请检查网络后重试"));
+      };
       document.head.append(script);
     });
-    return sheetJsLoader;
+    sheetJsLoader = loader;
+    loader.catch(() => {
+      if (sheetJsLoader === loader) sheetJsLoader = null;
+    });
+    return loader;
   }
 
   async function readExcelRows(file) {
