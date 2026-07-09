@@ -1192,7 +1192,7 @@
     const colorNames = { W: "白色", U: "蓝色", B: "黑色", R: "红色", G: "绿色", C: "无色", M: "多色", L: "地牌" };
     const maxColor = Math.max(1, ...Object.values(stats.colors));
     $("#colorAnalysis").innerHTML = Object.entries(stats.colors).map(([key, value]) => `
-      <button type="button" class="color-row${state.analyticsColor === key ? " active" : ""}" data-analytics-color="${key}" aria-pressed="${state.analyticsColor === key ? "true" : "false"}" title="查看${colorNames[key]}的法力曲线">
+      <button type="button" class="color-row${state.analyticsColor === key ? " active" : ""}" data-analytics-color="${key}" data-color-bucket="${key}" aria-pressed="${state.analyticsColor === key ? "true" : "false"}" title="查看${colorNames[key]}的法力曲线">
         <span class="color-name">${colorNames[key]}</span><span class="analysis-track"><span class="analysis-fill" style="width:${value / maxColor * 100}%"></span></span><span class="analysis-value">${value}</span>
       </button>`).join("");
 

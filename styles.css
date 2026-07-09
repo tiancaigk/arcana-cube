@@ -234,9 +234,19 @@ select { height: 40px; min-width: 126px; padding: 0 30px 0 12px; border: 1px sol
 .panel-heading small { color: var(--muted-2); font-size: 9px; }
 .color-row, .type-row { display: grid; grid-template-columns: 60px 1fr 32px; align-items: center; gap: 12px; margin: 15px 0; }
 .color-row { width: 100%; padding: 0; border: 0; color: inherit; background: transparent; text-align: left; cursor: pointer; }
+.color-row[data-color-bucket="W"] { --bucket-color: #e9dcb4; --bucket-fill: #d6bd7b; --bucket-dim: #746846; --bucket-bright: #f3e7bd; }
+.color-row[data-color-bucket="U"] { --bucket-color: #9dd4e8; --bucket-fill: #5fa8c8; --bucket-dim: #315b6b; --bucket-bright: #c6eaf6; }
+.color-row[data-color-bucket="B"] { --bucket-color: #c5b9cd; --bucket-fill: #8e7b9a; --bucket-dim: #51445b; --bucket-bright: #e0d6e7; }
+.color-row[data-color-bucket="R"] { --bucket-color: #ef9c82; --bucket-fill: #d06d55; --bucket-dim: #72382d; --bucket-bright: #ffc1ad; }
+.color-row[data-color-bucket="G"] { --bucket-color: #9bc59b; --bucket-fill: #67a371; --bucket-dim: #365d3d; --bucket-bright: #c2e0c0; }
+.color-row[data-color-bucket="C"] { --bucket-color: #c4c2b9; --bucket-fill: #929088; --bucket-dim: #55544f; --bucket-bright: #dedbd0; }
+.color-row[data-color-bucket="M"] { --bucket-color: #e4bd69; --bucket-fill: #c7983d; --bucket-dim: #6d5525; --bucket-bright: #f2d58b; }
+.color-row[data-color-bucket="L"] { --bucket-color: #cfad83; --bucket-fill: #9d7550; --bucket-dim: #5d452f; --bucket-bright: #e6c7a0; }
+.color-row .color-name { color: var(--bucket-color, var(--muted)); }
 .color-row:hover .color-name, .color-row.active .color-name { color: var(--text); }
 .color-row:hover .analysis-track, .color-row.active .analysis-track { background: #171714; box-shadow: inset 0 0 0 1px rgba(217,181,111,.12); }
-.color-row.active .analysis-fill { background: linear-gradient(90deg, var(--accent), var(--accent-bright)); }
+.color-row .analysis-fill { background: linear-gradient(90deg, var(--bucket-dim, var(--accent-dark)), var(--bucket-fill, var(--accent))); }
+.color-row.active .analysis-fill { background: linear-gradient(90deg, var(--bucket-fill, var(--accent)), var(--bucket-bright, var(--accent-bright))); }
 .color-name, .type-name { color: var(--muted); font-size: 11px; }
 .analysis-track { height: 7px; border-radius: 6px; background: #11110f; overflow: hidden; }
 .analysis-fill { height: 100%; min-width: 2px; border-radius: 6px; background: linear-gradient(90deg, var(--accent-dark), var(--accent)); }
