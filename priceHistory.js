@@ -159,6 +159,37 @@
     };
   }
 
+  function dailyPriceChanges(history, cards, date = dateKey()) {
+    const normalized = normalizePriceHistory(history);
+    const dates = Object.keys(normalized.snapshots).sort();
+    const targetDate = dates.includes(date) ? date : "";
+    if (!targetDate) return [];
+    const targetIndex = dates.indexOf(targetDate);
+    const previousDate = targetIndex > 0 ? dates[targetIndex - 1] : "";
+    if (!previousDate) return [];
+    const latest = normalized.snapshots[targetDate];
+    const previous = normalized.snapshots[previousDate];
+    return (cards || []).map((card) => {
+      const key = cardPriceKey(card, card && card.finish);
+      const previousUsd = normalizeUsd(previous.cards && previous.cards[key]);
+      const latestUsd = normalizeUsd(latest.cards && latest.cards[key]);
+      if (previousUsd === null || latestUsd === null) return null;
+      const delta = Math.round((latestUsd - previousUsd) * 100) / 100;
+      if (!delta) return null;
+      return {
+        card: clone(card),
+        key,
+        direction: delta > 0 ? "up" : "down",
+        delta,
+        previousUsd,
+        latestUsd,
+        previousDate,
+        latestDate: targetDate,
+        percent: previousUsd ? Math.round(delta / previousUsd * 10000) / 100 : null
+      };
+    }).filter(Boolean).sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta) || String(a.card && a.card.name || "").localeCompare(String(b.card && b.card.name || "")));
+  }
+
   function wrapPriceHistoryData(history) {
     return {
       format: PRICE_HISTORY_FORMAT,
@@ -179,6 +210,7 @@
     PRICE_HISTORY_VERSION,
     cardPriceKey,
     cardSeries,
+    dailyPriceChanges,
     dateKey,
     emptyPriceHistory,
     normalizePriceHistory,

@@ -30,4 +30,5 @@ test("key interactive regions expose accessible state", () => {
   assert.match(html, /id="manaChart"[^>]+data-color-bucket="all"/);
   assert.match(html, /id="analyticsAllColor"/);
   assert.match(fs.readFileSync(path.join(__dirname, "app.js"), "utf8"), /data-card-type=/);
+  assert.match(fs.readFileSync(path.join(__dirname, "app.js"), "utf8"), /data-show-today-price-changes/);
 });

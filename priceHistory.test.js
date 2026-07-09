@@ -1,6 +1,6 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { cardPriceKey, cardSeries, dateKey, emptyPriceHistory, normalizePriceHistory, parsePriceHistoryData, priceTrend, recordDailySnapshot, totalSeries, wrapPriceHistoryData } = require("./priceHistory.js");
+const { cardPriceKey, cardSeries, dailyPriceChanges, dateKey, emptyPriceHistory, normalizePriceHistory, parsePriceHistoryData, priceTrend, recordDailySnapshot, totalSeries, wrapPriceHistoryData } = require("./priceHistory.js");
 
 test("dateKey formats local calendar dates", () => {
   assert.equal(dateKey(new Date(2026, 6, 2, 23, 59)), "2026-07-02");
@@ -67,6 +67,29 @@ test("priceTrend compares the latest two history points", () => {
     { date: "2026-07-01", usd: 10 },
     { date: "2026-07-02", usd: 9.25 }
   ]).direction, "down");
+});
+
+test("dailyPriceChanges compares a target date with the previous snapshot", () => {
+  const bolt = { id: "1", name: "Lightning Bolt", scryfallId: "bolt", finish: "foil" };
+  const lotus = { id: "2", name: "Black Lotus", scryfallId: "lotus", finish: "nonfoil" };
+  const unchanged = { id: "3", name: "Sol Ring", scryfallId: "ring", finish: "foil" };
+  const history = normalizePriceHistory({
+    snapshots: {
+      "2026-07-01": { cards: { [cardPriceKey(bolt)]: 10, [cardPriceKey(lotus)]: 100, [cardPriceKey(unchanged)]: 2 } },
+      "2026-07-09": { cards: { [cardPriceKey(bolt)]: 12.5, [cardPriceKey(lotus)]: 96, [cardPriceKey(unchanged)]: 2 } }
+    }
+  });
+  assert.deepEqual(dailyPriceChanges(history, [bolt, lotus, unchanged], "2026-07-09").map((change) => ({
+    name: change.card.name,
+    direction: change.direction,
+    delta: change.delta,
+    percent: change.percent,
+    previousUsd: change.previousUsd,
+    latestUsd: change.latestUsd
+  })), [
+    { name: "Black Lotus", direction: "down", delta: -4, percent: -4, previousUsd: 100, latestUsd: 96 },
+    { name: "Lightning Bolt", direction: "up", delta: 2.5, percent: 25, previousUsd: 10, latestUsd: 12.5 }
+  ]);
 });
 
 test("price history files wrap and parse round-trip data", () => {

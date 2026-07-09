@@ -12,7 +12,7 @@
   const IMAGE_DIR_NAME = "images";
   const SHEETJS_URL = "https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js";
   const { buildBackup, buildCardNameSearchUrl, buildExcelRows, buildLocalizedNameSearchUrl, buildLocalImageFileName, buildPrintingsUrl, chooseValidFinish, computeStats, filterCards, filterOraclePrintings, filterPrintings, sortCards, getAvailableFinishes, getCardBucket, getFrontColors, getFrontDisplayName, getFrontTypeLine, getLookupName, getOracleId, getPreferredLocalizedName, getPriceNumber, getUsdPrice, isPaperPrinting, needsPriceRefresh, normalizeCardName, normalizeFinish, normalizeLocalizedNames, normalizeScryfallCard, parseBackup, parseDecklist, parseExcelRows, prepareTextImportRows, replacePrinting } = window.CubeCore;
-  const { cardSeries, emptyPriceHistory, normalizePriceHistory, parsePriceHistoryData, priceTrend, recordDailySnapshot, totalSeries, wrapPriceHistoryData } = window.CubePriceHistory;
+  const { cardSeries, dailyPriceChanges, dateKey, emptyPriceHistory, normalizePriceHistory, parsePriceHistoryData, priceTrend, recordDailySnapshot, totalSeries, wrapPriceHistoryData } = window.CubePriceHistory;
   const { appendChange, emptyChangeLog, latestEntries, normalizeChangeLog, parseChangeLogData, wrapChangeLogData } = window.CubeChangeLog;
   const { requestJson: scryfallRequest } = window.ScryfallClient;
   const cubeStorage = window.CubeStorage.createStorage(localStorage, STORAGE_KEY);
@@ -939,6 +939,8 @@
     const totalPriceTrend = priceTrend(totalSeries(state.priceHistory));
     const priceAction = `<button type="button" class="stat-action icon-only" data-show-total-history aria-label="查看总价历史" title="查看总价历史">
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 19h16"/><path d="M6 15l4-5 4 3 4-7"/></svg>
+    </button><button type="button" class="stat-action icon-only" data-show-today-price-changes aria-label="查看今日价格变动" title="查看今日价格变动">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 7h10M7 12h10M7 17h6"/><path d="M4 7h.01M4 12h.01M4 17h.01"/></svg>
     </button><button type="button" class="stat-action icon-only${state.refreshingPrices ? " loading" : ""}" data-refresh-prices ${state.refreshingPrices ? "disabled" : ""} aria-label="${state.refreshingPrices ? "正在更新价格" : "手动更新价格"}" title="${state.refreshingPrices ? "正在更新价格" : "手动更新价格"}">
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11a8 8 0 1 1-2.35-5.65"/><path d="M20 4v7h-7"/></svg>
     </button>`;
@@ -1052,6 +1054,27 @@
       points,
       emptyText: "暂无总价历史。点击总价旁边的刷新按钮后，会记录今天的 Cube 总价。"
     });
+    elements.priceHistoryDialog.showModal();
+  }
+
+  function openTodayPriceChanges() {
+    const today = dateKey();
+    const changes = dailyPriceChanges(state.priceHistory, state.data.cards, today);
+    const body = changes.length ? `<div class="price-change-list">${changes.map((change) => {
+      const card = change.card || {};
+      const displayName = cardDisplayName(card);
+      const percent = change.percent === null ? "" : ` · ${Math.abs(change.percent).toFixed(2)}%`;
+      const finish = normalizeFinish(card.finish) === "foil" ? "Foil" : "Non-Foil";
+      return `<article class="price-change-row ${change.direction}">
+        <div><strong>${escapeHtml(displayName)}</strong><small>${escapeHtml(card.set || "—")}${card.collectorNumber ? ` · ${escapeHtml(card.collectorNumber)}` : ""} · ${finish}</small></div>
+        <span>${change.direction === "up" ? "▲" : "▼"} ${escapeHtml(formatUsd(Math.abs(change.delta)))}</span>
+        <small>${escapeHtml(formatUsd(change.previousUsd))} → ${escapeHtml(formatUsd(change.latestUsd))}${escapeHtml(percent)}</small>
+      </article>`;
+    }).join("")}</div>` : `<p class="price-change-empty">今天还没有可显示的单卡价格变动。点击总价旁边的刷新按钮记录今天的价格后，再回来查看。</p>`;
+    elements.priceHistoryContent.innerHTML = `<section class="price-history-panel">
+      <div class="price-history-head"><div><span>PRICE CHANGES</span><strong>今日价格变动</strong></div><small>${escapeHtml(formatHistoryDate(today))}</small></div>
+      ${body}
+    </section>`;
     elements.priceHistoryDialog.showModal();
   }
 
@@ -2089,6 +2112,11 @@
       const historyButton = event.target.closest("[data-show-total-history]");
       if (historyButton) {
         openTotalPriceHistory();
+        return;
+      }
+      const changesButton = event.target.closest("[data-show-today-price-changes]");
+      if (changesButton) {
+        openTodayPriceChanges();
         return;
       }
       const button = event.target.closest("[data-refresh-prices]");

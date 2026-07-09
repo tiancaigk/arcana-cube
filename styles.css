@@ -309,6 +309,14 @@ select { height: 40px; min-width: 126px; padding: 0 30px 0 12px; border: 1px sol
 .price-point { fill: #181816; stroke: var(--accent-bright); stroke-width: 1.8; }
 .price-history-summary { display: flex; justify-content: space-between; gap: 14px; margin-top: 3px; color: var(--muted-2); font: 10px/1.2 "DM Mono", monospace; }
 .price-history-summary strong { color: var(--accent-bright); font-weight: 500; }
+.price-change-list { display: grid; gap: 8px; margin-top: 16px; }
+.price-change-row { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 12px; padding: 11px 12px; border: 1px solid var(--line-soft); border-radius: 10px; background: rgba(17,17,15,.62); }
+.price-change-row strong { display: block; overflow: hidden; color: var(--text); font-size: 12px; font-weight: 500; text-overflow: ellipsis; white-space: nowrap; }
+.price-change-row small { color: var(--muted-2); font: 400 9px/1.35 "DM Mono", monospace; white-space: nowrap; }
+.price-change-row > span { font: 600 11px/1 "DM Mono", monospace; white-space: nowrap; }
+.price-change-row.up > span { color: var(--danger); }
+.price-change-row.down > span { color: #70a476; }
+.price-change-empty { margin: 16px 0 2px; color: var(--muted); font-size: 11px; line-height: 1.7; }
 .change-log-modal { max-height: min(82vh, 760px); display: flex; flex-direction: column; overflow: hidden; }
 .change-log-content { min-height: 160px; overflow: auto; display: grid; gap: 8px; padding-right: 4px; }
 .change-log-entry { display: grid; grid-template-columns: 92px minmax(0, 1fr); gap: 12px; padding: 11px 12px; border: 1px solid var(--line-soft); border-radius: 10px; background: rgba(17,17,15,.62); }
