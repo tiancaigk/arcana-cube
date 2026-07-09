@@ -1060,7 +1060,7 @@
   function openTodayPriceChanges() {
     const today = dateKey();
     const changes = dailyPriceChanges(state.priceHistory, state.data.cards, today);
-    const body = changes.length ? `<div class="price-change-list">${changes.map((change) => {
+    const renderChanges = (items) => items.map((change) => {
       const card = change.card || {};
       const displayName = cardDisplayName(card);
       const percent = change.percent === null ? "" : ` · ${Math.abs(change.percent).toFixed(2)}%`;
@@ -1070,7 +1070,13 @@
         <span>${change.direction === "up" ? "▲" : "▼"} ${escapeHtml(formatUsd(Math.abs(change.delta)))}</span>
         <small>${escapeHtml(formatUsd(change.previousUsd))} → ${escapeHtml(formatUsd(change.latestUsd))}${escapeHtml(percent)}</small>
       </article>`;
-    }).join("")}</div>` : `<p class="price-change-empty">今天还没有可显示的单卡价格变动。点击总价旁边的刷新按钮记录今天的价格后，再回来查看。</p>`;
+    }).join("");
+    const increases = changes.filter((change) => change.direction === "up");
+    const decreases = changes.filter((change) => change.direction === "down");
+    const body = changes.length ? `<div class="price-change-groups">
+      ${increases.length ? `<section class="price-change-group up"><h3>上涨 <small>${increases.length} 张</small></h3><div class="price-change-list">${renderChanges(increases)}</div></section>` : ""}
+      ${decreases.length ? `<section class="price-change-group down"><h3>下跌 <small>${decreases.length} 张</small></h3><div class="price-change-list">${renderChanges(decreases)}</div></section>` : ""}
+    </div>` : `<p class="price-change-empty">今天还没有可显示的单卡价格变动。点击总价旁边的刷新按钮记录今天的价格后，再回来查看。</p>`;
     elements.priceHistoryContent.innerHTML = `<section class="price-history-panel">
       <div class="price-history-head"><div><span>PRICE CHANGES</span><strong>今日价格变动</strong></div><small>${escapeHtml(formatHistoryDate(today))}</small></div>
       ${body}

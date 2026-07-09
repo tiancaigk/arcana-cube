@@ -284,7 +284,7 @@ select { height: 40px; min-width: 126px; padding: 0 30px 0 12px; border: 1px sol
 .modal.printing-dialog { width: min(920px, calc(100vw - 28px)); overflow: hidden; }
 .modal.import-dialog { width: min(900px, calc(100vw - 28px)); overflow: hidden; }
 .modal.add-card-dialog { width: min(680px, calc(100vw - 28px)); overflow: hidden; }
-.modal.price-history-dialog { width: min(680px, calc(100vw - 28px)); overflow: hidden; }
+.modal.price-history-dialog { width: min(680px, calc(100vw - 28px)); max-height: min(86vh, 820px); overflow: hidden; }
 .modal.change-log-dialog { width: min(760px, calc(100vw - 28px)); overflow: hidden; }
 .modal::backdrop { background: rgba(5,5,4,.75); backdrop-filter: blur(8px); }
 .modal-card { padding: 26px; background: linear-gradient(145deg, #22211d, #171715); }
@@ -294,7 +294,8 @@ select { height: 40px; min-width: 126px; padding: 0 30px 0 12px; border: 1px sol
 .preview-image-grid { display: grid; grid-template-columns: minmax(0, min(520px, calc(100vw - 36px))); justify-content: center; gap: 18px; cursor: zoom-out; }
 .preview-image-grid.two-sided { grid-template-columns: repeat(2, minmax(0, 520px)); }
 .image-preview-dialog img { width: 100%; max-height: min(68vh, 720px); display: block; filter: drop-shadow(0 20px 34px rgba(0,0,0,.48)); object-fit: contain; }
-.price-history-modal { display: grid; gap: 18px; }
+.price-history-modal { min-height: 0; max-height: min(86vh, 820px); display: flex; flex-direction: column; gap: 18px; overflow: hidden; }
+.price-history-modal > #priceHistoryContent { min-height: 0; overflow-y: auto; padding-right: 3px; scrollbar-color: #615840 #151513; scrollbar-width: thin; }
 .price-history-panel { width: 100%; padding: 15px 16px 13px; border: 1px solid rgba(217,181,111,.16); border-radius: 14px; background: linear-gradient(145deg, rgba(32,32,29,.94), rgba(17,17,15,.92)); box-shadow: inset 0 1px rgba(255,255,255,.03); }
 .image-preview-content .price-history-panel { width: min(720px, calc(100vw - 36px)); cursor: default; }
 .price-history-panel.empty p { margin: 12px 0 2px; color: var(--muted); font-size: 11px; line-height: 1.65; }
@@ -310,6 +311,11 @@ select { height: 40px; min-width: 126px; padding: 0 30px 0 12px; border: 1px sol
 .price-history-summary { display: flex; justify-content: space-between; gap: 14px; margin-top: 3px; color: var(--muted-2); font: 10px/1.2 "DM Mono", monospace; }
 .price-history-summary strong { color: var(--accent-bright); font-weight: 500; }
 .price-change-list { display: grid; gap: 8px; margin-top: 16px; }
+.price-change-groups { display: grid; gap: 20px; }
+.price-change-group h3 { margin: 0; color: var(--text); font-size: 11px; font-weight: 600; }
+.price-change-group h3 small { margin-left: 6px; color: var(--muted-2); font: 400 9px/1 "DM Mono", monospace; }
+.price-change-group.up h3 { color: var(--danger); }
+.price-change-group.down h3 { color: #70a476; }
 .price-change-row { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 12px; padding: 11px 12px; border: 1px solid var(--line-soft); border-radius: 10px; background: rgba(17,17,15,.62); }
 .price-change-row strong { display: block; overflow: hidden; color: var(--text); font-size: 12px; font-weight: 500; text-overflow: ellipsis; white-space: nowrap; }
 .price-change-row small { color: var(--muted-2); font: 400 9px/1.35 "DM Mono", monospace; white-space: nowrap; }
