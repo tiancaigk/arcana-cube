@@ -26,7 +26,8 @@ test("computeStats separates lands and color buckets", () => {
   assert.equal(stats.averageCmc, 2);
   assert.equal(stats.colors.W, 1);
   assert.equal(stats.colors.M, 1);
-  assert.equal(stats.colors.C, 1);
+  assert.equal(stats.colors.C, 0);
+  assert.equal(stats.colors.L, 1);
 });
 
 test("computeStats uses the front face for double-faced cards", () => {
@@ -35,8 +36,9 @@ test("computeStats uses the front face for double-faced cards", () => {
     { name: "Barkchannel Pathway", frontColors: ["G"], frontTypeLine: "Land", colors: ["U"], typeLine: "Creature", cmc: 0 }
   ]);
   assert.equal(stats.lands, 2);
-  assert.equal(stats.colors.G, 2);
+  assert.equal(stats.colors.G, 0);
   assert.equal(stats.colors.U, 0);
+  assert.equal(stats.colors.L, 2);
   assert.equal(stats.creatures, 0);
 });
 

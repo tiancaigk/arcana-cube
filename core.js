@@ -217,12 +217,12 @@
   function computeStats(cards) {
     const nonlands = cards.filter((card) => !isLandCard(card));
     const cmcTotal = nonlands.reduce((sum, card) => sum + (Number(card.cmc) || 0), 0);
-    const colors = { W: 0, U: 0, B: 0, R: 0, G: 0, C: 0, M: 0 };
+    const colors = { W: 0, U: 0, B: 0, R: 0, G: 0, C: 0, M: 0, L: 0 };
     const types = {};
     const curve = { 0: 0, 1: 0, 2: 0, 3: 0, 4: 0, 5: 0, 6: 0, "7+": 0 };
 
     cards.forEach((card) => {
-      colors[getColorBucket(card)] += 1;
+      colors[getCardBucket(card)] += 1;
       const type = getPrimaryType(getFrontTypeLine(card));
       types[type] = (types[type] || 0) + 1;
       if (!isLandCard(card)) {
