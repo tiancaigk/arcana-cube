@@ -77,6 +77,7 @@
     priceHistory: loadPriceHistoryState(),
     changeLog: loadChangeLogState(),
     filters: { query: "", color: "all", type: "all", finish: "all", japanPrint: "all" },
+    analyticsColor: "all",
     mode: "grid",
     nameLanguage: loadNameLanguage(),
     nameLocalization: {
@@ -1191,10 +1192,18 @@
     const colorNames = { W: "白色", U: "蓝色", B: "黑色", R: "红色", G: "绿色", C: "无色", M: "多色", L: "地牌" };
     const maxColor = Math.max(1, ...Object.values(stats.colors));
     $("#colorAnalysis").innerHTML = Object.entries(stats.colors).map(([key, value]) => `
-      <div class="color-row"><span class="color-name">${colorNames[key]}</span><div class="analysis-track"><div class="analysis-fill" style="width:${value / maxColor * 100}%"></div></div><span class="analysis-value">${value}</span></div>`).join("");
+      <button type="button" class="color-row${state.analyticsColor === key ? " active" : ""}" data-analytics-color="${key}" aria-pressed="${state.analyticsColor === key ? "true" : "false"}" title="查看${colorNames[key]}的法力曲线">
+        <span class="color-name">${colorNames[key]}</span><span class="analysis-track"><span class="analysis-fill" style="width:${value / maxColor * 100}%"></span></span><span class="analysis-value">${value}</span>
+      </button>`).join("");
 
-    const maxCurve = Math.max(1, ...Object.values(stats.curve));
-    $("#manaChart").innerHTML = Object.entries(stats.curve).map(([key, value]) => `
+    const curveCards = state.analyticsColor === "all" ? state.data.cards : state.data.cards.filter((card) => getCardBucket(card) === state.analyticsColor);
+    const curveStats = computeStats(curveCards);
+    const curveNonlands = curveCards.length - curveStats.lands;
+    const curveLabel = state.analyticsColor === "all" ? "全部" : colorNames[state.analyticsColor];
+    const averageLabel = curveNonlands ? `平均 CMC ${curveStats.averageCmc.toFixed(2)}` : "平均 CMC —";
+    $("#manaCurveScope").textContent = `${curveLabel} · ${curveCards.length} 张 · ${averageLabel} · 地牌不计入`;
+    const maxCurve = Math.max(1, ...Object.values(curveStats.curve));
+    $("#manaChart").innerHTML = Object.entries(curveStats.curve).map(([key, value]) => `
       <div class="curve-column"><span class="curve-value">${value}</span><div class="curve-bar" style="height:${value / maxCurve * 155}px"></div><span class="curve-label">${key}</span></div>`).join("");
 
     const typeNames = { Creature: "生物", Instant: "瞬间", Sorcery: "法术", Artifact: "神器", Enchantment: "结界", Planeswalker: "鹏洛客", Land: "地", Other: "其他" };
@@ -2112,6 +2121,12 @@
     elements.typeFilter.addEventListener("change", (event) => { state.filters.type = event.target.value; renderCards(); });
     elements.finishFilter.addEventListener("change", (event) => { state.filters.finish = event.target.value; renderCards(); });
     elements.japanPrintFilter.addEventListener("change", (event) => { state.filters.japanPrint = event.target.value; renderCards(); });
+    $("#colorAnalysis").addEventListener("click", (event) => {
+      const button = event.target.closest("[data-analytics-color]");
+      if (!button) return;
+      state.analyticsColor = state.analyticsColor === button.dataset.analyticsColor ? "all" : button.dataset.analyticsColor;
+      renderAnalytics();
+    });
     $$("[data-color]").forEach((button) => button.addEventListener("click", () => {
       state.filters.color = button.dataset.color;
       $$("[data-color]").forEach((item) => {

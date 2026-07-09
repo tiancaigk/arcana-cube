@@ -26,4 +26,5 @@ test("key interactive regions expose accessible state", () => {
   assert.match(html, /class="storage-note"[^>]+aria-live="polite"/);
   assert.match(html, /id="priceHistoryDialog"/);
   assert.match(html, /id="changeLogDialog"/);
+  assert.match(html, /id="manaCurveScope"/);
 });
