@@ -1208,6 +1208,7 @@
     const curveLabel = state.analyticsColor === "all" ? "全部" : colorNames[state.analyticsColor];
     const averageLabel = curveNonlands ? `平均 CMC ${curveStats.averageCmc.toFixed(2)}` : "平均 CMC —";
     $("#manaCurveScope").textContent = `${curveLabel} · ${curveCards.length} 张 · ${averageLabel} · 地牌不计入`;
+    $("#manaChart").dataset.colorBucket = state.analyticsColor;
     const maxCurve = Math.max(1, ...Object.values(curveStats.curve));
     $("#manaChart").innerHTML = Object.entries(curveStats.curve).map(([key, value]) => `
       <div class="curve-column"><span class="curve-value">${value}</span><div class="curve-bar" style="height:${value / maxCurve * 155}px"></div><span class="curve-label">${key}</span></div>`).join("");

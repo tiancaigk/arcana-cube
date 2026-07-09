@@ -243,6 +243,15 @@ select { height: 40px; min-width: 126px; padding: 0 30px 0 12px; border: 1px sol
 .color-row[data-color-bucket="M"] { --bucket-color: #e4bd69; --bucket-fill: #c7983d; --bucket-dim: #6d5525; --bucket-bright: #f2d58b; }
 .color-row[data-color-bucket="L"] { --bucket-color: #cfad83; --bucket-fill: #9d7550; --bucket-dim: #5d452f; --bucket-bright: #e6c7a0; }
 .color-row-all { --bucket-color: var(--accent); --bucket-fill: var(--accent); --bucket-dim: #504326; --bucket-bright: var(--accent-bright); padding-bottom: 13px; border-bottom: 1px solid var(--line-soft); }
+.mana-chart[data-color-bucket="all"] { --bucket-fill: #e3c47c; --bucket-dim: #72582e; --bucket-glow: rgba(217,181,111,.12); }
+.mana-chart[data-color-bucket="W"] { --bucket-fill: #d6bd7b; --bucket-dim: #746846; --bucket-glow: rgba(233,220,180,.18); }
+.mana-chart[data-color-bucket="U"] { --bucket-fill: #5fa8c8; --bucket-dim: #315b6b; --bucket-glow: rgba(157,212,232,.18); }
+.mana-chart[data-color-bucket="B"] { --bucket-fill: #8e7b9a; --bucket-dim: #51445b; --bucket-glow: rgba(197,185,205,.18); }
+.mana-chart[data-color-bucket="R"] { --bucket-fill: #d06d55; --bucket-dim: #72382d; --bucket-glow: rgba(239,156,130,.18); }
+.mana-chart[data-color-bucket="G"] { --bucket-fill: #67a371; --bucket-dim: #365d3d; --bucket-glow: rgba(155,197,155,.18); }
+.mana-chart[data-color-bucket="C"] { --bucket-fill: #929088; --bucket-dim: #55544f; --bucket-glow: rgba(196,194,185,.14); }
+.mana-chart[data-color-bucket="M"] { --bucket-fill: #c7983d; --bucket-dim: #6d5525; --bucket-glow: rgba(228,189,105,.18); }
+.mana-chart[data-color-bucket="L"] { --bucket-fill: #9d7550; --bucket-dim: #5d452f; --bucket-glow: rgba(207,173,131,.16); }
 .type-row[data-card-type="Creature"] { --bucket-color: #9bc59b; --bucket-fill: #67a371; --bucket-dim: #365d3d; }
 .type-row[data-card-type="Instant"] { --bucket-color: #9dd4e8; --bucket-fill: #5fa8c8; --bucket-dim: #315b6b; }
 .type-row[data-card-type="Sorcery"] { --bucket-color: #ef9c82; --bucket-fill: #d06d55; --bucket-dim: #72382d; }
@@ -264,7 +273,7 @@ select { height: 40px; min-width: 126px; padding: 0 30px 0 12px; border: 1px sol
 .mana-chart { height: 210px; display: grid; grid-template-columns: repeat(8, 1fr); align-items: end; gap: 10px; padding-top: 10px; border-bottom: 1px solid var(--line); }
 .curve-column { height: 100%; display: flex; flex-direction: column; justify-content: flex-end; align-items: center; gap: 7px; }
 .curve-value { color: var(--muted); font: 400 9px/1 "DM Mono", monospace; }
-.curve-bar { width: min(27px, 70%); min-height: 2px; border-radius: 4px 4px 0 0; background: linear-gradient(#e3c47c, #72582e); box-shadow: 0 0 18px rgba(217,181,111,.12); }
+.curve-bar { width: min(27px, 70%); min-height: 2px; border-radius: 4px 4px 0 0; background: linear-gradient(var(--bucket-fill, #e3c47c), var(--bucket-dim, #72582e)); box-shadow: 0 0 18px var(--bucket-glow, rgba(217,181,111,.12)); }
 .curve-label { position: absolute; transform: translateY(22px); color: var(--muted-2); font: 400 9px/1 "DM Mono", monospace; }
 .health-panel textarea { width: 100%; height: 195px; resize: none; padding: 14px; border: 1px solid var(--line); border-radius: 8px; outline: 0; color: var(--text); background: #141412; font-size: 12px; line-height: 1.8; }
 .health-panel textarea:focus { border-color: var(--accent-dark); }
