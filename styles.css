@@ -248,8 +248,8 @@ select { height: 40px; min-width: 126px; padding: 0 30px 0 12px; border: 1px sol
 .color-row .analysis-fill { background: linear-gradient(90deg, var(--bucket-dim, var(--accent-dark)), var(--bucket-fill, var(--accent))); }
 .color-row.active .analysis-fill { background: linear-gradient(90deg, var(--bucket-fill, var(--accent)), var(--bucket-bright, var(--accent-bright))); }
 .color-name, .type-name { color: var(--muted); font-size: 11px; }
-.analysis-track { height: 7px; border-radius: 6px; background: #11110f; overflow: hidden; }
-.analysis-fill { height: 100%; min-width: 2px; border-radius: 6px; background: linear-gradient(90deg, var(--accent-dark), var(--accent)); }
+.analysis-track { display: block; height: 7px; border-radius: 6px; background: #11110f; overflow: hidden; }
+.analysis-fill { display: block; height: 100%; min-width: 2px; border-radius: 6px; background: linear-gradient(90deg, var(--accent-dark), var(--accent)); }
 .analysis-value { color: var(--muted); font: 400 10px/1 "DM Mono", monospace; text-align: right; }
 .mana-chart { height: 210px; display: grid; grid-template-columns: repeat(8, 1fr); align-items: end; gap: 10px; padding-top: 10px; border-bottom: 1px solid var(--line); }
 .curve-column { height: 100%; display: flex; flex-direction: column; justify-content: flex-end; align-items: center; gap: 7px; }
