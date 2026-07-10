@@ -1,5 +1,6 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
+const { CURRENT_DATA_VERSION } = require("./migrations.js");
 const { buildBackup, buildCardNameSearchUrl, buildExcelRows, buildLocalizedNameSearchUrl, buildLocalImageFileName, buildPrintingsUrl, chooseValidFinish, computeStats, filterCards, filterOraclePrintings, filterPrintings, getAvailableFinishes, getCardBucket, getCardImage, getColorBucket, getFrontDisplayName, getFrontTypeLine, getLookupName, getOracleId, getPreferredLocalizedName, getPriceNumber, getUsdPrice, isLandCard, isPaperPrinting, needsPriceRefresh, normalizeCardName, normalizeFinish, normalizeLocalizedNames, normalizeScryfallCard, parseBackup, parseDecklist, parseExcelRows, prepareTextImportRows, replacePrinting, sortCards } = require("./core.js");
 
 const cards = [
@@ -415,7 +416,11 @@ test("JSON backups preserve the complete Cube and accept legacy exports", () => 
   const data = { meta: { name: "Test Cube", description: "Desc" }, notes: "Notes", cards: [{ id: "1", name: "Black Vise", finish: "nonfoil" }] };
   const backup = buildBackup(data, "2026-06-22T00:00:00.000Z");
   assert.equal(backup.version, 2);
+  assert.equal(backup.dataVersion, CURRENT_DATA_VERSION);
   assert.deepEqual(parseBackup(JSON.stringify(backup)), data);
-  assert.deepEqual(parseBackup(JSON.stringify({ ...data, format: "arcana-cube-v1" })), data);
+  const migratedLegacy = parseBackup(JSON.stringify({ ...data, format: "arcana-cube-v1" }));
+  assert.equal(migratedLegacy.cards[0].name, "Black Vise");
+  assert.equal(migratedLegacy.cards[0].JapanPrint, false);
+  assert.equal(migratedLegacy.cards[0].localThumbnail, "");
   assert.throws(() => parseBackup('{"not":"a cube"}'), /有效/);
 });

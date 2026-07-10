@@ -1,12 +1,14 @@
 (function (root, factory) {
-  const api = factory();
+  const migrations = typeof module === "object" && module.exports ? require("./migrations.js") : root.CubeMigrations;
+  const api = factory(migrations);
   if (typeof module === "object" && module.exports) module.exports = api;
   root.CubeCore = api;
-})(typeof globalThis !== "undefined" ? globalThis : this, function () {
+})(typeof globalThis !== "undefined" ? globalThis : this, function (migrations) {
   const COLOR_ORDER = ["W", "U", "B", "R", "G"];
   const SORT_ORDER = ["W", "U", "B", "R", "G", "C", "M", "L"];
   const GUILD_ORDER = [["W", "U"], ["U", "B"], ["B", "R"], ["R", "G"], ["G", "W"], ["W", "B"], ["U", "R"], ["B", "G"], ["R", "W"], ["G", "U"]];
   const PRICE_TTL_MS = 24 * 60 * 60 * 1000;
+  const { CURRENT_DATA_VERSION, migrateCubeData } = migrations;
 
   function parseDecklist(text) {
     return text
@@ -466,6 +468,7 @@
     return {
       format: "arcana-cube-backup",
       version: 2,
+      dataVersion: CURRENT_DATA_VERSION,
       exportedAt,
       data
     };
@@ -473,10 +476,12 @@
 
   function parseBackup(source) {
     const payload = typeof source === "string" ? JSON.parse(source) : source;
-    const data = payload && payload.data && payload.format === "arcana-cube-backup" ? payload.data : payload;
-    if (!data || typeof data !== "object" || !data.meta || typeof data.meta.name !== "string" || !Array.isArray(data.cards)) {
+    const wrapped = payload && payload.data && payload.format === "arcana-cube-backup";
+    const sourceData = wrapped ? payload.data : payload;
+    if (!sourceData || typeof sourceData !== "object" || !sourceData.meta || typeof sourceData.meta.name !== "string" || !Array.isArray(sourceData.cards)) {
       throw new Error("不是有效的 Arcana Cube 备份文件");
     }
+    const data = migrateCubeData(sourceData, wrapped ? payload.dataVersion ?? 0 : 0);
     return {
       meta: data.meta,
       notes: typeof data.notes === "string" ? data.notes : "",

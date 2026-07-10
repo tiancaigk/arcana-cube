@@ -6,6 +6,7 @@ const path = require("node:path");
 const html = fs.readFileSync(path.join(__dirname, "index.html"), "utf8");
 
 test("application shell loads dependencies before app.js", () => {
+  const migrations = html.indexOf('src="migrations.js"');
   const core = html.indexOf('src="core.js"');
   const priceHistory = html.indexOf('src="priceHistory.js"');
   const changeLog = html.indexOf('src="changeLog.js"');
@@ -13,7 +14,7 @@ test("application shell loads dependencies before app.js", () => {
   const storage = html.indexOf('src="storage.js"');
   const scryfall = html.indexOf('src="scryfall.js"');
   const app = html.indexOf('src="app.js"');
-  assert.ok(core >= 0 && core < priceHistory && priceHistory < changeLog && changeLog < health && health < storage && storage < scryfall && scryfall < app);
+  assert.ok(migrations >= 0 && migrations < core && core < priceHistory && priceHistory < changeLog && changeLog < health && health < storage && storage < scryfall && scryfall < app);
 });
 
 test("key interactive regions expose accessible state", () => {

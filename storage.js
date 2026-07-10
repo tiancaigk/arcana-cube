@@ -1,10 +1,13 @@
 (function (root, factory) {
-  const api = factory();
+  const migrations = typeof module === "object" && module.exports ? require("./migrations.js") : root.CubeMigrations;
+  const api = factory(migrations);
   if (typeof module === "object" && module.exports) module.exports = api;
   root.CubeStorage = api;
-})(typeof globalThis !== "undefined" ? globalThis : this, function () {
+})(typeof globalThis !== "undefined" ? globalThis : this, function (migrations) {
   const WORKSPACE_FORMAT = "arcana-cube-workspace";
   const WORKSPACE_VERSION = 1;
+  const LOCAL_FORMAT = "arcana-cube-local";
+  const { CURRENT_DATA_VERSION, migrateCubeData } = migrations;
 
   function clone(value) {
     if (typeof structuredClone === "function") return structuredClone(value);
@@ -20,14 +23,16 @@
       load(fallback) {
         try {
           const saved = JSON.parse(storage.getItem(key));
-          return isCubeData(saved) ? saved : clone(fallback);
+          if (isCubeData(saved)) return migrateCubeData(saved, 0);
+          if (saved && saved.format === LOCAL_FORMAT && isCubeData(saved.data)) return migrateCubeData(saved.data, saved.dataVersion ?? 0);
+          return clone(fallback);
         } catch (error) {
           return clone(fallback);
         }
       },
       save(data) {
         if (!isCubeData(data)) throw new Error("Cube 数据格式无效");
-        storage.setItem(key, JSON.stringify(data));
+        storage.setItem(key, JSON.stringify({ format: LOCAL_FORMAT, dataVersion: CURRENT_DATA_VERSION, data: clone(data) }));
       }
     };
   }
@@ -52,6 +57,7 @@
     return {
       format: WORKSPACE_FORMAT,
       version: WORKSPACE_VERSION,
+      dataVersion: CURRENT_DATA_VERSION,
       savedAt: new Date().toISOString(),
       data: clone(data)
     };
@@ -59,8 +65,8 @@
 
   function parseWorkspaceData(text) {
     const payload = JSON.parse(text);
-    if (isCubeData(payload)) return payload;
-    if (payload && payload.format === WORKSPACE_FORMAT && isCubeData(payload.data)) return payload.data;
+    if (isCubeData(payload)) return migrateCubeData(payload, 0);
+    if (payload && payload.format === WORKSPACE_FORMAT && isCubeData(payload.data)) return migrateCubeData(payload.data, payload.dataVersion ?? 0);
     throw new Error("Cube 文件格式无效");
   }
 
@@ -124,5 +130,5 @@
     };
   }
 
-  return { WORKSPACE_FORMAT, WORKSPACE_VERSION, createStorage, createSerialWriteQueue, createHandleStore, isCubeData, parseWorkspaceData, wrapWorkspaceData };
+  return { WORKSPACE_FORMAT, WORKSPACE_VERSION, CURRENT_DATA_VERSION, createStorage, createSerialWriteQueue, createHandleStore, isCubeData, parseWorkspaceData, wrapWorkspaceData };
 });
