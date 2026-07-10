@@ -58,6 +58,19 @@ Cube/
 - `examples/price-history.example.json`
 - `examples/change-log.example.json`
 
+## 开发结构
+
+`app.js` 是浏览器组合入口，负责状态变更、DOM 事件和用户反馈；可测试的业务能力拆分在独立 UMD 模块中：
+
+- `core.js`、`migrations.js`：卡牌规则、导入导出和数据迁移
+- `scryfall.js`、`catalog.js`：Scryfall 请求与卡牌目录查询
+- `storage.js`、`workspace.js`、`persistence.js`：浏览器镜像、文件夹读写和按域保存
+- `imageCache.js`：高清原图与 WebP 缩略图缓存
+- `priceHistory.js`、`changeLog.js`、`health.js`：历史记录和工作区检查
+- `selectors.js`、`renderScheduler.js`：派生数据缓存与分区渲染
+
+完整的模块职责、数据流和扩展规则见 [docs/architecture.md](./docs/architecture.md)。新增可复用逻辑时优先放入对应模块并补同名 `*.test.js`，让 `app.js` 保持为协调层。
+
 ## Git 边界
 
 Git 跟踪应用代码、测试、文档和空示例数据。真实牌表、价格历史、改动记录、卡图与本地审计输出已在 `.gitignore` 中排除，避免把个人运行数据误提交到代码历史。
@@ -68,3 +81,5 @@ Git 跟踪应用代码、测试、文档和空示例数据。真实牌表、价�
 npm run check
 npm test
 ```
+
+测试包含 600 张牌和 180 天价格历史的确定性回归夹具。提交前应同时运行语法检查与完整测试；浏览器行为还需在本地服务器页面做烟雾验证。

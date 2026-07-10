@@ -1,0 +1,102 @@
+# Arcana Cube Architecture
+
+本文记录当前模块边界和变更规则。目标是让功能继续增长时，数据兼容、文件夹可迁移性和 600 张牌规模下的交互性能仍然可预测。
+
+## 总体数据流
+
+```mermaid
+flowchart LR
+  UI["DOM 事件与弹窗"] --> APP["app.js 组合与状态变更"]
+  APP --> CORE["core / migrations"]
+  APP --> CATALOG["catalog"]
+  CATALOG --> HTTP["scryfall"]
+  APP --> SELECTORS["selectors"]
+  SELECTORS --> RENDER["renderScheduler"]
+  RENDER --> UI
+  APP --> PERSIST["persistence"]
+  PERSIST --> BROWSER["localStorage 镜像"]
+  PERSIST --> WORKSPACE["workspace 文件夹服务"]
+  APP --> IMAGES["imageCache"]
+  IMAGES --> WORKSPACE
+```
+
+`app.js` 是唯一的浏览器组合入口。它持有运行状态、响应 DOM 事件、调用服务并显示 toast；规则计算、网络、文件系统、缓存与调度分别由独立模块负责。模块采用 UMD 形式，在浏览器中挂到 `window`，在 Node 测试中通过 CommonJS 导入。
+
+## 模块职责
+
+| 模块 | 负责 | 不负责 |
+| --- | --- | --- |
+| `migrations.js` | 按版本升级 Cube 数据，拒绝未知未来版本 | UI 和持久化 |
+| `core.js` | 卡牌规范化、正面分类、排序筛选、统计、导入导出 | 网络和 DOM |
+| `priceHistory.js` | 每日快照、趋势、逐卡价格索引 | Scryfall 请求 |
+| `changeLog.js` | 改动记录规范化、限长、文件包装 | 触发业务操作 |
+| `health.js` | 只读分析文件夹缺图、孤立文件和数据完整性 | 修复或删除文件 |
+| `storage.js` | 浏览器 Cube 镜像、工作区包装、目录句柄存储 | 业务域调度 |
+| `workspace.js` | File System Access 权限、三个 JSON 文件和图片文件 IO | 下载和状态管理 |
+| `persistence.js` | 脏域快照、延迟合并、浏览器/文件夹写入协调 | 数据格式解释 |
+| `scryfall.js` | 通用 JSON 请求、重试、取消和 HTTP 错误 | 卡牌查询策略 |
+| `catalog.js` | 名称、印刷版本、Oracle 分页和批量查询 | UI 和本地文件 |
+| `imageCache.js` | 原图下载、精确命名、缩略图补全和进度 | Canvas 实现和目录选择 |
+| `selectors.js` | 按修订号缓存筛选、分组、统计、分析和价格视图 | 修改状态 |
+| `renderScheduler.js` | 合并渲染请求并按固定顺序执行区域刷新 | 决定业务失效范围 |
+| `app.js` | 依赖组装、状态变更、DOM 和用户反馈 | 可复用领域算法 |
+
+## 状态与保存
+
+运行状态中持有三个可持久化域：
+
+| 域 | 浏览器镜像 | 文件夹文件 | 典型变更 |
+| --- | --- | --- | --- |
+| `cube` | `arcana-cube-v1` | `cube-data.json` | 牌张、版本、Finish、日印、名称、说明、图片引用 |
+| `priceHistory` | `arcana-cube-price-history-v1` | `price-history.json` | 每日逐卡与总价快照 |
+| `changeLog` | `arcana-cube-change-log-v1` | `change-log.json` | 添加、删除、换版、导入、价格和存储操作记录 |
+
+状态变更完成后调用 `saveState(domain)` 或 `saveState(domains)`，只标记真正变化的域。协调器立即保存普通浏览器镜像；文件夹模式把同一域的连续快照合并，并按 `cube`、`priceHistory`、`changeLog` 顺序串行写入。笔记输入使用短延迟合并，`blur` 会刷新待写内容，`pagehide` 至少同步保存浏览器镜像。
+
+文件夹写入失败时，该域保持 dirty，不能把“已写入文件夹”当作成功。重新载入、断开和显式写入文件夹前必须先 `flush()`。不要绕过 `persistence.js` 直接为普通业务变更写 JSON 文件。
+
+## 派生数据
+
+`dataRevision` 在 `cube` 变更后递增，`historyRevision` 在价格历史变更后递增。`selectors.js` 用数据引用、修订号和筛选条件作为缓存键：
+
+- `selectCards` 返回已排序的筛选结果及颜色分组。
+- `selectStats` 和 `selectAnalytics` 复用统计结果。
+- `cardById` 使用索引定位卡牌。
+- `selectPriceView` 一次扫描历史，建立逐卡最新两点趋势和总价序列。
+
+任何直接修改 `state.data` 或 `state.priceHistory` 的代码，都必须随后通过正确域调用 `saveState`，否则修订号不会失效，界面可能继续使用旧派生结果。
+
+## 渲染失效
+
+渲染区域固定为 `meta`、`stats`、`nameLanguage`、`cards`、`analytics`、`storage`。常见失效规则如下：
+
+| 操作 | 请求区域 |
+| --- | --- |
+| 搜索、筛选、显示模式 | `cards` |
+| 修改 Cube 名称或简介 | `meta` |
+| 切换名称语言 | `nameLanguage`, `cards` |
+| Finish 或日印 | `stats`，并优先替换单卡节点；筛选不再匹配时回退到 `cards` |
+| 添加、删除、换版、导入 | `meta`, `stats`, `cards`, `analytics` |
+| 价格刷新 | `stats`, `cards` |
+| 启动、恢复、文件夹重载 | `renderAll()` |
+
+搜索输入由 `requestAnimationFrame` 合并，保持即时反馈但每帧最多重建一次牌表。图片错误使用 `cardGrid` 上的单个捕获监听，禁止在每次 `renderCards()` 后逐图绑定事件。
+
+## 扩展规则
+
+1. 卡牌分类、筛选、排序或导入格式变化放在 `core.js`，先补纯函数测试。
+2. 新的 Scryfall 用例放在 `catalog.js`；只有传输、重试或取消策略才改 `scryfall.js`。
+3. 新的文件夹数据必须先定义独立保存域及兼容格式，再扩展 `workspace.js` 和 `persistence.js`。
+4. 新的派生视图放入 `selectors.js`，用明确修订号失效，不在卡片模板循环中重复扫描全量数据。
+5. 新 UI 操作在状态变更后请求最小渲染区域；只有跨区域载入或恢复才调用 `renderAll()`。
+6. 真实 `cube-data.json`、价格历史、改动记录和 `images/` 始终保持 Git 忽略。
+
+## 验证工作流
+
+```sh
+npm run check
+npm test
+git diff --check
+```
+
+单元测试使用 `testFixtures.js` 生成确定性的 600 张牌和 180 天价格历史，覆盖大规模筛选、统计、价格索引、文件写入合并与渲染调度。涉及浏览器交互时，还应通过 `npm run serve` 在 `http://127.0.0.1:4173/` 验证相关流程；涉及文件夹模式时使用测试目录，不要对真实 Cube 数据做破坏性操作。
