@@ -16,13 +16,14 @@
   const IMAGE_FETCH_TIMEOUT_MS = 25000;
   const IMAGE_CACHE_CHECKPOINT = 100;
   const SHEETJS_URL = "https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js";
-  const { buildBackup, buildCardNameSearchUrl, buildExcelRows, buildLocalizedNameSearchUrl, buildLocalImageFileName, buildPrintingsUrl, chooseValidFinish, computeStats, filterCards, filterOraclePrintings, filterPrintings, sortCards, getAvailableFinishes, getCardBucket, getCardImage, getFrontColors, getFrontDisplayName, getFrontTypeLine, getLookupName, getOracleId, getPreferredLocalizedName, getPriceNumber, getUsdPrice, isPaperPrinting, needsPriceRefresh, normalizeCardName, normalizeFinish, normalizeLocalizedNames, normalizeScryfallCard, parseBackup, parseDecklist, parseExcelRows, prepareTextImportRows, replacePrinting } = window.CubeCore;
+  const { buildBackup, buildExcelRows, buildLocalizedNameSearchUrl, buildLocalImageFileName, chooseValidFinish, computeStats, filterCards, filterPrintings, sortCards, getAvailableFinishes, getCardBucket, getCardImage, getFrontColors, getFrontDisplayName, getFrontTypeLine, getOracleId, getPreferredLocalizedName, getPriceNumber, getUsdPrice, isPaperPrinting, needsPriceRefresh, normalizeCardName, normalizeFinish, normalizeLocalizedNames, normalizeScryfallCard, parseBackup, parseDecklist, parseExcelRows, prepareTextImportRows, replacePrinting } = window.CubeCore;
   const { cardSeries, dailyPriceChanges, dateKey, emptyPriceHistory, normalizePriceHistory, parsePriceHistoryData, priceTrend, recordDailySnapshot, totalSeries, wrapPriceHistoryData } = window.CubePriceHistory;
   const { appendChange, emptyChangeLog, latestEntries, normalizeChangeLog, parseChangeLogData, wrapChangeLogData } = window.CubeChangeLog;
   const { analyzeWorkspaceHealth } = window.CubeHealth;
   const { createWorkspaceService } = window.CubeWorkspace;
   const { createPersistenceCoordinator } = window.CubePersistence;
   const { requestJson: scryfallRequest } = window.ScryfallClient;
+  const { createCatalog, printingKey } = window.CubeCatalog;
   const cubeStorage = window.CubeStorage.createStorage(localStorage, STORAGE_KEY);
   const cubeHandleStore = window.CubeStorage.createHandleStore(window.indexedDB);
   const workspace = createWorkspaceService({
@@ -40,6 +41,7 @@
     parseChangeLog: parseChangeLogData,
     emptyChangeLog
   });
+  const catalog = createCatalog({ requestJson: scryfallRequest, core: window.CubeCore });
   let sheetJsLoader;
   let printingRequestId = 0;
 
@@ -117,7 +119,6 @@
     excelValidated: false,
     editingCardId: null,
     printings: [],
-    printingCache: new Map(),
     lookupMode: "name",
     nameResults: [],
     nameSearchId: 0,
@@ -1368,94 +1369,6 @@
     timer = setTimeout(() => node.remove(), action ? 6500 : 3300);
   }
 
-  async function lookupCard(name, signal) {
-    try {
-      return await scryfallRequest(`https://api.scryfall.com/cards/named?fuzzy=${encodeURIComponent(name)}`, { signal });
-    } catch (error) {
-      if (error.status === 404) throw new Error("没有找到这张牌");
-      throw error;
-    }
-  }
-
-  async function searchCardsByName(name, signal) {
-    let url = buildCardNameSearchUrl(name);
-    const cards = [];
-    while (url) {
-      let page;
-      try {
-        page = await scryfallRequest(url, { signal });
-      } catch (error) {
-        if (error.status === 404) return [];
-        throw error;
-      }
-      cards.push(...(page.data || []).filter(isPaperPrinting));
-      url = page.has_more ? page.next_page : null;
-    }
-    return cards;
-  }
-
-  async function lookupPrinting(setCode, collectorNumber, signal) {
-    const set = setCode.trim().toLowerCase();
-    const number = collectorNumber.trim();
-    try {
-      return await scryfallRequest(`https://api.scryfall.com/cards/${encodeURIComponent(set)}/${encodeURIComponent(number)}`, { signal });
-    } catch (error) {
-      if (error.status === 404) {
-        const notFound = new Error("没有找到这个系列与编号的卡牌");
-        notFound.status = 404;
-        throw notFound;
-      }
-      throw error;
-    }
-  }
-
-  async function lookupCardById(scryfallId, signal) {
-    if (!scryfallId) return null;
-    try {
-      return await scryfallRequest(`https://api.scryfall.com/cards/${encodeURIComponent(scryfallId)}`, { signal });
-    } catch (error) {
-      if (error.status === 404) return null;
-      throw error;
-    }
-  }
-
-  async function resolvePrintingIdentity(card, signal) {
-    if (card.set && card.collectorNumber) {
-      try {
-        return await lookupPrinting(card.set, card.collectorNumber, signal);
-      } catch (error) {
-        if (error.status !== 404) throw error;
-      }
-    }
-    const printing = await lookupCardById(card.scryfallId, signal);
-    if (printing) return printing;
-    return lookupCard(getLookupName(card.name), signal);
-  }
-
-  async function lookupAllPrintings(card, signal) {
-    const identity = await resolvePrintingIdentity(card, signal);
-    const oracleId = getOracleId(identity);
-    if (!oracleId) throw new Error("无法确定这张牌的 Oracle ID，不能加载版本");
-    if (card.oracleId !== oracleId) {
-      card.oracleId = oracleId;
-      saveState("cube");
-    }
-    if (state.printingCache.has(oracleId)) return filterOraclePrintings(state.printingCache.get(oracleId), oracleId);
-
-    let url = buildPrintingsUrl(oracleId);
-    const printings = [];
-    const visitedPages = new Set();
-    while (url) {
-      if (visitedPages.has(url)) throw new Error("Scryfall 返回了重复分页，版本加载已停止");
-      visitedPages.add(url);
-      const page = await scryfallRequest(url, { signal });
-      printings.push(...filterOraclePrintings(page.data || [], oracleId));
-      url = page.has_more ? page.next_page : null;
-    }
-    state.printingCache.set(oracleId, printings);
-    return printings;
-  }
-
   async function refreshStalePrices(force = false) {
     if (state.refreshingPrices) return;
     const targets = state.data.cards.filter((card) => force || needsPriceRefresh(card));
@@ -1475,7 +1388,7 @@
     let failed = false;
     try {
       const uniqueTargets = [...new Map(targets.map((card) => [printingKey(card.set, card.collectorNumber), { setCode: card.set, collectorNumber: card.collectorNumber }])).values()];
-      const cardsByPrinting = await lookupPrintingBatch(uniqueTargets);
+      const cardsByPrinting = await catalog.lookupPrintingBatch(uniqueTargets);
       targets.forEach((target) => {
         const printing = cardsByPrinting.get(printingKey(target.set, target.collectorNumber));
         if (!printing) return;
@@ -1584,8 +1497,12 @@
     $("#printingDialogTitle").textContent = `${cardDisplayName(card)} · 选择版本`;
     elements.printingDialog.showModal();
     try {
-      const printings = await lookupAllPrintings(card, state.printingController.signal);
+      const { oracleId, printings } = await catalog.lookupAllPrintings(card, state.printingController.signal);
       if (requestId !== printingRequestId || state.editingCardId !== cardId || !elements.printingDialog.open) return;
+      if (card.oracleId !== oracleId) {
+        card.oracleId = oracleId;
+        saveState("cube");
+      }
       state.printings = printings;
       renderPrintings();
     } catch (error) {
@@ -1741,13 +1658,13 @@
         const searchId = ++state.nameSearchId;
         elements.lookupResult.classList.remove("hidden");
         elements.lookupResult.innerHTML = '<div class="name-result-empty">正在搜索实体卡牌…</div>';
-        const results = await searchCardsByName(name, state.nameSearchController.signal);
+        const results = await catalog.searchByName(name, state.nameSearchController.signal);
         if (searchId !== state.nameSearchId) return;
         state.nameResults = results;
         renderNameResults();
         return;
       }
-      const result = await lookupPrinting(setCode, collectorNumber);
+      const result = await catalog.lookupPrinting(setCode, collectorNumber);
       const card = normalizeScryfallCard(result);
       addCard(card);
       elements.addCardDialog.close();
@@ -1860,46 +1777,6 @@
     return parseExcelRows(rows);
   }
 
-  function normalizeCollectorNumber(value) {
-    return String(value || "").trim().toLocaleLowerCase().replace(/^0+(?=\d)/, "");
-  }
-
-  function printingKey(setCode, collectorNumber) {
-    return `${String(setCode || "").trim().toLocaleLowerCase()}/${normalizeCollectorNumber(collectorNumber)}`;
-  }
-
-  async function lookupPrintingBatch(rows) {
-    const results = new Map();
-    if (!rows.length) return results;
-    for (let start = 0; start < rows.length; start += 75) {
-      const chunk = rows.slice(start, start + 75);
-      const payload = await scryfallRequest("https://api.scryfall.com/cards/collection", {
-        method: "POST",
-        headers: { Accept: "application/json", "Content-Type": "application/json" },
-        body: JSON.stringify({ identifiers: chunk.map((row) => ({ set: row.setCode.toLowerCase(), collector_number: row.collectorNumber })) })
-      });
-      (payload.data || []).forEach((card) => results.set(printingKey(card.set, card.collector_number), card));
-    }
-    return results;
-  }
-
-  async function lookupCardNameBatch(names) {
-    const results = new Map();
-    for (let start = 0; start < names.length; start += 75) {
-      const chunk = names.slice(start, start + 75);
-      const payload = await scryfallRequest("https://api.scryfall.com/cards/collection", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ identifiers: chunk.map((name) => ({ name })) })
-      });
-      (payload.data || []).forEach((card) => {
-        const faces = (card.card_faces || []).map((face) => face.name);
-        [card.name, card.printed_name, ...faces].filter(Boolean).forEach((name) => results.set(normalizeCardName(name), card));
-      });
-    }
-    return results;
-  }
-
   function excelStatus(row) {
     const statuses = {
       valid: ["valid", "通过"],
@@ -1963,7 +1840,7 @@
 
       const candidates = state.excelRows.filter((row) => row.status === "valid");
       elements.importStatus.textContent = `正在批量核验 ${candidates.length} 个版本…`;
-      const cardsByPrinting = await lookupPrintingBatch(candidates);
+      const cardsByPrinting = await catalog.lookupPrintingBatch(candidates);
       candidates.forEach((row) => {
         row.card = cardsByPrinting.get(printingKey(row.setCode, row.collectorNumber)) || null;
         if (!row.card) {
@@ -2047,7 +1924,7 @@
       state.textRows = prepareTextImportRows(names, existingNames);
       const candidates = state.textRows.filter((row) => row.status === "valid");
       elements.importStatus.textContent = `正在批量核验 ${candidates.length} 个牌名…`;
-      const cardsByName = await lookupCardNameBatch(candidates.map((row) => row.expectedName));
+      const cardsByName = await catalog.lookupCardNameBatch(candidates.map((row) => row.expectedName));
       const existingOracleIds = new Set(state.data.cards.map((card) => card.oracleId).filter(Boolean));
       candidates.forEach((row) => {
         row.card = cardsByName.get(normalizeCardName(row.expectedName)) || null;
