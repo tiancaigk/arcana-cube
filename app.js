@@ -21,6 +21,7 @@
   const { appendChange, emptyChangeLog, latestEntries, normalizeChangeLog, parseChangeLogData, wrapChangeLogData } = window.CubeChangeLog;
   const { analyzeWorkspaceHealth } = window.CubeHealth;
   const { createWorkspaceService } = window.CubeWorkspace;
+  const { createPersistenceCoordinator } = window.CubePersistence;
   const { requestJson: scryfallRequest } = window.ScryfallClient;
   const cubeStorage = window.CubeStorage.createStorage(localStorage, STORAGE_KEY);
   const cubeHandleStore = window.CubeStorage.createHandleStore(window.indexedDB);
@@ -134,14 +135,30 @@
       supported: typeof window.showDirectoryPicker === "function",
       directoryHandle: null,
       directoryName: "",
-      rememberedDirectoryName: "",
-      writeQueue: window.CubeStorage.createSerialWriteQueue(async (_error, directoryHandle) => {
-        if (state.storage.directoryHandle === directoryHandle) {
-          await disconnectDirectoryMode("文件夹写入失败，后续会继续保存在浏览器");
-        }
-      })
+      rememberedDirectoryName: ""
     }
   };
+
+  const persistence = createPersistenceCoordinator({
+    browserWriters: {
+      cube: (snapshot) => cubeStorage.save(snapshot),
+      priceHistory: (snapshot) => localStorage.setItem(PRICE_HISTORY_STORAGE_KEY, JSON.stringify(normalizePriceHistory(snapshot))),
+      changeLog: (snapshot) => localStorage.setItem(CHANGE_LOG_STORAGE_KEY, JSON.stringify(normalizeChangeLog(snapshot)))
+    },
+    directoryWriters: {
+      cube: (directoryHandle, snapshot) => workspace.writeCube(directoryHandle, snapshot),
+      priceHistory: (directoryHandle, snapshot) => workspace.writePriceHistory(directoryHandle, snapshot),
+      changeLog: (directoryHandle, snapshot) => workspace.writeChangeLog(directoryHandle, snapshot)
+    },
+    getDirectoryHandle: () => state.storage.mode === "directory" ? state.storage.directoryHandle : null,
+    onBrowserError: () => toast("保存失败", "浏览器存储空间可能不足", true),
+    onDirectoryError: async (error, _domain, directoryHandle) => {
+      if (state.storage.directoryHandle !== directoryHandle) return;
+      state.folderSync = { syncing: false, dirty: true, lastResult: { ok: false, message: error.message || "无法写入 Cube 文件夹" } };
+      renderStorageStatus();
+      toast("写入失败", error.message || "无法写入 Cube 文件夹", true);
+    }
+  });
 
   const $ = (selector, parent = document) => parent.querySelector(selector);
   const $$ = (selector, parent = document) => [...parent.querySelectorAll(selector)];
@@ -298,16 +315,16 @@
     state.changeLog = normalizeChangeLog(data);
   }
 
-  function localMirrorSave() {
-    cubeStorage.save(state.data);
+  function localMirrorSave(data = state.data) {
+    cubeStorage.save(data);
   }
 
-  function savePriceHistoryLocal() {
-    localStorage.setItem(PRICE_HISTORY_STORAGE_KEY, JSON.stringify(normalizePriceHistory(state.priceHistory)));
+  function savePriceHistoryLocal(priceHistory = state.priceHistory) {
+    localStorage.setItem(PRICE_HISTORY_STORAGE_KEY, JSON.stringify(normalizePriceHistory(priceHistory)));
   }
 
-  function saveChangeLogLocal() {
-    localStorage.setItem(CHANGE_LOG_STORAGE_KEY, JSON.stringify(normalizeChangeLog(state.changeLog)));
+  function saveChangeLogLocal(changeLog = state.changeLog) {
+    localStorage.setItem(CHANGE_LOG_STORAGE_KEY, JSON.stringify(normalizeChangeLog(changeLog)));
   }
 
   function cardLogInfo(card) {
@@ -330,14 +347,7 @@
       meta: details.meta || null
     });
     if (options.persist === false) return;
-    try {
-      saveChangeLogLocal();
-    } catch (error) {
-      // Change logging is best-effort and should not block Cube edits.
-    }
-    if (state.storage.mode === "directory" && state.storage.directoryHandle) {
-      queueDirectorySave(snapshotCubeData(state.data));
-    }
+    saveState("changeLog");
   }
 
   const queryDirectoryPermission = workspace.queryPermission;
@@ -435,10 +445,12 @@
   }
 
   async function disconnectDirectoryMode(message = "已切回浏览器本地保存") {
+    await persistence.flush();
     state.storage.mode = "browser";
     state.storage.directoryHandle = null;
     state.storage.directoryName = "";
     state.storage.rememberedDirectoryName = "";
+    persistence.clearDirectory();
     try {
       await cubeHandleStore.clear(DIRECTORY_HANDLE_KEY);
     } catch (error) {
@@ -448,37 +460,28 @@
     if (message) toast("文件夹已断开", message);
   }
 
-  async function queueDirectorySave(snapshot) {
-    const directoryHandle = state.storage.directoryHandle;
-    if (!directoryHandle) return Promise.resolve();
-    const priceHistory = normalizePriceHistory(state.priceHistory);
-    const changeLog = normalizeChangeLog(state.changeLog);
-    return state.storage.writeQueue.enqueue(async () => {
-      await writeCubeDataFile(directoryHandle, snapshot);
-      await writePriceHistoryFile(directoryHandle, priceHistory);
-      await writeChangeLogFile(directoryHandle, changeLog);
-    }, directoryHandle);
-  }
-
   async function flushDirectoryWrites(directoryHandle) {
-    await state.storage.writeQueue.flush();
-    return state.storage.mode === "directory" && state.storage.directoryHandle === directoryHandle;
+    await persistence.flush();
+    return state.storage.mode === "directory" && state.storage.directoryHandle === directoryHandle && !persistence.hasDirty();
   }
 
-  function saveState() {
-    try {
-      localMirrorSave();
-      savePriceHistoryLocal();
-      saveChangeLogLocal();
-    } catch (error) {
-      toast("保存失败", "浏览器存储空间可能不足", true);
-    }
+  function saveState(domains = ["cube", "priceHistory", "changeLog"], options = {}) {
+    const selected = Array.isArray(domains) ? domains : [domains];
+    const snapshots = {
+      cube: () => snapshotCubeData(state.data),
+      priceHistory: () => normalizePriceHistory(state.priceHistory),
+      changeLog: () => normalizeChangeLog(state.changeLog)
+    };
+    selected.forEach((domain) => {
+      const snapshot = snapshots[domain]();
+      if (options.delayMs) persistence.scheduleDirty(domain, snapshot, options.delayMs);
+      else persistence.markDirty(domain, snapshot);
+    });
     if (state.storage.mode === "directory" && state.storage.directoryHandle) {
       if (state.folderSync.lastResult && state.folderSync.lastResult.ok) {
         state.folderSync = { ...state.folderSync, dirty: true };
         renderStorageStatus();
       }
-      queueDirectorySave(snapshotCubeData(state.data));
     }
   }
 
@@ -672,16 +675,15 @@
           failed += 1;
         }
         if (updated && (index + 1) % IMAGE_CACHE_CHECKPOINT === 0) {
-          saveState();
+          saveState("cube");
         }
       }
       if (updated || failed) recordChange("images.cached", `下载本地卡图：更新 ${updated}，失败 ${failed}`, { meta: { updated, failed, total: targets.length } }, { persist: false });
       if (updated) {
-        saveState();
+        saveState(["cube", "changeLog"]);
         render();
       } else if (failed) {
-        saveChangeLogLocal();
-        if (state.storage.mode === "directory" && state.storage.directoryHandle) queueDirectorySave(snapshotCubeData(state.data));
+        saveState("changeLog");
       }
       toast("本地卡图整理完成", `已更新 ${updated} 张，本次失败 ${failed} 张；原图保留，牌表使用 WebP 缩略图${targets.length ? "" : "，没有可处理图片"}`);
     } finally {
@@ -728,7 +730,7 @@
       return;
     }
     try {
-      await state.storage.writeQueue.flush();
+      await persistence.flush();
       const directoryHandle = await window.showDirectoryPicker({ mode: "readwrite" });
       if (!await requestDirectoryPermission(directoryHandle, "readwrite")) {
         toast("没有获得权限", "需要允许读写该文件夹才能自动保存", true);
@@ -942,7 +944,7 @@
           }
           if (applyLocalizedName(oracleId, localized.lang, localized.name)) changedSinceSave += 1;
           if (changedSinceSave >= 20) {
-            saveState();
+            saveState("cube");
             changedSinceSave = 0;
           }
         } catch (error) {
@@ -951,7 +953,7 @@
         }
       }
     } finally {
-      if (changedSinceSave) saveState();
+      if (changedSinceSave) saveState("cube");
       state.nameLocalization.refreshing = false;
       renderNameLanguageToggle();
     }
@@ -1436,7 +1438,7 @@
     if (!oracleId) throw new Error("无法确定这张牌的 Oracle ID，不能加载版本");
     if (card.oracleId !== oracleId) {
       card.oracleId = oracleId;
-      saveState();
+      saveState("cube");
     }
     if (state.printingCache.has(oracleId)) return filterOraclePrintings(state.printingCache.get(oracleId), oracleId);
 
@@ -1461,7 +1463,7 @@
       if (force) {
         recordCurrentPriceHistory();
         recordChange("prices.recorded", "记录价格历史：无需刷新", { meta: { checked: 0 } }, { persist: false });
-        saveState();
+        saveState(["priceHistory", "changeLog"]);
         renderStats();
         toast("价格历史已记录", "当前牌表没有需要刷新的价格，已保存今天的快照");
       }
@@ -1503,7 +1505,10 @@
     if (force) recordChange("prices.refreshed", `更新价格：检查 ${targets.length} 张牌`, { meta: { checked: targets.length, updated } }, { persist: false });
     if (updated || force) {
       state.data.cards = sortCards(state.data.cards);
-      saveState();
+      saveState([
+        ...(updated ? ["cube"] : []),
+        ...(force ? ["priceHistory", "changeLog"] : [])
+      ]);
       render();
       if (force) toast("价格已更新", `已检查 ${targets.length} 张牌，并保存今天的价格历史`);
       return;
@@ -1602,7 +1607,7 @@
       before: { set: current.set, collectorNumber: current.collectorNumber, finish: current.finish },
       after: { set: next.set, collectorNumber: next.collectorNumber, finish: next.finish }
     }, { persist: false });
-    saveState();
+    saveState(["cube", "changeLog"]);
     render();
     elements.printingDialog.close();
     toast("版本已更新", `${printing.set.toUpperCase()} · ${printing.collector_number}`);
@@ -1625,7 +1630,7 @@
       before: { finish: before },
       after: { finish: current.finish }
     }, { persist: false });
-    saveState();
+    saveState(["cube", "changeLog"]);
     render();
     if (state.editingCardId === cardId && elements.printingDialog.open) {
       const card = state.data.cards[cardIndex];
@@ -1646,7 +1651,7 @@
       before: { JapanPrint: before },
       after: { JapanPrint: current.JapanPrint === true }
     }, { persist: false });
-    saveState();
+    saveState(["cube", "changeLog"]);
     renderCards();
     toast("日印状态已更新", current.JapanPrint ? "已标记为日印" : "已标记为非日印");
   }
@@ -1684,7 +1689,7 @@
     state.data.cards.unshift(card);
     state.data.cards = sortCards(state.data.cards);
     recordChange("card.added", `添加卡牌：${card.name}`, { card: cardLogInfo(card), after: cardLogInfo(card) }, { persist: false });
-    saveState();
+    saveState(["cube", "changeLog"]);
     render();
   }
 
@@ -1996,7 +2001,7 @@
     });
     state.data.cards = sortCards(state.data.cards);
     recordChange("import.excel", `Excel 导入 ${rows.length} 张牌`, { meta: { count: rows.length } }, { persist: false });
-    saveState();
+    saveState(["cube", "changeLog"]);
     render();
     elements.importDialog.close();
     toast("Excel 导入完成", `已添加 ${rows.length} 张核验通过的卡牌`);
@@ -2074,7 +2079,7 @@
     rows.forEach((row) => state.data.cards.push(normalizeScryfallCard(row.card)));
     state.data.cards = sortCards(state.data.cards);
     recordChange("import.text", `文本导入 ${rows.length} 张牌`, { meta: { count: rows.length } }, { persist: false });
-    saveState();
+    saveState(["cube", "changeLog"]);
     render();
     elements.importDialog.close();
     toast("文本导入完成", `已添加 ${rows.length} 张核验通过的卡牌`);
@@ -2140,7 +2145,7 @@
         cards: normalizeStoredCards(restored.cards)
       };
       recordChange("backup.restored", `恢复 JSON 备份：${state.data.cards.length} 张牌`, { meta: { count: state.data.cards.length, name: restored.meta.name } }, { persist: false });
-      saveState();
+      saveState(["cube", "changeLog"]);
       clearFilters();
       render();
       toast("恢复完成", `已恢复 ${state.data.cards.length} 张牌`);
@@ -2156,7 +2161,7 @@
     if (index < 0) return;
     const [removed] = state.data.cards.splice(index, 1);
     recordChange("card.removed", `移除卡牌：${removed.name}`, { card: cardLogInfo(removed), before: cardLogInfo(removed) }, { persist: false });
-    saveState();
+    saveState(["cube", "changeLog"]);
     render();
     toast("已移除", removed.name, false, {
       label: "撤销",
@@ -2165,7 +2170,7 @@
         state.data.cards.push(removed);
         state.data.cards = sortCards(state.data.cards);
         recordChange("card.removeUndone", `撤销移除：${removed.name}`, { card: cardLogInfo(removed), after: cardLogInfo(removed) }, { persist: false });
-        saveState();
+        saveState(["cube", "changeLog"]);
         render();
         toast("已恢复", removed.name);
       }
@@ -2332,9 +2337,11 @@
       event.preventDefault();
       state.data.meta.name = $("#editCubeName").value.trim();
       state.data.meta.description = $("#editCubeDescription").value.trim();
-      saveState(); renderMeta(); elements.editCubeDialog.close(); toast("已保存", "Cube 信息已更新");
+      saveState("cube"); renderMeta(); elements.editCubeDialog.close(); toast("已保存", "Cube 信息已更新");
     });
-    $("#cubeNotes").addEventListener("input", (event) => { state.data.notes = event.target.value; saveState(); });
+    $("#cubeNotes").addEventListener("input", (event) => { state.data.notes = event.target.value; saveState("cube", { delayMs: 400 }); });
+    $("#cubeNotes").addEventListener("blur", () => persistence.flush());
+    window.addEventListener("pagehide", () => persistence.flushBrowserSync());
     $("#editNotesBtn").addEventListener("click", () => $("#cubeNotes").focus());
 
     $$('[data-close-dialog]').forEach((button) => button.addEventListener("click", () => {
