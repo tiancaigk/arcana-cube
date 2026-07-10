@@ -18,8 +18,15 @@ test("application shell loads dependencies before app.js", () => {
   const catalog = html.indexOf('src="catalog.js"');
   const imageCache = html.indexOf('src="imageCache.js"');
   const selectors = html.indexOf('src="selectors.js"');
+  const renderScheduler = html.indexOf('src="renderScheduler.js"');
   const app = html.indexOf('src="app.js"');
-  assert.ok(migrations >= 0 && migrations < core && core < priceHistory && priceHistory < changeLog && changeLog < health && health < storage && storage < workspace && workspace < persistence && persistence < scryfall && scryfall < catalog && catalog < imageCache && imageCache < selectors && selectors < app);
+  assert.ok(migrations >= 0 && migrations < core && core < priceHistory && priceHistory < changeLog && changeLog < health && health < storage && storage < workspace && workspace < persistence && persistence < scryfall && scryfall < catalog && catalog < imageCache && imageCache < selectors && selectors < renderScheduler && renderScheduler < app);
+});
+
+test("card image failures use one delegated listener", () => {
+  const source = fs.readFileSync(path.join(__dirname, "app.js"), "utf8");
+  assert.match(source, /cardGrid\.addEventListener\("error"/);
+  assert.doesNotMatch(source, /image\.addEventListener\("error"/);
 });
 
 test("key interactive regions expose accessible state", () => {

@@ -26,6 +26,7 @@
   const { createCatalog, printingKey } = window.CubeCatalog;
   const { createImageCache, isRemoteImageUrl, preferPngImageUrl } = window.CubeImageCache;
   const { createCubeSelectors } = window.CubeSelectors;
+  const { createRenderScheduler } = window.CubeRenderScheduler;
   const cubeStorage = window.CubeStorage.createStorage(localStorage, STORAGE_KEY);
   const cubeHandleStore = window.CubeStorage.createHandleStore(window.indexedDB);
   const workspace = createWorkspaceService({
@@ -201,6 +202,18 @@
     storageStatusLabel: $("#storageStatusLabel"), storageStatusDetail: $("#storageStatusDetail"),
     nameLanguageToggle: $("#nameLanguageToggle")
   };
+
+  const renderScheduler = createRenderScheduler({
+    meta: renderMeta,
+    stats: renderStats,
+    nameLanguage: renderNameLanguageToggle,
+    cards: renderCards,
+    analytics: () => {
+      if (state.view === "analytics") renderAnalytics();
+    },
+    storage: renderStorageStatus
+  }, { order: ["meta", "stats", "nameLanguage", "cards", "analytics", "storage"] });
+  let searchRenderFrame = 0;
 
   function loadNameLanguage() {
     try {
@@ -581,7 +594,7 @@
       if (summary.updated || summary.failed) recordChange("images.cached", `下载本地卡图：更新 ${summary.updated}，失败 ${summary.failed}`, { meta: { updated: summary.updated, failed: summary.failed, total: summary.total } }, { persist: false });
       if (summary.updated) {
         saveState(["cube", "changeLog"]);
-        render();
+        renderScheduler.request("cards");
       } else if (summary.failed) {
         saveState("changeLog");
       }
@@ -615,7 +628,7 @@
       localMirrorSave();
       savePriceHistoryLocal();
       saveChangeLogLocal();
-      render();
+      renderAll();
       renderStorageStatus();
       recordChange("storage.reloaded", "从文件夹重新载入 Cube", { meta: { count: state.data.cards.length } });
       toast("已从文件夹载入", `${state.storage.directoryName}/${CUBE_FILE_NAME}`);
@@ -665,7 +678,7 @@
       localMirrorSave();
       savePriceHistoryLocal();
       saveChangeLogLocal();
-      render();
+      renderAll();
       renderStorageStatus();
       recordChange("storage.connected", `已连接文件夹：${state.storage.directoryName}`, { meta: { directoryName: state.storage.directoryName } });
       toast("已连接文件夹", `后续修改会自动写入 ${state.storage.directoryName}`);
@@ -709,7 +722,7 @@
         applyChangeLogData(changeLogData);
         saveChangeLogLocal();
       }
-      render();
+      renderAll();
     } catch (error) {
       // Fallback to local mirror on startup.
     }
@@ -746,8 +759,7 @@
     if (state.nameLanguage === nextLanguage) return;
     state.nameLanguage = nextLanguage;
     saveNameLanguage(nextLanguage);
-    renderNameLanguageToggle();
-    renderCards();
+    renderScheduler.request("nameLanguage", "cards");
   }
 
   function missingLocalizedNameCards(cards) {
@@ -859,12 +871,13 @@
     }
   }
 
-  function render() {
-    renderMeta();
-    renderStats();
-    renderNameLanguageToggle();
-    renderCards();
-    if (state.view === "analytics") renderAnalytics();
+  function renderAll() {
+    renderScheduler.request("meta", "stats", "nameLanguage", "cards", "analytics");
+    renderScheduler.flush();
+  }
+
+  function requestDataRender() {
+    renderScheduler.request("meta", "stats", "cards", "analytics");
   }
 
   function renderMeta() {
@@ -1124,7 +1137,6 @@
         <div class="card-group-heading"><span class="card-group-mark"></span><h2>${cardGroupLabel(key)}</h2><small>${groupCards.length} 张</small></div>
         <div class="card-group-grid">${groupCards.map((card, index) => cardTemplate(card, index, priceView)).join("")}</div>
       </section>`).join("");
-    $$(".card-image", elements.cardGrid).forEach((image) => image.addEventListener("error", () => image.classList.add("hidden"), { once: true }));
     if (state.nameLanguage === "zh") refreshMissingLocalizedNames(cards);
 
     const labels = [];
@@ -1136,8 +1148,23 @@
     $("#activeFilterText").textContent = labels.join(" · ") || "按颜色与类型整理";
   }
 
-  function cardGroupKey(card) {
-    return getCardBucket(card);
+  function replaceCardNode(cardId) {
+    const card = selectors.cardById(state.data.cards, state.dataRevision, cardId);
+    const node = elements.cardGrid.querySelector(cardItemSelector(cardId));
+    if (!card || !node || filterCards([card], state.filters).length === 0) {
+      renderScheduler.request("cards");
+      return false;
+    }
+    const priceView = selectors.selectPriceView(state.data.cards, state.dataRevision, state.priceHistory, state.historyRevision);
+    const template = document.createElement("template");
+    template.innerHTML = cardTemplate(card, 0, priceView).trim();
+    node.replaceWith(template.content.firstElementChild);
+    return true;
+  }
+
+  function requestCardMutationRender(cardId) {
+    renderScheduler.request("stats");
+    replaceCardNode(cardId);
   }
 
   function cardGroupLabel(key) {
@@ -1266,13 +1293,13 @@
         recordCurrentPriceHistory();
         recordChange("prices.recorded", "记录价格历史：无需刷新", { meta: { checked: 0 } }, { persist: false });
         saveState(["priceHistory", "changeLog"]);
-        renderStats();
+        renderScheduler.request("stats");
         toast("价格历史已记录", "当前牌表没有需要刷新的价格，已保存今天的快照");
       }
       return;
     }
     state.refreshingPrices = true;
-    renderStats();
+    renderScheduler.request("stats");
     let updated = false;
     let failed = false;
     try {
@@ -1300,7 +1327,7 @@
       state.refreshingPrices = false;
     }
     if (failed) {
-      renderStats();
+      renderScheduler.request("stats");
       return;
     }
     if (force) recordCurrentPriceHistory();
@@ -1311,11 +1338,11 @@
         ...(updated ? ["cube"] : []),
         ...(force ? ["priceHistory", "changeLog"] : [])
       ]);
-      render();
+      renderScheduler.request("stats", "cards");
       if (force) toast("价格已更新", `已检查 ${targets.length} 张牌，并保存今天的价格历史`);
       return;
     }
-    renderStats();
+    renderScheduler.request("stats");
     if (force) toast("价格已是最新", "当前牌表没有新的价格变化");
   }
 
@@ -1414,7 +1441,7 @@
       after: { set: next.set, collectorNumber: next.collectorNumber, finish: next.finish }
     }, { persist: false });
     saveState(["cube", "changeLog"]);
-    render();
+    requestDataRender();
     elements.printingDialog.close();
     toast("版本已更新", `${printing.set.toUpperCase()} · ${printing.collector_number}`);
   }
@@ -1437,7 +1464,7 @@
       after: { finish: current.finish }
     }, { persist: false });
     saveState(["cube", "changeLog"]);
-    render();
+    requestCardMutationRender(cardId);
     if (state.editingCardId === cardId && elements.printingDialog.open) {
       const card = state.data.cards[cardIndex];
       renderPrintingFinishToggle(card);
@@ -1458,7 +1485,7 @@
       after: { JapanPrint: current.JapanPrint === true }
     }, { persist: false });
     saveState(["cube", "changeLog"]);
-    renderCards();
+    requestCardMutationRender(cardId);
     toast("日印状态已更新", current.JapanPrint ? "已标记为日印" : "已标记为非日印");
   }
 
@@ -1496,7 +1523,7 @@
     state.data.cards = sortCards(state.data.cards);
     recordChange("card.added", `添加卡牌：${card.name}`, { card: cardLogInfo(card), after: cardLogInfo(card) }, { persist: false });
     saveState(["cube", "changeLog"]);
-    render();
+    requestDataRender();
   }
 
   function renderNameResults() {
@@ -1768,7 +1795,7 @@
     state.data.cards = sortCards(state.data.cards);
     recordChange("import.excel", `Excel 导入 ${rows.length} 张牌`, { meta: { count: rows.length } }, { persist: false });
     saveState(["cube", "changeLog"]);
-    render();
+    requestDataRender();
     elements.importDialog.close();
     toast("Excel 导入完成", `已添加 ${rows.length} 张核验通过的卡牌`);
     state.excelFile = null;
@@ -1846,7 +1873,7 @@
     state.data.cards = sortCards(state.data.cards);
     recordChange("import.text", `文本导入 ${rows.length} 张牌`, { meta: { count: rows.length } }, { persist: false });
     saveState(["cube", "changeLog"]);
-    render();
+    requestDataRender();
     elements.importDialog.close();
     toast("文本导入完成", `已添加 ${rows.length} 张核验通过的卡牌`);
     elements.importText.value = "";
@@ -1913,7 +1940,7 @@
       recordChange("backup.restored", `恢复 JSON 备份：${state.data.cards.length} 张牌`, { meta: { count: state.data.cards.length, name: restored.meta.name } }, { persist: false });
       saveState(["cube", "changeLog"]);
       clearFilters();
-      render();
+      renderAll();
       toast("恢复完成", `已恢复 ${state.data.cards.length} 张牌`);
     } catch (error) {
       toast("恢复失败", error.message || "无法读取这个备份文件", true);
@@ -1928,7 +1955,7 @@
     const [removed] = state.data.cards.splice(index, 1);
     recordChange("card.removed", `移除卡牌：${removed.name}`, { card: cardLogInfo(removed), before: cardLogInfo(removed) }, { persist: false });
     saveState(["cube", "changeLog"]);
-    render();
+    requestDataRender();
     toast("已移除", removed.name, false, {
       label: "撤销",
       run: () => {
@@ -1937,7 +1964,7 @@
         state.data.cards = sortCards(state.data.cards);
         recordChange("card.removeUndone", `撤销移除：${removed.name}`, { card: cardLogInfo(removed), after: cardLogInfo(removed) }, { persist: false });
         saveState(["cube", "changeLog"]);
-        render();
+        requestDataRender();
         toast("已恢复", removed.name);
       }
     });
@@ -1953,7 +1980,7 @@
       if (active) button.setAttribute("aria-current", "page");
       else button.removeAttribute("aria-current");
     });
-    if (view === "analytics") renderAnalytics();
+    if (view === "analytics") renderScheduler.request("analytics");
   }
 
   function bindTabKeyboard(selector) {
@@ -1971,7 +1998,7 @@
     }));
   }
 
-  function clearFilters() {
+  function clearFilters(options = {}) {
     state.filters = { query: "", color: "all", type: "all", finish: "all", japanPrint: "all" };
     elements.searchInput.value = "";
     elements.typeFilter.value = "all";
@@ -1982,7 +2009,7 @@
       button.classList.toggle("active", active);
       button.setAttribute("aria-pressed", String(active));
     });
-    renderCards();
+    if (options.render !== false) renderScheduler.request("cards");
   }
 
   function bindEvents() {
@@ -2031,15 +2058,22 @@
     $("#newCubeBtn").addEventListener("click", () => toast("即将支持", "多 Cube 管理已列入下一版"));
 
     $$(".nav-item").forEach((button) => button.addEventListener("click", () => setView(button.dataset.view)));
-    elements.searchInput.addEventListener("input", (event) => { state.filters.query = event.target.value; renderCards(); });
-    elements.typeFilter.addEventListener("change", (event) => { state.filters.type = event.target.value; renderCards(); });
-    elements.finishFilter.addEventListener("change", (event) => { state.filters.finish = event.target.value; renderCards(); });
-    elements.japanPrintFilter.addEventListener("change", (event) => { state.filters.japanPrint = event.target.value; renderCards(); });
+    elements.searchInput.addEventListener("input", (event) => {
+      state.filters.query = event.target.value;
+      if (searchRenderFrame) return;
+      searchRenderFrame = requestAnimationFrame(() => {
+        searchRenderFrame = 0;
+        renderScheduler.request("cards");
+      });
+    });
+    elements.typeFilter.addEventListener("change", (event) => { state.filters.type = event.target.value; renderScheduler.request("cards"); });
+    elements.finishFilter.addEventListener("change", (event) => { state.filters.finish = event.target.value; renderScheduler.request("cards"); });
+    elements.japanPrintFilter.addEventListener("change", (event) => { state.filters.japanPrint = event.target.value; renderScheduler.request("cards"); });
     $("#analyticsView").addEventListener("click", (event) => {
       const button = event.target.closest("[data-analytics-color]");
       if (!button) return;
       state.analyticsColor = button.dataset.analyticsColor === "all" || state.analyticsColor === button.dataset.analyticsColor ? "all" : button.dataset.analyticsColor;
-      renderAnalytics();
+      renderScheduler.request("analytics");
     });
     $$("[data-color]").forEach((button) => button.addEventListener("click", () => {
       state.filters.color = button.dataset.color;
@@ -2048,7 +2082,7 @@
         item.classList.toggle("active", active);
         item.setAttribute("aria-pressed", String(active));
       });
-      renderCards();
+      renderScheduler.request("cards");
     }));
     $$("[data-mode]").forEach((button) => button.addEventListener("click", () => {
       state.mode = button.dataset.mode;
@@ -2057,7 +2091,7 @@
         item.classList.toggle("active", active);
         item.setAttribute("aria-pressed", String(active));
       });
-      renderCards();
+      renderScheduler.request("cards");
     }));
     $$("[data-name-language]").forEach((button) => button.addEventListener("click", () => setNameLanguage(button.dataset.nameLanguage)));
     elements.cardGrid.addEventListener("click", (event) => {
@@ -2084,6 +2118,9 @@
       const printingButton = event.target.closest("[data-change-printing]");
       if (printingButton) openPrintingDialog(printingButton.dataset.changePrinting);
     });
+    elements.cardGrid.addEventListener("error", (event) => {
+      if (event.target.classList && event.target.classList.contains("card-image")) event.target.classList.add("hidden");
+    }, true);
     elements.printingSearchInput.addEventListener("input", renderPrintings);
     elements.printingFinishToggle.addEventListener("click", (event) => {
       const button = event.target.closest("[data-toggle-finish]");
@@ -2103,7 +2140,7 @@
       event.preventDefault();
       state.data.meta.name = $("#editCubeName").value.trim();
       state.data.meta.description = $("#editCubeDescription").value.trim();
-      saveState("cube"); renderMeta(); elements.editCubeDialog.close(); toast("已保存", "Cube 信息已更新");
+      saveState("cube"); renderScheduler.request("meta"); elements.editCubeDialog.close(); toast("已保存", "Cube 信息已更新");
     });
     $("#cubeNotes").addEventListener("input", (event) => { state.data.notes = event.target.value; saveState("cube", { delayMs: 400 }); });
     $("#cubeNotes").addEventListener("blur", () => persistence.flush());
@@ -2156,7 +2193,7 @@
   }
 
   bindEvents();
-  render();
+  renderAll();
   renderStorageStatus();
   restoreDirectoryMode();
   setTimeout(() => refreshStalePrices(), 450);
