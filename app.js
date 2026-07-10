@@ -25,6 +25,7 @@
   const { requestJson: scryfallRequest } = window.ScryfallClient;
   const { createCatalog, printingKey } = window.CubeCatalog;
   const { createImageCache, isRemoteImageUrl, preferPngImageUrl } = window.CubeImageCache;
+  const { createCubeSelectors } = window.CubeSelectors;
   const cubeStorage = window.CubeStorage.createStorage(localStorage, STORAGE_KEY);
   const cubeHandleStore = window.CubeStorage.createHandleStore(window.indexedDB);
   const workspace = createWorkspaceService({
@@ -43,6 +44,7 @@
     emptyChangeLog
   });
   const catalog = createCatalog({ requestJson: scryfallRequest, core: window.CubeCore });
+  const selectors = createCubeSelectors(window.CubeCore, window.CubePriceHistory);
   const imageCache = createImageCache({
     workspace,
     getDirectoryHandle: () => state.storage.directoryHandle,
@@ -113,6 +115,8 @@
     })(),
     priceHistory: loadPriceHistoryState(),
     changeLog: loadChangeLogState(),
+    dataRevision: 0,
+    historyRevision: 0,
     filters: { query: "", color: "all", type: "all", finish: "all", japanPrint: "all" },
     analyticsColor: "all",
     mode: "grid",
@@ -305,10 +309,12 @@
     };
     if (!state.data.meta.name) state.data.meta.name = defaultState.meta.name;
     if (typeof state.data.meta.description !== "string") state.data.meta.description = defaultState.meta.description;
+    state.dataRevision += 1;
   }
 
   function applyPriceHistoryData(data) {
     state.priceHistory = normalizePriceHistory(data);
+    state.historyRevision += 1;
   }
 
   function applyChangeLogData(data) {
@@ -467,6 +473,8 @@
 
   function saveState(domains = ["cube", "priceHistory", "changeLog"], options = {}) {
     const selected = Array.isArray(domains) ? domains : [domains];
+    if (selected.includes("cube")) state.dataRevision += 1;
+    if (selected.includes("priceHistory")) state.historyRevision += 1;
     const snapshots = {
       cube: () => snapshotCubeData(state.data),
       priceHistory: () => normalizePriceHistory(state.priceHistory),
@@ -867,9 +875,10 @@
   }
 
   function renderStats() {
-    const stats = computeStats(state.data.cards);
-    const priceInfo = priceStatus(state.data.cards);
-    const totalPriceTrend = priceTrend(totalSeries(state.priceHistory));
+    const stats = selectors.selectStats(state.data.cards, state.dataRevision);
+    const priceView = selectors.selectPriceView(state.data.cards, state.dataRevision, state.priceHistory, state.historyRevision);
+    const priceInfo = priceStatus(priceView);
+    const totalPriceTrend = priceView.totalTrend;
     const priceAction = `<button type="button" class="stat-action icon-only" data-show-total-history aria-label="查看总价历史" title="查看总价历史">
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 19h16"/><path d="M6 15l4-5 4 3 4-7"/></svg>
     </button><button type="button" class="stat-action icon-only" data-show-today-price-changes aria-label="查看今日价格变动" title="查看今日价格变动">
@@ -882,7 +891,7 @@
       ["平均费用", stats.averageCmc.toFixed(2), "CMC", "地牌不计入", "curve"],
       ["生物", stats.creatures, "张", `${percent(stats.creatures, stats.total)}% 的牌表`, "creature"],
       ["地牌", stats.lands, "张", `${percent(stats.lands, stats.total)}% 的牌表`, "land"],
-      ["总价", `${formatUsd(cubeValue(state.data.cards))}${priceTrendBadge(totalPriceTrend)}`, "USD", priceInfo, "cards", priceAction]
+      ["总价", `${formatUsd(priceView.currentTotal)}${priceTrendBadge(totalPriceTrend)}`, "USD", priceInfo, "cards", priceAction]
     ];
     const icons = {
       cards: '<rect x="5" y="3" width="14" height="18" rx="2"/><path d="M9 7h6M9 11h6"/>',
@@ -922,18 +931,9 @@
     return `<span class="price-trend ${trend.direction}" title="${escapeHtml(title)}" aria-label="${escapeHtml(title)}">${arrow}</span>`;
   }
 
-  function cubeValue(cards) {
-    return cards.reduce((sum, card) => {
-      const price = getPriceNumber(card, card.finish);
-      return sum + (price || 0);
-    }, 0);
-  }
-
-  function priceStatus(cards) {
-    const missing = cards.filter((card) => getPriceNumber(card, card.finish) === null).length;
-    const timestamps = cards.map((card) => Date.parse(card.priceUpdatedAt || "")).filter(Number.isFinite);
-    const updated = timestamps.length ? new Intl.DateTimeFormat("zh-CN", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" }).format(Math.max(...timestamps)) : "尚未更新";
-    return `最近更新 ${updated}${missing ? ` · 缺价 ${missing} 张` : ""}`;
+  function priceStatus(priceView) {
+    const updated = priceView.latestUpdatedAt === null ? "尚未更新" : new Intl.DateTimeFormat("zh-CN", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" }).format(priceView.latestUpdatedAt);
+    return `最近更新 ${updated}${priceView.missingCount ? ` · 缺价 ${priceView.missingCount} 张` : ""}`;
   }
 
   function formatHistoryDate(date) {
@@ -1094,7 +1094,8 @@
   }
 
   function excelPriceExtras(card) {
-    const trend = priceTrend(cardSeries(state.priceHistory, card, card.finish));
+    const priceView = selectors.selectPriceView(state.data.cards, state.dataRevision, state.priceHistory, state.historyRevision);
+    const trend = selectors.trendForCard(priceView, card, card.finish);
     return {
       previousPrice: trend ? trend.previousUsd.toFixed(2) : "",
       priceDelta: trend ? trend.delta.toFixed(2) : "",
@@ -1111,21 +1112,17 @@
   }
 
   function renderCards() {
-    const cards = sortCards(filterCards(state.data.cards, state.filters));
+    const cardView = selectors.selectCards(state.data.cards, state.dataRevision, state.filters);
+    const priceView = selectors.selectPriceView(state.data.cards, state.dataRevision, state.priceHistory, state.historyRevision);
+    const { cards, groups } = cardView;
     elements.resultCount.textContent = cards.length;
     elements.emptyState.classList.toggle("hidden", cards.length > 0);
     elements.cardGrid.classList.toggle("hidden", cards.length === 0);
     elements.cardGrid.classList.toggle("list-mode", state.mode === "list");
-    const groups = cards.reduce((result, card) => {
-      const key = cardGroupKey(card);
-      if (!result.has(key)) result.set(key, []);
-      result.get(key).push(card);
-      return result;
-    }, new Map());
     elements.cardGrid.innerHTML = [...groups.entries()].map(([key, groupCards]) => `
       <section class="card-group" data-card-group="${key}">
         <div class="card-group-heading"><span class="card-group-mark"></span><h2>${cardGroupLabel(key)}</h2><small>${groupCards.length} 张</small></div>
-        <div class="card-group-grid">${groupCards.map((card, index) => cardTemplate(card, index)).join("")}</div>
+        <div class="card-group-grid">${groupCards.map((card, index) => cardTemplate(card, index, priceView)).join("")}</div>
       </section>`).join("");
     $$(".card-image", elements.cardGrid).forEach((image) => image.addEventListener("error", () => image.classList.add("hidden"), { once: true }));
     if (state.nameLanguage === "zh") refreshMissingLocalizedNames(cards);
@@ -1148,7 +1145,7 @@
   }
 
   function openImagePreview(cardId) {
-    const card = state.data.cards.find((item) => item.id === cardId);
+    const card = selectors.cardById(state.data.cards, state.dataRevision, cardId);
     if (!card || !getCardImage(card, "front", true)) return;
     const displayName = cardDisplayName(card);
     const finish = normalizeFinish(card.finish);
@@ -1174,13 +1171,13 @@
     elements.imagePreview.innerHTML = "";
   }
 
-  function cardTemplate(card, index) {
+  function cardTemplate(card, index, priceView = selectors.selectPriceView(state.data.cards, state.dataRevision, state.priceHistory, state.historyRevision)) {
     const cost = (card.manaCost || "").replace(/[{}]/g, "").replace(/(?=\D)/g, " ").trim();
     const finish = normalizeFinish(card.finish);
     const availableFinishes = getAvailableFinishes(card);
     const finishDisabled = availableFinishes.length < 2;
     const price = formatUsd(cardPrice(card));
-    const trend = priceTrend(cardSeries(state.priceHistory, card, finish));
+    const trend = selectors.trendForCard(priceView, card, finish);
     const displayName = cardDisplayName(card);
     const japanPrint = card.JapanPrint === true;
     const gridImage = getCardImage(card);
@@ -1199,7 +1196,7 @@
   }
 
   function renderAnalytics() {
-    const stats = computeStats(state.data.cards);
+    const stats = selectors.selectStats(state.data.cards, state.dataRevision);
     const colorNames = { W: "白色", U: "蓝色", B: "黑色", R: "红色", G: "绿色", C: "无色", M: "多色", L: "地牌" };
     const allColorButton = $("#analyticsAllColor");
     if (allColorButton) {
@@ -1213,8 +1210,9 @@
         <span class="color-name">${colorNames[key]}</span><span class="analysis-track"><span class="analysis-fill" style="width:${value / maxColor * 100}%"></span></span><span class="analysis-value">${value}</span>
       </button>`).join("");
 
-    const curveCards = state.analyticsColor === "all" ? state.data.cards : state.data.cards.filter((card) => getCardBucket(card) === state.analyticsColor);
-    const curveStats = computeStats(curveCards);
+    const curveView = selectors.selectAnalytics(state.data.cards, state.dataRevision, state.analyticsColor);
+    const curveCards = curveView.cards;
+    const curveStats = curveView.stats;
     const curveNonlands = curveCards.length - curveStats.lands;
     const curveLabel = state.analyticsColor === "all" ? "全部" : colorNames[state.analyticsColor];
     const averageLabel = curveNonlands ? `平均 CMC ${curveStats.averageCmc.toFixed(2)}` : "平均 CMC —";
@@ -1372,7 +1370,7 @@
   }
 
   async function openPrintingDialog(cardId) {
-    const card = state.data.cards.find((item) => item.id === cardId);
+    const card = selectors.cardById(state.data.cards, state.dataRevision, cardId);
     if (!card) return;
     if (state.printingController) state.printingController.abort();
     state.printingController = new AbortController();

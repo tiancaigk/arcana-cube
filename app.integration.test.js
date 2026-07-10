@@ -17,8 +17,9 @@ test("application shell loads dependencies before app.js", () => {
   const scryfall = html.indexOf('src="scryfall.js"');
   const catalog = html.indexOf('src="catalog.js"');
   const imageCache = html.indexOf('src="imageCache.js"');
+  const selectors = html.indexOf('src="selectors.js"');
   const app = html.indexOf('src="app.js"');
-  assert.ok(migrations >= 0 && migrations < core && core < priceHistory && priceHistory < changeLog && changeLog < health && health < storage && storage < workspace && workspace < persistence && persistence < scryfall && scryfall < catalog && catalog < imageCache && imageCache < app);
+  assert.ok(migrations >= 0 && migrations < core && core < priceHistory && priceHistory < changeLog && changeLog < health && health < storage && storage < workspace && workspace < persistence && persistence < scryfall && scryfall < catalog && catalog < imageCache && imageCache < selectors && selectors < app);
 });
 
 test("key interactive regions expose accessible state", () => {

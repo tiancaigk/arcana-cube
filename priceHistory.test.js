@@ -1,6 +1,7 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { cardPriceKey, cardSeries, dailyPriceChanges, dateKey, emptyPriceHistory, normalizePriceHistory, parsePriceHistoryData, priceTrend, recordDailySnapshot, totalSeries, wrapPriceHistoryData } = require("./priceHistory.js");
+const { buildPriceTrendIndex, cardPriceKey, cardSeries, dailyPriceChanges, dateKey, emptyPriceHistory, normalizePriceHistory, parsePriceHistoryData, priceTrend, recordDailySnapshot, totalSeries, wrapPriceHistoryData } = require("./priceHistory.js");
+const { buildCards, buildPriceHistory } = require("./testFixtures.js");
 
 test("dateKey formats local calendar dates", () => {
   assert.equal(dateKey(new Date(2026, 6, 2, 23, 59)), "2026-07-02");
@@ -102,4 +103,15 @@ test("price history files wrap and parse round-trip data", () => {
 
 test("cardPriceKey falls back to set and collector number when needed", () => {
   assert.equal(cardPriceKey({ set: "lea", collectorNumber: "126★", finish: "nonfoil" }), "LEA:126★|nonfoil");
+});
+
+test("price trend index matches per-card series across long history", () => {
+  const cards = buildCards(600);
+  const history = buildPriceHistory(cards, 180);
+  const index = buildPriceTrendIndex(history);
+  cards.filter((_card, cardIndex) => cardIndex % 75 === 0).forEach((card) => {
+    assert.deepEqual(index.byKey.get(cardPriceKey(card, card.finish)) || null, priceTrend(cardSeries(history, card, card.finish)));
+  });
+  assert.deepEqual(index.totalSeries, totalSeries(history));
+  assert.deepEqual(index.totalTrend, priceTrend(totalSeries(history)));
 });

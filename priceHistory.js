@@ -159,6 +159,28 @@
     };
   }
 
+  function buildPriceTrendIndex(history) {
+    const latestPoints = new Map();
+    const totals = [];
+    sortedSnapshots(history).forEach(([date, snapshot]) => {
+      const totalUsd = normalizeUsd(snapshot.totalUsd);
+      if (totalUsd !== null) totals.push({ date, usd: totalUsd });
+      Object.entries(snapshot.cards || {}).forEach(([key, value]) => {
+        const usd = normalizeUsd(value);
+        if (usd === null) return;
+        const points = latestPoints.get(key) || [];
+        points.push({ date, usd });
+        if (points.length > 2) points.shift();
+        latestPoints.set(key, points);
+      });
+    });
+    return {
+      byKey: new Map([...latestPoints.entries()].map(([key, points]) => [key, priceTrend(points)])),
+      totalSeries: totals,
+      totalTrend: priceTrend(totals)
+    };
+  }
+
   function dailyPriceChanges(history, cards, date = dateKey()) {
     const normalized = normalizePriceHistory(history);
     const dates = Object.keys(normalized.snapshots).sort();
@@ -208,6 +230,7 @@
   return {
     PRICE_HISTORY_FORMAT,
     PRICE_HISTORY_VERSION,
+    buildPriceTrendIndex,
     cardPriceKey,
     cardSeries,
     dailyPriceChanges,
