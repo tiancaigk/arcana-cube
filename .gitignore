@@ -6,7 +6,13 @@ node_modules/
 dist/
 coverage/
 outputs/
-images/
+/images/
+
+# Local Cube runtime data
+/cube-data.json
+/price-history.json
+/change-log.json
+/product-design-audit/
 
 *.log
 .env
