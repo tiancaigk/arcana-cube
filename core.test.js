@@ -1,6 +1,6 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { buildBackup, buildCardNameSearchUrl, buildExcelRows, buildLocalizedNameSearchUrl, buildLocalImageFileName, buildPrintingsUrl, chooseValidFinish, computeStats, filterCards, filterOraclePrintings, filterPrintings, getAvailableFinishes, getCardBucket, getColorBucket, getFrontDisplayName, getFrontTypeLine, getLookupName, getOracleId, getPreferredLocalizedName, getPriceNumber, getUsdPrice, isLandCard, isPaperPrinting, needsPriceRefresh, normalizeCardName, normalizeFinish, normalizeLocalizedNames, normalizeScryfallCard, parseBackup, parseDecklist, parseExcelRows, prepareTextImportRows, replacePrinting, sortCards } = require("./core.js");
+const { buildBackup, buildCardNameSearchUrl, buildExcelRows, buildLocalizedNameSearchUrl, buildLocalImageFileName, buildPrintingsUrl, chooseValidFinish, computeStats, filterCards, filterOraclePrintings, filterPrintings, getAvailableFinishes, getCardBucket, getCardImage, getColorBucket, getFrontDisplayName, getFrontTypeLine, getLookupName, getOracleId, getPreferredLocalizedName, getPriceNumber, getUsdPrice, isLandCard, isPaperPrinting, needsPriceRefresh, normalizeCardName, normalizeFinish, normalizeLocalizedNames, normalizeScryfallCard, parseBackup, parseDecklist, parseExcelRows, prepareTextImportRows, replacePrinting, sortCards } = require("./core.js");
 
 const cards = [
   { name: "Alpha", colors: ["W"], cmc: 1, typeLine: "Creature — Human", set: "TST" },
@@ -201,9 +201,11 @@ test("normalizeScryfallCard prefers high quality png image urls", () => {
   assert.equal(card.image, "https://cards.scryfall.io/png/front/a/b/image-card.png");
   assert.equal(card.remoteImage, "https://cards.scryfall.io/png/front/a/b/image-card.png");
   assert.equal(card.localImage, "");
+  assert.equal(card.localThumbnail, "");
   assert.equal(card.backImage, "https://cards.scryfall.io/png/back/a/b/image-card.png");
   assert.equal(card.remoteBackImage, "https://cards.scryfall.io/png/back/a/b/image-card.png");
   assert.equal(card.localBackImage, "");
+  assert.equal(card.localBackThumbnail, "");
 });
 
 test("buildLocalImageFileName uses set, collector number, and card name", () => {
@@ -224,6 +226,19 @@ test("buildLocalImageFileName uses set, collector number, and card name", () => 
     set: "XLN",
     collectorNumber: "250"
   }, "png", "back"), "xln-250-treasure-map-back.png");
+});
+
+test("getCardImage uses thumbnails in the collection and originals in previews", () => {
+  const card = {
+    image: "images/card.png",
+    localThumbnail: "images/thumbnails/card.webp",
+    backImage: "images/card-back.png",
+    localBackThumbnail: "images/thumbnails/card-back.webp"
+  };
+  assert.equal(getCardImage(card), "images/thumbnails/card.webp");
+  assert.equal(getCardImage(card, "back"), "images/thumbnails/card-back.webp");
+  assert.equal(getCardImage(card, "front", true), "images/card.png");
+  assert.equal(getCardImage(card, "back", true), "images/card-back.png");
 });
 
 test("finish helpers respect the selected printing's availability", () => {
@@ -282,16 +297,20 @@ test("replacePrinting preserves cached localized names", () => {
 });
 
 test("replacePrinting preserves local images only for the same Scryfall printing", () => {
-  const current = { id: "cube-card", scryfallId: "same-printing", addedAt: "2026-01-01T00:00:00.000Z", name: "Card", localImage: "images/same-printing.png", image: "images/same-printing.png", localBackImage: "images/same-printing-back.png", backImage: "images/same-printing-back.png", finish: "foil" };
+  const current = { id: "cube-card", scryfallId: "same-printing", addedAt: "2026-01-01T00:00:00.000Z", name: "Card", localImage: "images/same-printing.png", localThumbnail: "images/thumbnails/same-printing.webp", image: "images/same-printing.png", localBackImage: "images/same-printing-back.png", localBackThumbnail: "images/thumbnails/same-printing-back.webp", backImage: "images/same-printing-back.png", finish: "foil" };
   const same = replacePrinting(current, { id: "same-printing", name: "Card", set: "tst", collector_number: "1", type_line: "Artifact", image_uris: { png: "https://cards.scryfall.io/png/front/a/b/same.png" }, card_faces: [{ name: "Card", image_uris: { png: "https://cards.scryfall.io/png/front/a/b/same.png" } }, { name: "Back", image_uris: { png: "https://cards.scryfall.io/png/back/a/b/same.png" } }] });
   assert.equal(same.localImage, "images/same-printing.png");
+  assert.equal(same.localThumbnail, "images/thumbnails/same-printing.webp");
   assert.equal(same.image, "images/same-printing.png");
   assert.equal(same.localBackImage, "images/same-printing-back.png");
+  assert.equal(same.localBackThumbnail, "images/thumbnails/same-printing-back.webp");
   assert.equal(same.backImage, "images/same-printing-back.png");
   const different = replacePrinting(current, { id: "new-printing", name: "Card", set: "tst", collector_number: "2", type_line: "Artifact", image_uris: { png: "https://cards.scryfall.io/png/front/a/b/new.png" }, card_faces: [{ name: "Card", image_uris: { png: "https://cards.scryfall.io/png/front/a/b/new.png" } }, { name: "Back", image_uris: { png: "https://cards.scryfall.io/png/back/a/b/new.png" } }] });
   assert.equal(different.localImage, "");
+  assert.equal(different.localThumbnail, "");
   assert.equal(different.image, "https://cards.scryfall.io/png/front/a/b/new.png");
   assert.equal(different.localBackImage, "");
+  assert.equal(different.localBackThumbnail, "");
   assert.equal(different.backImage, "https://cards.scryfall.io/png/back/a/b/new.png");
 });
 

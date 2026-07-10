@@ -95,9 +95,11 @@
       image: remoteImage,
       remoteImage,
       localImage: "",
+      localThumbnail: "",
       backImage: remoteBackImage,
       remoteBackImage,
       localBackImage: "",
+      localBackThumbnail: "",
       scryfallUri: card.scryfall_uri || "",
       prices: {
         usd: normalizePrice(card.prices && card.prices.usd),
@@ -182,6 +184,12 @@
       faceSuffix
     ].filter(Boolean).join("-");
     return `${stem || "card"}.${ext}`;
+  }
+
+  function getCardImage(card, face = "front", preview = false) {
+    const imageKey = face === "back" ? "backImage" : "image";
+    const thumbnailKey = face === "back" ? "localBackThumbnail" : "localThumbnail";
+    return preview ? card[imageKey] || "" : card[thumbnailKey] || card[imageKey] || "";
   }
 
   function getFrontColors(card) {
@@ -339,6 +347,8 @@
     const samePrinting = currentCard.scryfallId && normalized.scryfallId && currentCard.scryfallId === normalized.scryfallId;
     const localImage = samePrinting ? currentCard.localImage || "" : "";
     const localBackImage = samePrinting ? currentCard.localBackImage || "" : "";
+    const localThumbnail = samePrinting ? currentCard.localThumbnail || "" : "";
+    const localBackThumbnail = samePrinting ? currentCard.localBackThumbnail || "" : "";
     return {
       ...normalized,
       id: currentCard.id,
@@ -348,8 +358,10 @@
         ...normalizeLocalizedNames(normalized)
       },
       localImage,
+      localThumbnail,
       image: localImage || normalized.image,
       localBackImage,
+      localBackThumbnail,
       backImage: localBackImage || normalized.backImage,
       JapanPrint: currentCard.JapanPrint === true,
       finish: chooseValidFinish(normalized, currentCard.finish)
@@ -472,5 +484,5 @@
     };
   }
 
-  return { COLOR_ORDER, SORT_ORDER, PRICE_TTL_MS, parseDecklist, normalizeFinish, parseFinish, parseJapanPrint, getAvailableFinishes, chooseValidFinish, normalizeLocalizedNames, getPreferredLocalizedName, normalizeScryfallCard, getOracleId, getFrontColors, getFrontTypeLine, getUsdPrice, getPriceNumber, needsPriceRefresh, getColorBucket, getPrimaryType, isLandCard, getCardBucket, computeStats, filterCards, sortCards, buildCardNameSearchUrl, buildPrintingsUrl, buildLocalizedNameSearchUrl, buildLocalImageFileName, isPaperPrinting, filterOraclePrintings, filterPrintings, replacePrinting, normalizeCardName, getFrontDisplayName, getLookupName, prepareTextImportRows, parseExcelRows, buildExcelRows, buildBackup, parseBackup };
+  return { COLOR_ORDER, SORT_ORDER, PRICE_TTL_MS, parseDecklist, normalizeFinish, parseFinish, parseJapanPrint, getAvailableFinishes, chooseValidFinish, normalizeLocalizedNames, getPreferredLocalizedName, normalizeScryfallCard, getOracleId, getFrontColors, getFrontTypeLine, getUsdPrice, getPriceNumber, needsPriceRefresh, getColorBucket, getPrimaryType, isLandCard, getCardBucket, computeStats, filterCards, sortCards, buildCardNameSearchUrl, buildPrintingsUrl, buildLocalizedNameSearchUrl, buildLocalImageFileName, getCardImage, isPaperPrinting, filterOraclePrintings, filterPrintings, replacePrinting, normalizeCardName, getFrontDisplayName, getLookupName, prepareTextImportRows, parseExcelRows, buildExcelRows, buildBackup, parseBackup };
 });

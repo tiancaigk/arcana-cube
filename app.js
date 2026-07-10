@@ -10,10 +10,13 @@
   const PRICE_HISTORY_FILE_NAME = "price-history.json";
   const CHANGE_LOG_FILE_NAME = "change-log.json";
   const IMAGE_DIR_NAME = "images";
+  const THUMBNAIL_DIR_NAME = "thumbnails";
+  const THUMBNAIL_MAX_WIDTH = 360;
+  const THUMBNAIL_WEBP_QUALITY = 0.82;
   const IMAGE_FETCH_TIMEOUT_MS = 25000;
   const IMAGE_CACHE_CHECKPOINT = 100;
   const SHEETJS_URL = "https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js";
-  const { buildBackup, buildCardNameSearchUrl, buildExcelRows, buildLocalizedNameSearchUrl, buildLocalImageFileName, buildPrintingsUrl, chooseValidFinish, computeStats, filterCards, filterOraclePrintings, filterPrintings, sortCards, getAvailableFinishes, getCardBucket, getFrontColors, getFrontDisplayName, getFrontTypeLine, getLookupName, getOracleId, getPreferredLocalizedName, getPriceNumber, getUsdPrice, isPaperPrinting, needsPriceRefresh, normalizeCardName, normalizeFinish, normalizeLocalizedNames, normalizeScryfallCard, parseBackup, parseDecklist, parseExcelRows, prepareTextImportRows, replacePrinting } = window.CubeCore;
+  const { buildBackup, buildCardNameSearchUrl, buildExcelRows, buildLocalizedNameSearchUrl, buildLocalImageFileName, buildPrintingsUrl, chooseValidFinish, computeStats, filterCards, filterOraclePrintings, filterPrintings, sortCards, getAvailableFinishes, getCardBucket, getCardImage, getFrontColors, getFrontDisplayName, getFrontTypeLine, getLookupName, getOracleId, getPreferredLocalizedName, getPriceNumber, getUsdPrice, isPaperPrinting, needsPriceRefresh, normalizeCardName, normalizeFinish, normalizeLocalizedNames, normalizeScryfallCard, parseBackup, parseDecklist, parseExcelRows, prepareTextImportRows, replacePrinting } = window.CubeCore;
   const { cardSeries, dailyPriceChanges, dateKey, emptyPriceHistory, normalizePriceHistory, parsePriceHistoryData, priceTrend, recordDailySnapshot, totalSeries, wrapPriceHistoryData } = window.CubePriceHistory;
   const { appendChange, emptyChangeLog, latestEntries, normalizeChangeLog, parseChangeLogData, wrapChangeLogData } = window.CubeChangeLog;
   const { requestJson: scryfallRequest } = window.ScryfallClient;
@@ -171,6 +174,14 @@
     return String(value || "").startsWith(`${IMAGE_DIR_NAME}/`);
   }
 
+  function isLocalThumbnailPath(value) {
+    return String(value || "").startsWith(`${IMAGE_DIR_NAME}/${THUMBNAIL_DIR_NAME}/`);
+  }
+
+  function isLocalOriginalImagePath(value) {
+    return isLocalImagePath(value) && !isLocalThumbnailPath(value);
+  }
+
   function preferPngImageUrl(url) {
     const value = String(url || "");
     if (!isRemoteImageUrl(value)) return "";
@@ -190,19 +201,23 @@
   }
 
   function normalizeImageFields(card) {
-    const localImage = isLocalImagePath(card.localImage) ? card.localImage : (isLocalImagePath(card.image) ? card.image : "");
+    const localImage = isLocalOriginalImagePath(card.localImage) ? card.localImage : (isLocalOriginalImagePath(card.image) ? card.image : "");
+    const localThumbnail = isLocalThumbnailPath(card.localThumbnail) ? card.localThumbnail : (isLocalThumbnailPath(card.image) ? card.image : "");
     const remoteSource = card.remoteImage || (isRemoteImageUrl(card.image) ? card.image : "");
     const remoteImage = preferPngImageUrl(remoteSource) || remoteSource;
-    const localBackImage = isLocalImagePath(card.localBackImage) ? card.localBackImage : (isLocalImagePath(card.backImage) ? card.backImage : "");
+    const localBackImage = isLocalOriginalImagePath(card.localBackImage) ? card.localBackImage : (isLocalOriginalImagePath(card.backImage) ? card.backImage : "");
+    const localBackThumbnail = isLocalThumbnailPath(card.localBackThumbnail) ? card.localBackThumbnail : (isLocalThumbnailPath(card.backImage) ? card.backImage : "");
     const remoteBackSource = card.remoteBackImage || (isRemoteImageUrl(card.backImage) ? card.backImage : "");
     const remoteBackImage = preferPngImageUrl(remoteBackSource) || remoteBackSource;
     return {
       localImage,
+      localThumbnail,
       remoteImage,
-      image: localImage || card.image || remoteImage,
+      image: localImage || remoteImage || card.image,
       localBackImage,
+      localBackThumbnail,
       remoteBackImage,
-      backImage: localBackImage || card.backImage || remoteBackImage
+      backImage: localBackImage || remoteBackImage || card.backImage
     };
   }
 
@@ -339,6 +354,11 @@
     return state.storage.directoryHandle.getDirectoryHandle(IMAGE_DIR_NAME, { create });
   }
 
+  async function getThumbnailsDirectoryHandle(create = false) {
+    const imagesDir = await getImagesDirectoryHandle(create);
+    return imagesDir.getDirectoryHandle(THUMBNAIL_DIR_NAME, { create });
+  }
+
   async function readCubeDataFile(directoryHandle) {
     try {
       const fileHandle = await getCubeFileHandle(directoryHandle, false);
@@ -413,7 +433,7 @@
       const active = state.storage.mode === "directory";
       elements.cacheImagesBtn.classList.toggle("hidden", !active);
       elements.cacheImagesBtn.disabled = state.imageCaching;
-      if (!state.imageCaching) elements.cacheImagesBtn.textContent = "下载本地卡图";
+      if (!state.imageCaching) elements.cacheImagesBtn.textContent = "补全本地卡图";
     }
     if (elements.syncFolderBtn) {
       const active = state.storage.mode === "directory";
@@ -559,7 +579,7 @@
   }
 
   async function localImageExists(localImage) {
-    if (!isLocalImagePath(localImage) || !state.storage.directoryHandle) return false;
+    if (!isLocalOriginalImagePath(localImage) || !state.storage.directoryHandle) return false;
     try {
       const imagesDir = await getImagesDirectoryHandle(false);
       await imagesDir.getFileHandle(localImage.slice(`${IMAGE_DIR_NAME}/`.length), { create: false });
@@ -568,6 +588,68 @@
       if (isMissingEntryError(error)) return false;
       throw error;
     }
+  }
+
+  async function localThumbnailExists(localThumbnail) {
+    if (!isLocalThumbnailPath(localThumbnail) || !state.storage.directoryHandle) return false;
+    try {
+      const thumbnailsDir = await getThumbnailsDirectoryHandle(false);
+      await thumbnailsDir.getFileHandle(localThumbnail.slice(`${IMAGE_DIR_NAME}/${THUMBNAIL_DIR_NAME}/`.length), { create: false });
+      return true;
+    } catch (error) {
+      if (isMissingEntryError(error)) return false;
+      throw error;
+    }
+  }
+
+  async function readLocalImageBlob(localImage) {
+    const imagesDir = await getImagesDirectoryHandle(false);
+    const fileHandle = await imagesDir.getFileHandle(localImage.slice(`${IMAGE_DIR_NAME}/`.length), { create: false });
+    return fileHandle.getFile();
+  }
+
+  async function createThumbnailBlob(sourceBlob) {
+    const bitmap = await createImageBitmap(sourceBlob);
+    try {
+      const scale = Math.min(1, THUMBNAIL_MAX_WIDTH / bitmap.width);
+      const width = Math.max(1, Math.round(bitmap.width * scale));
+      const height = Math.max(1, Math.round(bitmap.height * scale));
+      const canvas = document.createElement("canvas");
+      canvas.width = width;
+      canvas.height = height;
+      const context = canvas.getContext("2d");
+      if (!context) throw new Error("浏览器无法创建缩略图画布");
+      context.imageSmoothingEnabled = true;
+      context.imageSmoothingQuality = "high";
+      context.drawImage(bitmap, 0, 0, width, height);
+      return await new Promise((resolve, reject) => canvas.toBlob((blob) => {
+        if (blob) resolve(blob);
+        else reject(new Error("浏览器无法生成 WebP 缩略图"));
+      }, "image/webp", THUMBNAIL_WEBP_QUALITY));
+    } finally {
+      if (typeof bitmap.close === "function") bitmap.close();
+    }
+  }
+
+  async function ensureCardThumbnail(card, face = "front", sourceBlob = null) {
+    const thumbnailKey = face === "back" ? "localBackThumbnail" : "localThumbnail";
+    const localKey = face === "back" ? "localBackImage" : "localImage";
+    const fileName = buildLocalImageFileName(card, "webp", face);
+    const localThumbnail = `${IMAGE_DIR_NAME}/${THUMBNAIL_DIR_NAME}/${fileName}`;
+    if (card[thumbnailKey] && await localThumbnailExists(card[thumbnailKey])) return "skipped";
+    if (await localThumbnailExists(localThumbnail)) {
+      card[thumbnailKey] = localThumbnail;
+      return "updated";
+    }
+    const originalBlob = sourceBlob || await readLocalImageBlob(card[localKey]);
+    const thumbnailBlob = await createThumbnailBlob(originalBlob);
+    const thumbnailsDir = await getThumbnailsDirectoryHandle(true);
+    const fileHandle = await thumbnailsDir.getFileHandle(fileName, { create: true });
+    const writable = await fileHandle.createWritable();
+    await writable.write(thumbnailBlob);
+    await writable.close();
+    card[thumbnailKey] = localThumbnail;
+    return "updated";
   }
 
   async function fetchImageBlob(candidates) {
@@ -595,11 +677,13 @@
     const imageKey = face === "back" ? "backImage" : "image";
     const remoteKey = face === "back" ? "remoteBackImage" : "remoteImage";
     if (card[localKey] && await localImageExists(card[localKey])) {
+      let updated = false;
       if (card[imageKey] !== card[localKey]) {
         card[imageKey] = card[localKey];
-        return "updated";
+        updated = true;
       }
-      return "skipped";
+      if (await ensureCardThumbnail(card, face) === "updated") updated = true;
+      return updated ? "updated" : "skipped";
     }
     const candidates = imageDownloadCandidates(card, face);
     if (!candidates.length) return "missing";
@@ -615,6 +699,7 @@
     card[remoteKey] = url;
     card[localKey] = localImage;
     card[imageKey] = localImage;
+    await ensureCardThumbnail(card, face, blob);
     return "updated";
   }
 
@@ -642,7 +727,7 @@
     const targets = state.data.cards.filter((card) => imageDownloadCandidates(card).length || card.localImage || imageDownloadCandidates(card, "back").length || card.localBackImage);
     try {
       for (let index = 0; index < targets.length; index += 1) {
-        if (elements.cacheImagesBtn) elements.cacheImagesBtn.textContent = `下载卡图 ${index + 1}/${targets.length}`;
+        if (elements.cacheImagesBtn) elements.cacheImagesBtn.textContent = `整理卡图 ${index + 1}/${targets.length}`;
         try {
           const result = await cacheCardImage(targets[index]);
           if (result === "updated") updated += 1;
@@ -661,7 +746,7 @@
         saveChangeLogLocal();
         if (state.storage.mode === "directory" && state.storage.directoryHandle) queueDirectorySave(snapshotCubeData(state.data));
       }
-      toast("卡图下载完成", `已更新 ${updated} 张，本次失败 ${failed} 张${targets.length ? "" : "，没有可下载图片"}`);
+      toast("本地卡图整理完成", `已更新 ${updated} 张，本次失败 ${failed} 张；原图保留，牌表使用 WebP 缩略图${targets.length ? "" : "，没有可处理图片"}`);
     } finally {
       state.imageCaching = false;
       renderStorageStatus();
@@ -1185,12 +1270,12 @@
 
   function openImagePreview(cardId) {
     const card = state.data.cards.find((item) => item.id === cardId);
-    if (!card || !card.image) return;
+    if (!card || !getCardImage(card, "front", true)) return;
     const displayName = cardDisplayName(card);
     const finish = normalizeFinish(card.finish);
     const images = [
-      { src: card.image, alt: `${displayName} 正面` },
-      { src: card.backImage, alt: `${displayName} 背面` }
+      { src: getCardImage(card, "front", true), alt: `${displayName} 正面` },
+      { src: getCardImage(card, "back", true), alt: `${displayName} 背面` }
     ].filter((item) => item.src);
     const points = cardSeries(state.priceHistory, card, finish);
     elements.imagePreview.innerHTML = `<div class="preview-image-grid${images.length > 1 ? " two-sided" : ""}">
@@ -1219,10 +1304,11 @@
     const trend = priceTrend(cardSeries(state.priceHistory, card, finish));
     const displayName = cardDisplayName(card);
     const japanPrint = card.JapanPrint === true;
+    const gridImage = getCardImage(card);
     return `<article class="card-item" data-id="${escapeHtml(card.id)}" data-finish="${finish}" style="animation-delay:${Math.min(index * 18, 220)}ms">
       <div class="card-image-wrap">
         <div class="card-fallback"><span class="fallback-name">${escapeHtml(displayName)}</span><span class="fallback-type">${escapeHtml(card.typeLine)}</span></div>
-        ${card.image ? `<button type="button" class="card-image-button" data-preview-image="${escapeHtml(card.id)}" aria-label="查看 ${escapeHtml(displayName)} 大图"><img class="card-image" src="${escapeHtml(card.image)}" alt="${escapeHtml(displayName)}" loading="lazy" /></button>` : ""}
+        ${gridImage ? `<button type="button" class="card-image-button" data-preview-image="${escapeHtml(card.id)}" aria-label="查看 ${escapeHtml(displayName)} 大图"><img class="card-image" src="${escapeHtml(gridImage)}" alt="${escapeHtml(displayName)}" loading="lazy" /></button>` : ""}
       </div>
       <div class="card-info">
         <div class="card-name-row"><button class="japan-print-toggle${japanPrint ? " active" : ""}" data-toggle-japan-print="${escapeHtml(card.id)}" title="${japanPrint ? "取消日印标记" : "标记为日印"}" aria-label="${japanPrint ? `取消 ${escapeHtml(displayName)} 的日印标记` : `标记 ${escapeHtml(displayName)} 为日印`}" aria-pressed="${japanPrint ? "true" : "false"}"><span></span></button><span class="card-name" title="${escapeHtml(displayName)}">${escapeHtml(displayName)}</span><span class="card-cost${cost ? "" : " empty"}">${escapeHtml(cost)}</span></div>
