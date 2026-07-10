@@ -20,9 +20,25 @@
   const { cardSeries, dailyPriceChanges, dateKey, emptyPriceHistory, normalizePriceHistory, parsePriceHistoryData, priceTrend, recordDailySnapshot, totalSeries, wrapPriceHistoryData } = window.CubePriceHistory;
   const { appendChange, emptyChangeLog, latestEntries, normalizeChangeLog, parseChangeLogData, wrapChangeLogData } = window.CubeChangeLog;
   const { analyzeWorkspaceHealth } = window.CubeHealth;
+  const { createWorkspaceService } = window.CubeWorkspace;
   const { requestJson: scryfallRequest } = window.ScryfallClient;
   const cubeStorage = window.CubeStorage.createStorage(localStorage, STORAGE_KEY);
   const cubeHandleStore = window.CubeStorage.createHandleStore(window.indexedDB);
+  const workspace = createWorkspaceService({
+    cubeFileName: CUBE_FILE_NAME,
+    priceHistoryFileName: PRICE_HISTORY_FILE_NAME,
+    changeLogFileName: CHANGE_LOG_FILE_NAME,
+    imageDirName: IMAGE_DIR_NAME,
+    thumbnailDirName: THUMBNAIL_DIR_NAME,
+    wrapCube: window.CubeStorage.wrapWorkspaceData,
+    parseCube: window.CubeStorage.parseWorkspaceData,
+    wrapPriceHistory: wrapPriceHistoryData,
+    parsePriceHistory: parsePriceHistoryData,
+    emptyPriceHistory,
+    wrapChangeLog: wrapChangeLogData,
+    parseChangeLog: parseChangeLogData,
+    emptyChangeLog
+  });
   let sheetJsLoader;
   let printingRequestId = 0;
 
@@ -324,104 +340,46 @@
     }
   }
 
-  async function queryDirectoryPermission(directoryHandle, mode = "readwrite") {
-    if (!directoryHandle || typeof directoryHandle.queryPermission !== "function") return "granted";
-    return directoryHandle.queryPermission({ mode });
-  }
-
-  async function requestDirectoryPermission(directoryHandle, mode = "readwrite") {
-    const current = await queryDirectoryPermission(directoryHandle, mode);
-    if (current === "granted") return true;
-    if (typeof directoryHandle.requestPermission !== "function") return false;
-    return (await directoryHandle.requestPermission({ mode })) === "granted";
-  }
-
-  function isMissingEntryError(error) {
-    return error && (error.name === "NotFoundError" || error.code === 8);
-  }
-
-  async function getCubeFileHandle(directoryHandle, create = false) {
-    return directoryHandle.getFileHandle(CUBE_FILE_NAME, { create });
-  }
-
-  async function getPriceHistoryFileHandle(directoryHandle, create = false) {
-    return directoryHandle.getFileHandle(PRICE_HISTORY_FILE_NAME, { create });
-  }
-
-  async function getChangeLogFileHandle(directoryHandle, create = false) {
-    return directoryHandle.getFileHandle(CHANGE_LOG_FILE_NAME, { create });
-  }
-
-  async function getImagesDirectoryHandle(create = false) {
-    return state.storage.directoryHandle.getDirectoryHandle(IMAGE_DIR_NAME, { create });
-  }
-
-  async function getThumbnailsDirectoryHandle(create = false) {
-    const imagesDir = await getImagesDirectoryHandle(create);
-    return imagesDir.getDirectoryHandle(THUMBNAIL_DIR_NAME, { create });
-  }
+  const queryDirectoryPermission = workspace.queryPermission;
+  const requestDirectoryPermission = workspace.requestPermission;
 
   async function readCubeDataFile(directoryHandle) {
     try {
-      const fileHandle = await getCubeFileHandle(directoryHandle, false);
-      const file = await fileHandle.getFile();
-      const text = await file.text();
-      if (!text.trim()) return null;
-      return window.CubeStorage.parseWorkspaceData(text);
+      return await workspace.readCube(directoryHandle);
     } catch (error) {
-      if (isMissingEntryError(error)) return null;
       if (error instanceof SyntaxError) throw new Error("cube-data.json 不是有效的 JSON");
       throw error;
     }
   }
 
-  async function writeCubeDataFile(directoryHandle, data) {
-    const fileHandle = await getCubeFileHandle(directoryHandle, true);
-    const writable = await fileHandle.createWritable();
-    await writable.write(JSON.stringify(window.CubeStorage.wrapWorkspaceData(data), null, 2));
-    await writable.close();
+  function writeCubeDataFile(directoryHandle, data) {
+    return workspace.writeCube(directoryHandle, data);
   }
 
   async function readPriceHistoryFile(directoryHandle) {
     try {
-      const fileHandle = await getPriceHistoryFileHandle(directoryHandle, false);
-      const file = await fileHandle.getFile();
-      const text = await file.text();
-      if (!text.trim()) return emptyPriceHistory();
-      return parsePriceHistoryData(text);
+      return await workspace.readPriceHistory(directoryHandle);
     } catch (error) {
-      if (isMissingEntryError(error)) return null;
       if (error instanceof SyntaxError) throw new Error("price-history.json 不是有效的 JSON");
       throw error;
     }
   }
 
-  async function writePriceHistoryFile(directoryHandle, priceHistory) {
-    const fileHandle = await getPriceHistoryFileHandle(directoryHandle, true);
-    const writable = await fileHandle.createWritable();
-    await writable.write(JSON.stringify(wrapPriceHistoryData(priceHistory), null, 2));
-    await writable.close();
+  function writePriceHistoryFile(directoryHandle, priceHistory) {
+    return workspace.writePriceHistory(directoryHandle, priceHistory);
   }
 
   async function readChangeLogFile(directoryHandle) {
     try {
-      const fileHandle = await getChangeLogFileHandle(directoryHandle, false);
-      const file = await fileHandle.getFile();
-      const text = await file.text();
-      if (!text.trim()) return emptyChangeLog();
-      return parseChangeLogData(text);
+      return await workspace.readChangeLog(directoryHandle);
     } catch (error) {
-      if (isMissingEntryError(error)) return null;
       if (error instanceof SyntaxError) throw new Error("change-log.json 不是有效的 JSON");
       throw error;
     }
   }
 
-  async function writeChangeLogFile(directoryHandle, changeLog) {
-    const fileHandle = await getChangeLogFileHandle(directoryHandle, true);
-    const writable = await fileHandle.createWritable();
-    await writable.write(JSON.stringify(wrapChangeLogData(changeLog), null, 2));
-    await writable.close();
+  function writeChangeLogFile(directoryHandle, changeLog) {
+    return workspace.writeChangeLog(directoryHandle, changeLog);
   }
 
   function renderStorageStatus() {
@@ -583,32 +541,16 @@
 
   async function localImageExists(localImage) {
     if (!isLocalOriginalImagePath(localImage) || !state.storage.directoryHandle) return false;
-    try {
-      const imagesDir = await getImagesDirectoryHandle(false);
-      await imagesDir.getFileHandle(localImage.slice(`${IMAGE_DIR_NAME}/`.length), { create: false });
-      return true;
-    } catch (error) {
-      if (isMissingEntryError(error)) return false;
-      throw error;
-    }
+    return workspace.fileExists(state.storage.directoryHandle, localImage);
   }
 
   async function localThumbnailExists(localThumbnail) {
     if (!isLocalThumbnailPath(localThumbnail) || !state.storage.directoryHandle) return false;
-    try {
-      const thumbnailsDir = await getThumbnailsDirectoryHandle(false);
-      await thumbnailsDir.getFileHandle(localThumbnail.slice(`${IMAGE_DIR_NAME}/${THUMBNAIL_DIR_NAME}/`.length), { create: false });
-      return true;
-    } catch (error) {
-      if (isMissingEntryError(error)) return false;
-      throw error;
-    }
+    return workspace.fileExists(state.storage.directoryHandle, localThumbnail);
   }
 
   async function readLocalImageBlob(localImage) {
-    const imagesDir = await getImagesDirectoryHandle(false);
-    const fileHandle = await imagesDir.getFileHandle(localImage.slice(`${IMAGE_DIR_NAME}/`.length), { create: false });
-    return fileHandle.getFile();
+    return workspace.readFile(state.storage.directoryHandle, localImage);
   }
 
   async function createThumbnailBlob(sourceBlob) {
@@ -646,11 +588,7 @@
     }
     const originalBlob = sourceBlob || await readLocalImageBlob(card[localKey]);
     const thumbnailBlob = await createThumbnailBlob(originalBlob);
-    const thumbnailsDir = await getThumbnailsDirectoryHandle(true);
-    const fileHandle = await thumbnailsDir.getFileHandle(fileName, { create: true });
-    const writable = await fileHandle.createWritable();
-    await writable.write(thumbnailBlob);
-    await writable.close();
+    await workspace.writeFile(state.storage.directoryHandle, localThumbnail, thumbnailBlob);
     card[thumbnailKey] = localThumbnail;
     return "updated";
   }
@@ -693,12 +631,8 @@
     const { url, blob } = await fetchImageBlob(candidates);
     const extension = imageExtensionFrom(url, blob);
     const fileName = buildLocalImageFileName(card, extension, face);
-    const imagesDir = await getImagesDirectoryHandle(true);
-    const fileHandle = await imagesDir.getFileHandle(fileName, { create: true });
-    const writable = await fileHandle.createWritable();
-    await writable.write(blob);
-    await writable.close();
     const localImage = `${IMAGE_DIR_NAME}/${fileName}`;
+    await workspace.writeFile(state.storage.directoryHandle, localImage, blob);
     card[remoteKey] = url;
     card[localKey] = localImage;
     card[imageKey] = localImage;
@@ -1206,30 +1140,8 @@
     elements.changeLogDialog.showModal();
   }
 
-  function isImageFileName(name) {
-    return /\.(?:png|jpe?g|webp|avif)$/i.test(String(name || ""));
-  }
-
   async function collectWorkspaceImageFiles() {
-    const originalFiles = [];
-    const thumbnailFiles = [];
-    let imagesDir;
-    try {
-      imagesDir = await getImagesDirectoryHandle(false);
-    } catch (error) {
-      if (isMissingEntryError(error)) return { originalFiles, thumbnailFiles };
-      throw error;
-    }
-    for await (const [name, handle] of imagesDir.entries()) {
-      if (handle.kind === "file" && isImageFileName(name)) originalFiles.push(`${IMAGE_DIR_NAME}/${name}`);
-      if (handle.kind !== "directory" || name !== THUMBNAIL_DIR_NAME) continue;
-      for await (const [thumbnailName, thumbnailHandle] of handle.entries()) {
-        if (thumbnailHandle.kind === "file" && isImageFileName(thumbnailName)) {
-          thumbnailFiles.push(`${IMAGE_DIR_NAME}/${THUMBNAIL_DIR_NAME}/${thumbnailName}`);
-        }
-      }
-    }
-    return { originalFiles, thumbnailFiles };
+    return workspace.listImageFiles(state.storage.directoryHandle);
   }
 
   function renderWorkspaceHealth(result) {
