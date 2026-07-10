@@ -286,6 +286,7 @@ select { height: 40px; min-width: 126px; padding: 0 30px 0 12px; border: 1px sol
 .modal.add-card-dialog { width: min(680px, calc(100vw - 28px)); overflow: hidden; }
 .modal.price-history-dialog { width: min(680px, calc(100vw - 28px)); max-height: min(86vh, 820px); overflow: hidden; }
 .modal.change-log-dialog { width: min(760px, calc(100vw - 28px)); overflow: hidden; }
+.modal.workspace-health-dialog { width: min(820px, calc(100vw - 28px)); overflow: hidden; }
 .modal::backdrop { background: rgba(5,5,4,.75); backdrop-filter: blur(8px); }
 .modal-card { padding: 26px; background: linear-gradient(145deg, #22211d, #171715); }
 .image-preview-dialog { width: min(1080px, calc(100vw - 36px)); max-height: calc(100vh - 36px); padding: 0; border: 0; background: transparent; overflow: auto; }
@@ -330,6 +331,28 @@ select { height: 40px; min-width: 126px; padding: 0 30px 0 12px; border: 1px sol
 .change-log-entry strong { display: block; color: var(--text); font-size: 12px; font-weight: 500; line-height: 1.35; }
 .change-log-entry small { display: block; margin-top: 4px; color: var(--muted-2); font: 400 9px/1.35 "DM Mono", monospace; overflow-wrap: anywhere; }
 .change-log-empty { margin: 0; padding: 18px; border: 1px solid var(--line-soft); border-radius: 10px; color: var(--muted); background: rgba(17,17,15,.62); font-size: 12px; line-height: 1.7; }
+.workspace-health-modal { max-height: min(86vh, 800px); display: flex; flex-direction: column; overflow: hidden; }
+.workspace-health-content { min-height: 180px; overflow: auto; padding-right: 4px; scrollbar-color: #615840 #151513; scrollbar-width: thin; }
+.workspace-health-loading { margin: 0; padding: 22px; border: 1px solid var(--line-soft); border-radius: 10px; color: var(--muted); background: rgba(17,17,15,.62); font-size: 12px; text-align: center; }
+.workspace-health-summary { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 7px; }
+.workspace-health-metric { min-width: 0; padding: 11px 10px; border: 1px solid var(--line-soft); border-radius: 9px; background: rgba(17,17,15,.62); }
+.workspace-health-metric span { display: block; overflow: hidden; color: var(--muted-2); font: 400 8px/1.2 "DM Mono", monospace; text-overflow: ellipsis; white-space: nowrap; }
+.workspace-health-metric strong { display: block; margin-top: 7px; color: var(--text); font: 500 17px/1 "DM Mono", monospace; }
+.workspace-health-metric.error strong { color: var(--danger); }
+.workspace-health-metric.warning strong { color: var(--accent); }
+.workspace-health-status { margin: 13px 0 9px; color: var(--muted); font-size: 11px; line-height: 1.6; }
+.workspace-health-status.clean { padding: 18px; border: 1px solid rgba(112,164,118,.25); border-radius: 10px; color: #8aba90; background: rgba(47,79,51,.12); }
+.workspace-health-issues { display: grid; gap: 8px; }
+.workspace-health-issue { padding: 12px 13px; border: 1px solid var(--line-soft); border-left-width: 3px; border-radius: 10px; background: rgba(17,17,15,.62); }
+.workspace-health-issue.error { border-left-color: var(--danger); }
+.workspace-health-issue.warning { border-left-color: var(--accent); }
+.workspace-health-issue.info { border-left-color: #667d8c; }
+.workspace-health-issue header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.workspace-health-issue strong { color: var(--text); font-size: 12px; font-weight: 600; }
+.workspace-health-issue header span { color: var(--muted-2); font: 500 9px/1 "DM Mono", monospace; white-space: nowrap; }
+.workspace-health-issue p { margin: 6px 0 0; color: var(--muted); font-size: 10px; line-height: 1.6; }
+.workspace-health-examples { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 9px; }
+.workspace-health-examples code { max-width: 100%; overflow: hidden; padding: 4px 6px; border-radius: 5px; color: var(--muted-2); background: #11110f; font: 400 8px/1.2 "DM Mono", monospace; text-overflow: ellipsis; white-space: nowrap; }
 .modal-card.wide { min-width: min(650px, calc(100vw - 28px)); }
 .modal-header { display: flex; justify-content: space-between; }
 .modal-header span { display: block; margin-bottom: 7px; }

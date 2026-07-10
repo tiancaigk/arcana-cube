@@ -9,10 +9,11 @@ test("application shell loads dependencies before app.js", () => {
   const core = html.indexOf('src="core.js"');
   const priceHistory = html.indexOf('src="priceHistory.js"');
   const changeLog = html.indexOf('src="changeLog.js"');
+  const health = html.indexOf('src="health.js"');
   const storage = html.indexOf('src="storage.js"');
   const scryfall = html.indexOf('src="scryfall.js"');
   const app = html.indexOf('src="app.js"');
-  assert.ok(core >= 0 && core < priceHistory && priceHistory < changeLog && changeLog < storage && storage < scryfall && scryfall < app);
+  assert.ok(core >= 0 && core < priceHistory && priceHistory < changeLog && changeLog < health && health < storage && storage < scryfall && scryfall < app);
 });
 
 test("key interactive regions expose accessible state", () => {
@@ -26,6 +27,8 @@ test("key interactive regions expose accessible state", () => {
   assert.match(html, /class="storage-note"[^>]+aria-live="polite"/);
   assert.match(html, /id="priceHistoryDialog"/);
   assert.match(html, /id="changeLogDialog"/);
+  assert.match(html, /id="healthCheckBtn"/);
+  assert.match(html, /id="healthCheckDialog"/);
   assert.match(html, /id="manaCurveScope"/);
   assert.match(html, /id="manaChart"[^>]+data-color-bucket="all"/);
   assert.match(html, /id="analyticsAllColor"/);

@@ -19,6 +19,7 @@
   const { buildBackup, buildCardNameSearchUrl, buildExcelRows, buildLocalizedNameSearchUrl, buildLocalImageFileName, buildPrintingsUrl, chooseValidFinish, computeStats, filterCards, filterOraclePrintings, filterPrintings, sortCards, getAvailableFinishes, getCardBucket, getCardImage, getFrontColors, getFrontDisplayName, getFrontTypeLine, getLookupName, getOracleId, getPreferredLocalizedName, getPriceNumber, getUsdPrice, isPaperPrinting, needsPriceRefresh, normalizeCardName, normalizeFinish, normalizeLocalizedNames, normalizeScryfallCard, parseBackup, parseDecklist, parseExcelRows, prepareTextImportRows, replacePrinting } = window.CubeCore;
   const { cardSeries, dailyPriceChanges, dateKey, emptyPriceHistory, normalizePriceHistory, parsePriceHistoryData, priceTrend, recordDailySnapshot, totalSeries, wrapPriceHistoryData } = window.CubePriceHistory;
   const { appendChange, emptyChangeLog, latestEntries, normalizeChangeLog, parseChangeLogData, wrapChangeLogData } = window.CubeChangeLog;
+  const { analyzeWorkspaceHealth } = window.CubeHealth;
   const { requestJson: scryfallRequest } = window.ScryfallClient;
   const cubeStorage = window.CubeStorage.createStorage(localStorage, STORAGE_KEY);
   const cubeHandleStore = window.CubeStorage.createHandleStore(window.indexedDB);
@@ -145,6 +146,7 @@
     lookupResult: $("#lookupResult"), backupFileInput: $("#backupFileInput"), imagePreviewDialog: $("#imagePreviewDialog"), imagePreview: $("#imagePreview"),
     priceHistoryDialog: $("#priceHistoryDialog"), priceHistoryContent: $("#priceHistoryContent"),
     changeLogBtn: $("#changeLogBtn"), changeLogDialog: $("#changeLogDialog"), changeLogContent: $("#changeLogContent"),
+    healthCheckBtn: $("#healthCheckBtn"), healthCheckDialog: $("#healthCheckDialog"), healthCheckContent: $("#healthCheckContent"),
     connectFolderBtn: $("#connectFolderBtn"), cacheImagesBtn: $("#cacheImagesBtn"), syncFolderBtn: $("#syncFolderBtn"), syncFolderLabel: $("#syncFolderLabel"), reloadFolderBtn: $("#reloadFolderBtn"), disconnectFolderBtn: $("#disconnectFolderBtn"),
     storageStatusLabel: $("#storageStatusLabel"), storageStatusDetail: $("#storageStatusDetail"),
     nameLanguageToggle: $("#nameLanguageToggle")
@@ -435,6 +437,7 @@
       elements.cacheImagesBtn.disabled = state.imageCaching;
       if (!state.imageCaching) elements.cacheImagesBtn.textContent = "补全本地卡图";
     }
+    if (elements.healthCheckBtn) elements.healthCheckBtn.classList.toggle("hidden", state.storage.mode !== "directory");
     if (elements.syncFolderBtn) {
       const active = state.storage.mode === "directory";
       elements.syncFolderBtn.classList.toggle("hidden", !active);
@@ -1201,6 +1204,76 @@
       </article>
     `).join("") : `<p class="change-log-empty">还没有记录。之后添加、删除、换版本、导入、更新价格等操作会自动写入这里。</p>`;
     elements.changeLogDialog.showModal();
+  }
+
+  function isImageFileName(name) {
+    return /\.(?:png|jpe?g|webp|avif)$/i.test(String(name || ""));
+  }
+
+  async function collectWorkspaceImageFiles() {
+    const originalFiles = [];
+    const thumbnailFiles = [];
+    let imagesDir;
+    try {
+      imagesDir = await getImagesDirectoryHandle(false);
+    } catch (error) {
+      if (isMissingEntryError(error)) return { originalFiles, thumbnailFiles };
+      throw error;
+    }
+    for await (const [name, handle] of imagesDir.entries()) {
+      if (handle.kind === "file" && isImageFileName(name)) originalFiles.push(`${IMAGE_DIR_NAME}/${name}`);
+      if (handle.kind !== "directory" || name !== THUMBNAIL_DIR_NAME) continue;
+      for await (const [thumbnailName, thumbnailHandle] of handle.entries()) {
+        if (thumbnailHandle.kind === "file" && isImageFileName(thumbnailName)) {
+          thumbnailFiles.push(`${IMAGE_DIR_NAME}/${THUMBNAIL_DIR_NAME}/${thumbnailName}`);
+        }
+      }
+    }
+    return { originalFiles, thumbnailFiles };
+  }
+
+  function renderWorkspaceHealth(result) {
+    const summary = result.summary;
+    const metrics = [
+      ["牌表", summary.cards, ""],
+      ["原图", summary.originalFiles, ""],
+      ["缩略图", summary.thumbnailFiles, ""],
+      ["错误", summary.errors, "error"],
+      ["警告", summary.warnings, "warning"],
+      ["提示", summary.info, ""]
+    ];
+    const issues = result.issues.map((issue) => `<article class="workspace-health-issue ${issue.severity}">
+      <header><strong>${escapeHtml(issue.title)}</strong><span>${issue.count} 项</span></header>
+      <p>${escapeHtml(issue.description)}</p>
+      ${issue.examples.length ? `<div class="workspace-health-examples">${issue.examples.map((example) => `<code title="${escapeHtml(example)}">${escapeHtml(example)}</code>`).join("")}</div>` : ""}
+    </article>`).join("");
+    elements.healthCheckContent.innerHTML = `
+      <div class="workspace-health-summary">${metrics.map(([label, value, level]) => `<div class="workspace-health-metric ${level}"><span>${label}</span><strong>${value}</strong></div>`).join("")}</div>
+      ${result.healthy
+        ? `<p class="workspace-health-status clean">没有发现数据或图片关联问题。</p>`
+        : `<p class="workspace-health-status">检查完成。错误需要优先确认；警告建议处理；提示不一定代表故障。</p><div class="workspace-health-issues">${issues}</div>`}`;
+  }
+
+  async function openWorkspaceHealthCheck() {
+    if (state.storage.mode !== "directory" || !state.storage.directoryHandle) {
+      toast("请先连接文件夹", "健康检查只适用于 Cube 文件夹模式", true);
+      return;
+    }
+    elements.healthCheckBtn.disabled = true;
+    try {
+      if (!await requestDirectoryPermission(state.storage.directoryHandle, "read")) {
+        toast("无法读取文件夹", "请重新授权这个 Cube 文件夹", true);
+        return;
+      }
+      elements.healthCheckContent.innerHTML = `<p class="workspace-health-loading">正在核对牌表与本地图片…</p>`;
+      elements.healthCheckDialog.showModal();
+      const imageFiles = await collectWorkspaceImageFiles();
+      renderWorkspaceHealth(analyzeWorkspaceHealth({ cards: state.data.cards, ...imageFiles }));
+    } catch (error) {
+      elements.healthCheckContent.innerHTML = `<p class="workspace-health-loading">检查失败：${escapeHtml(error.message || "无法读取文件夹")}</p>`;
+    } finally {
+      elements.healthCheckBtn.disabled = false;
+    }
   }
 
   function changeLogDetail(entry) {
@@ -2263,6 +2336,7 @@
     $("#exportBtn").addEventListener("click", exportData);
     $("#backupBtn").addEventListener("click", downloadJsonBackup);
     elements.changeLogBtn.addEventListener("click", openChangeLogDialog);
+    elements.healthCheckBtn.addEventListener("click", openWorkspaceHealthCheck);
     $("#restoreBtn").addEventListener("click", () => elements.backupFileInput.click());
     elements.backupFileInput.addEventListener("change", (event) => restoreJsonBackup(event.target.files[0]));
     elements.connectFolderBtn.addEventListener("click", connectCubeFolder);
