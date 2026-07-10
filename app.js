@@ -24,6 +24,7 @@
   const { createPersistenceCoordinator } = window.CubePersistence;
   const { requestJson: scryfallRequest } = window.ScryfallClient;
   const { createCatalog, printingKey } = window.CubeCatalog;
+  const { createImageCache, isRemoteImageUrl, preferPngImageUrl } = window.CubeImageCache;
   const cubeStorage = window.CubeStorage.createStorage(localStorage, STORAGE_KEY);
   const cubeHandleStore = window.CubeStorage.createHandleStore(window.indexedDB);
   const workspace = createWorkspaceService({
@@ -42,6 +43,17 @@
     emptyChangeLog
   });
   const catalog = createCatalog({ requestJson: scryfallRequest, core: window.CubeCore });
+  const imageCache = createImageCache({
+    workspace,
+    getDirectoryHandle: () => state.storage.directoryHandle,
+    fetchImpl: (...args) => fetch(...args),
+    mapFetchUrl: imageFetchUrl,
+    buildFileName: buildLocalImageFileName,
+    createThumbnail: createThumbnailBlob,
+    imageDirName: IMAGE_DIR_NAME,
+    thumbnailDirName: THUMBNAIL_DIR_NAME,
+    timeoutMs: IMAGE_FETCH_TIMEOUT_MS
+  });
   let sheetJsLoader;
   let printingRequestId = 0;
 
@@ -202,10 +214,6 @@
     }
   }
 
-  function isRemoteImageUrl(value) {
-    return /^https?:\/\//i.test(String(value || ""));
-  }
-
   function isLocalImagePath(value) {
     return String(value || "").startsWith(`${IMAGE_DIR_NAME}/`);
   }
@@ -216,15 +224,6 @@
 
   function isLocalOriginalImagePath(value) {
     return isLocalImagePath(value) && !isLocalThumbnailPath(value);
-  }
-
-  function preferPngImageUrl(url) {
-    const value = String(url || "");
-    if (!isRemoteImageUrl(value)) return "";
-    if (!/cards\.scryfall\.io/i.test(value)) return value;
-    return value
-      .replace(/\/(?:small|normal|large)\//, "/png/")
-      .replace(/\.(?:jpg|jpeg)(\?[^/?#]*)?$/i, ".png$1");
   }
 
   function isLocalHttpPage() {
@@ -526,37 +525,6 @@
     }
   }
 
-  function imageExtensionFrom(url, blob) {
-    const type = String(blob && blob.type || "").toLowerCase();
-    if (type.includes("png")) return "png";
-    if (type.includes("webp")) return "webp";
-    if (type.includes("jpeg") || type.includes("jpg")) return "jpg";
-    const match = String(url || "").split("?", 1)[0].match(/\.([a-z0-9]+)$/i);
-    return match ? match[1].toLowerCase() : "png";
-  }
-
-  function imageDownloadCandidates(card, face = "front") {
-    const source = face === "back"
-      ? card.remoteBackImage || (isRemoteImageUrl(card.backImage) ? card.backImage : "")
-      : card.remoteImage || (isRemoteImageUrl(card.image) ? card.image : "");
-    const png = preferPngImageUrl(source);
-    return [...new Set([png, source].filter(isRemoteImageUrl))];
-  }
-
-  async function localImageExists(localImage) {
-    if (!isLocalOriginalImagePath(localImage) || !state.storage.directoryHandle) return false;
-    return workspace.fileExists(state.storage.directoryHandle, localImage);
-  }
-
-  async function localThumbnailExists(localThumbnail) {
-    if (!isLocalThumbnailPath(localThumbnail) || !state.storage.directoryHandle) return false;
-    return workspace.fileExists(state.storage.directoryHandle, localThumbnail);
-  }
-
-  async function readLocalImageBlob(localImage) {
-    return workspace.readFile(state.storage.directoryHandle, localImage);
-  }
-
   async function createThumbnailBlob(sourceBlob) {
     const bitmap = await createImageBitmap(sourceBlob);
     try {
@@ -580,77 +548,6 @@
     }
   }
 
-  async function ensureCardThumbnail(card, face = "front", sourceBlob = null) {
-    const thumbnailKey = face === "back" ? "localBackThumbnail" : "localThumbnail";
-    const localKey = face === "back" ? "localBackImage" : "localImage";
-    const fileName = buildLocalImageFileName(card, "webp", face);
-    const localThumbnail = `${IMAGE_DIR_NAME}/${THUMBNAIL_DIR_NAME}/${fileName}`;
-    if (card[thumbnailKey] && await localThumbnailExists(card[thumbnailKey])) return "skipped";
-    if (await localThumbnailExists(localThumbnail)) {
-      card[thumbnailKey] = localThumbnail;
-      return "updated";
-    }
-    const originalBlob = sourceBlob || await readLocalImageBlob(card[localKey]);
-    const thumbnailBlob = await createThumbnailBlob(originalBlob);
-    await workspace.writeFile(state.storage.directoryHandle, localThumbnail, thumbnailBlob);
-    card[thumbnailKey] = localThumbnail;
-    return "updated";
-  }
-
-  async function fetchImageBlob(candidates) {
-    let lastError;
-    for (const url of candidates) {
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), IMAGE_FETCH_TIMEOUT_MS);
-      try {
-        const response = await fetch(imageFetchUrl(url), { signal: controller.signal });
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
-        const blob = await response.blob();
-        if (!blob.size) throw new Error("图片为空");
-        return { url, blob };
-      } catch (error) {
-        lastError = error;
-      } finally {
-        clearTimeout(timeout);
-      }
-    }
-    throw lastError || new Error("没有可下载的图片地址");
-  }
-
-  async function cacheCardFaceImage(card, face = "front") {
-    const localKey = face === "back" ? "localBackImage" : "localImage";
-    const imageKey = face === "back" ? "backImage" : "image";
-    const remoteKey = face === "back" ? "remoteBackImage" : "remoteImage";
-    if (card[localKey] && await localImageExists(card[localKey])) {
-      let updated = false;
-      if (card[imageKey] !== card[localKey]) {
-        card[imageKey] = card[localKey];
-        updated = true;
-      }
-      if (await ensureCardThumbnail(card, face) === "updated") updated = true;
-      return updated ? "updated" : "skipped";
-    }
-    const candidates = imageDownloadCandidates(card, face);
-    if (!candidates.length) return "missing";
-    const { url, blob } = await fetchImageBlob(candidates);
-    const extension = imageExtensionFrom(url, blob);
-    const fileName = buildLocalImageFileName(card, extension, face);
-    const localImage = `${IMAGE_DIR_NAME}/${fileName}`;
-    await workspace.writeFile(state.storage.directoryHandle, localImage, blob);
-    card[remoteKey] = url;
-    card[localKey] = localImage;
-    card[imageKey] = localImage;
-    await ensureCardThumbnail(card, face, blob);
-    return "updated";
-  }
-
-  async function cacheCardImage(card) {
-    const results = [];
-    results.push(await cacheCardFaceImage(card, "front"));
-    if (imageDownloadCandidates(card, "back").length || card.localBackImage) results.push(await cacheCardFaceImage(card, "back"));
-    return results.includes("updated") ? "updated" : (results.includes("missing") ? "missing" : "skipped");
-  }
-
   async function cacheAllImages() {
     if (state.imageCaching) return;
     if (state.storage.mode !== "directory" || !state.storage.directoryHandle) {
@@ -663,30 +560,24 @@
     }
     state.imageCaching = true;
     renderStorageStatus();
-    let updated = 0;
-    let failed = 0;
-    const targets = state.data.cards.filter((card) => imageDownloadCandidates(card).length || card.localImage || imageDownloadCandidates(card, "back").length || card.localBackImage);
     try {
-      for (let index = 0; index < targets.length; index += 1) {
-        if (elements.cacheImagesBtn) elements.cacheImagesBtn.textContent = `整理卡图 ${index + 1}/${targets.length}`;
-        try {
-          const result = await cacheCardImage(targets[index]);
-          if (result === "updated") updated += 1;
-        } catch (error) {
-          failed += 1;
+      const summary = await imageCache.cacheAll(state.data.cards, {
+        checkpointEvery: IMAGE_CACHE_CHECKPOINT,
+        onProgress: ({ index, total }) => {
+          if (elements.cacheImagesBtn) elements.cacheImagesBtn.textContent = `整理卡图 ${index}/${total}`;
+        },
+        checkpoint: (progress) => {
+          if (progress.updated) saveState("cube");
         }
-        if (updated && (index + 1) % IMAGE_CACHE_CHECKPOINT === 0) {
-          saveState("cube");
-        }
-      }
-      if (updated || failed) recordChange("images.cached", `下载本地卡图：更新 ${updated}，失败 ${failed}`, { meta: { updated, failed, total: targets.length } }, { persist: false });
-      if (updated) {
+      });
+      if (summary.updated || summary.failed) recordChange("images.cached", `下载本地卡图：更新 ${summary.updated}，失败 ${summary.failed}`, { meta: { updated: summary.updated, failed: summary.failed, total: summary.total } }, { persist: false });
+      if (summary.updated) {
         saveState(["cube", "changeLog"]);
         render();
-      } else if (failed) {
+      } else if (summary.failed) {
         saveState("changeLog");
       }
-      toast("本地卡图整理完成", `已更新 ${updated} 张，本次失败 ${failed} 张；原图保留，牌表使用 WebP 缩略图${targets.length ? "" : "，没有可处理图片"}`);
+      toast("本地卡图整理完成", `已更新 ${summary.updated} 张，本次失败 ${summary.failed} 张；原图保留，牌表使用 WebP 缩略图${summary.total ? "" : "，没有可处理图片"}`);
     } finally {
       state.imageCaching = false;
       renderStorageStatus();
