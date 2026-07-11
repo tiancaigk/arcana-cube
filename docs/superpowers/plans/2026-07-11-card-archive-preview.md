@@ -263,3 +263,62 @@ git checkout main
 git merge --ff-only codex/card-archive-preview
 git branch -d codex/card-archive-preview
 ```
+
+### Task 5: Persistent Preview Close Button
+
+**Files:**
+- Modify: `app.js`
+- Modify: `styles.css`
+- Test: `app.integration.test.js`
+
+**Interfaces:**
+- Consumes: existing `closeImagePreview()` behavior.
+- Produces: `[data-close-image-preview]` icon button with `aria-label="关闭卡图预览"`.
+
+- [ ] **Step 1: Write a failing integration test**
+
+```js
+assert.match(appSource, /data-close-image-preview/);
+assert.match(appSource, /aria-label="关闭卡图预览"/);
+assert.match(appSource, /closest\("\[data-close-image-preview\]"\)/);
+assert.match(styleSource, /\.card-archive-close\s*\{[^}]*position:\s*absolute/s);
+```
+
+- [ ] **Step 2: Run the integration test and verify RED**
+
+Run: `node --test app.integration.test.js`
+
+Expected: failure because the close icon does not exist.
+
+- [ ] **Step 3: Render and bind the icon button**
+
+Insert the button as the first child of `.card-archive-preview`:
+
+```html
+<button type="button" class="close-button card-archive-close" data-close-image-preview aria-label="关闭卡图预览">×</button>
+```
+
+Handle it in the existing preview-dialog click listener before the image/backdrop condition:
+
+```js
+if (event.target.closest("[data-close-image-preview]")) {
+  closeImagePreview();
+  return;
+}
+```
+
+- [ ] **Step 4: Position the button**
+
+```css
+.card-archive-preview { position: relative; }
+.card-archive-close { position: absolute; z-index: 3; top: 14px; right: 14px; }
+```
+
+- [ ] **Step 5: Verify and commit**
+
+Run: `npm test && npm run check && git diff --check`
+
+```bash
+git add app.js styles.css app.integration.test.js
+git commit -m "Add archive preview close button"
+```
