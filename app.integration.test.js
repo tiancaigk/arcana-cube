@@ -4,6 +4,8 @@ const fs = require("node:fs");
 const path = require("node:path");
 
 const html = fs.readFileSync(path.join(__dirname, "index.html"), "utf8");
+const appSource = fs.readFileSync(path.join(__dirname, "app.js"), "utf8");
+const styleSource = fs.readFileSync(path.join(__dirname, "styles.css"), "utf8");
 
 test("application shell loads dependencies before app.js", () => {
   const migrations = html.indexOf('src="migrations.js"');
@@ -24,9 +26,17 @@ test("application shell loads dependencies before app.js", () => {
 });
 
 test("card image failures use one delegated listener", () => {
-  const source = fs.readFileSync(path.join(__dirname, "app.js"), "utf8");
-  assert.match(source, /cardGrid\.addEventListener\("error"/);
-  assert.doesNotMatch(source, /image\.addEventListener\("error"/);
+  assert.match(appSource, /cardGrid\.addEventListener\("error"/);
+  assert.doesNotMatch(appSource, /image\.addEventListener\("error"/);
+});
+
+test("grid cards use compact metadata while list cards retain cost and type", () => {
+  assert.match(appSource, /class="card-type"/);
+  assert.match(appSource, /class="card-printing"/);
+  assert.match(styleSource, /\.card-info\s*\{[^}]*grid-template-columns:\s*auto minmax\(0,\s*1fr\) auto;[^}]*grid-template-rows:\s*auto auto;/s);
+  assert.match(styleSource, /\.card-cost,\s*\.card-type\s*\{\s*display:\s*none;/);
+  assert.match(styleSource, /\.card-printing\s*\{[^}]*grid-column:\s*1\s*\/\s*3;[^}]*grid-row:\s*2;/s);
+  assert.match(styleSource, /\.list-mode \.card-cost,\s*\.list-mode \.card-type\s*\{\s*display:\s*block;/);
 });
 
 test("key interactive regions expose accessible state", () => {
@@ -45,6 +55,6 @@ test("key interactive regions expose accessible state", () => {
   assert.match(html, /id="manaCurveScope"/);
   assert.match(html, /id="manaChart"[^>]+data-color-bucket="all"/);
   assert.match(html, /id="analyticsAllColor"/);
-  assert.match(fs.readFileSync(path.join(__dirname, "app.js"), "utf8"), /data-card-type=/);
-  assert.match(fs.readFileSync(path.join(__dirname, "app.js"), "utf8"), /data-show-today-price-changes/);
+  assert.match(appSource, /data-card-type=/);
+  assert.match(appSource, /data-show-today-price-changes/);
 });
