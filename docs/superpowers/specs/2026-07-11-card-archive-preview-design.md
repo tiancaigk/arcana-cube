@@ -10,6 +10,7 @@ Replace the current image-only preview with a desktop two-column card archive. T
 - The left column shows the front image. Double-faced cards show front and back images together within the left column.
 - The right column shows the card archive details and remains independently readable when its content is taller than the image.
 - Clicking a card image or the dialog backdrop closes the preview, preserving the current interaction.
+- A persistent icon button in the top-right corner closes the preview. It uses the existing close-button visual language and exposes `aria-label="关闭卡图预览"`.
 - Clicking anywhere in the details panel does not close the dialog.
 - The dialog remains constrained to the desktop viewport and scrolls internally when necessary.
 
