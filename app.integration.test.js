@@ -58,6 +58,9 @@ test("image preview renders and enriches a read-only card archive", () => {
   assert.match(appSource, /catalog\.lookupById\(card\.scryfallId/);
   assert.match(appSource, /mergeArchiveMetadata\(current, printing\)/);
   assert.match(appSource, /event\.target\.closest\("\.card-archive-images img"\)/);
+  assert.match(styleSource, /\.card-archive-preview\s*\{[^}]*grid-template-columns:/s);
+  assert.match(styleSource, /\.card-archive-details\s*\{[^}]*overflow-y:\s*auto/s);
+  assert.match(styleSource, /\.card-archive-images\.two-sided/);
 });
 
 test("key interactive regions expose accessible state", () => {
