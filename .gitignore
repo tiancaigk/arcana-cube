@@ -13,6 +13,8 @@ outputs/
 /price-history.json
 /change-log.json
 /product-design-audit/
+/.superpowers/
+/.worktrees/
 
 *.log
 .env
