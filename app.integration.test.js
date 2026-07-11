@@ -67,6 +67,17 @@ test("image preview renders and enriches a read-only card archive", () => {
   assert.match(styleSource, /\.card-archive-close\s*\{[^}]*position:\s*absolute/s);
 });
 
+test("remembered Cube folders reconnect without reopening the picker", () => {
+  assert.match(appSource, /rememberedDirectoryHandle:\s*null/);
+  assert.match(appSource, /state\.storage\.rememberedDirectoryHandle \? "重新连接文件夹" : "选择 Cube 文件夹"/);
+  assert.match(appSource, /async function reconnectRememberedFolder\(\)/);
+  assert.match(appSource, /requestDirectoryPermission\(directoryHandle, "readwrite"\)/);
+  assert.match(appSource, /async function activateDirectoryHandle\(directoryHandle\)/);
+  assert.match(appSource, /function handleConnectFolderClick\(\)/);
+  assert.match(appSource, /state\.storage\.rememberedDirectoryHandle \? reconnectRememberedFolder\(\) : connectCubeFolder\(\)/);
+  assert.match(appSource, /state\.storage\.mode !== "directory" && !state\.storage\.rememberedDirectoryHandle/);
+});
+
 test("key interactive regions expose accessible state", () => {
   assert.match(html, /id="sidebar"/);
   assert.match(html, /id="resultCount"[^>]+aria-live="polite"/);

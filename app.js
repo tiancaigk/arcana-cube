@@ -157,7 +157,8 @@
       supported: typeof window.showDirectoryPicker === "function",
       directoryHandle: null,
       directoryName: "",
-      rememberedDirectoryName: ""
+      rememberedDirectoryName: "",
+      rememberedDirectoryHandle: null
     }
   };
 
@@ -422,7 +423,9 @@
   }
 
   function renderStorageStatus() {
-    const connectLabel = state.storage.mode === "directory" ? "更换 Cube 文件夹" : "选择 Cube 文件夹";
+    const connectLabel = state.storage.mode === "directory"
+      ? "更换 Cube 文件夹"
+      : state.storage.rememberedDirectoryHandle ? "重新连接文件夹" : "选择 Cube 文件夹";
     if (elements.connectFolderBtn) {
       elements.connectFolderBtn.textContent = connectLabel;
       elements.connectFolderBtn.disabled = !state.storage.supported;
@@ -444,7 +447,7 @@
       }
     }
     if (elements.reloadFolderBtn) elements.reloadFolderBtn.classList.toggle("hidden", state.storage.mode !== "directory");
-    if (elements.disconnectFolderBtn) elements.disconnectFolderBtn.classList.toggle("hidden", state.storage.mode !== "directory");
+    if (elements.disconnectFolderBtn) elements.disconnectFolderBtn.classList.toggle("hidden", state.storage.mode !== "directory" && !state.storage.rememberedDirectoryHandle);
 
     if (!elements.storageStatusLabel || !elements.storageStatusDetail) return;
     if (state.storage.mode === "directory") {
@@ -479,6 +482,7 @@
     state.storage.directoryHandle = null;
     state.storage.directoryName = "";
     state.storage.rememberedDirectoryName = "";
+    state.storage.rememberedDirectoryHandle = null;
     persistence.clearDirectory();
     try {
       await cubeHandleStore.clear(DIRECTORY_HANDLE_KEY);
@@ -684,6 +688,7 @@
       state.storage.directoryHandle = directoryHandle;
       state.storage.directoryName = directoryHandle.name || "";
       state.storage.rememberedDirectoryName = directoryHandle.name || "";
+      state.storage.rememberedDirectoryHandle = directoryHandle;
       await cubeHandleStore.save(DIRECTORY_HANDLE_KEY, directoryHandle).catch(() => false);
       localMirrorSave();
       savePriceHistoryLocal();
@@ -698,6 +703,52 @@
     }
   }
 
+  async function activateDirectoryHandle(directoryHandle) {
+    const fileData = await readCubeDataFile(directoryHandle);
+    const priceHistoryData = await readPriceHistoryFile(directoryHandle);
+    const changeLogData = await readChangeLogFile(directoryHandle);
+    state.storage.mode = "directory";
+    state.storage.directoryHandle = directoryHandle;
+    state.storage.directoryName = directoryHandle.name || "";
+    state.storage.rememberedDirectoryName = directoryHandle.name || "";
+    state.storage.rememberedDirectoryHandle = directoryHandle;
+    if (fileData) {
+      applyCubeData(fileData);
+      localMirrorSave();
+    }
+    if (priceHistoryData) {
+      applyPriceHistoryData(priceHistoryData);
+      savePriceHistoryLocal();
+    }
+    if (changeLogData) {
+      applyChangeLogData(changeLogData);
+      saveChangeLogLocal();
+    }
+    renderAll();
+    renderStorageStatus();
+  }
+
+  async function reconnectRememberedFolder() {
+    const directoryHandle = state.storage.rememberedDirectoryHandle;
+    if (!directoryHandle) return connectCubeFolder();
+    try {
+      if (!await requestDirectoryPermission(directoryHandle, "readwrite")) {
+        toast("没有获得权限", `请允许读写 ${directoryHandle.name || "之前选择的文件夹"}`, true);
+        return;
+      }
+      await activateDirectoryHandle(directoryHandle);
+      toast("文件夹已重新连接", `已恢复自动读写 ${directoryHandle.name || "Cube 文件夹"}`);
+    } catch (error) {
+      toast("重新连接失败", error.message || "无法读取之前选择的 Cube 文件夹", true);
+    }
+  }
+
+  function handleConnectFolderClick() {
+    return state.storage.mode === "directory"
+      ? connectCubeFolder()
+      : state.storage.rememberedDirectoryHandle ? reconnectRememberedFolder() : connectCubeFolder();
+  }
+
   async function restoreDirectoryMode() {
     if (!state.storage.supported || !cubeHandleStore.supported) {
       renderStorageStatus();
@@ -710,29 +761,12 @@
         return;
       }
       state.storage.rememberedDirectoryName = directoryHandle.name || "";
+      state.storage.rememberedDirectoryHandle = directoryHandle;
       if (await queryDirectoryPermission(directoryHandle, "readwrite") !== "granted") {
         renderStorageStatus();
         return;
       }
-      const fileData = await readCubeDataFile(directoryHandle);
-      const priceHistoryData = await readPriceHistoryFile(directoryHandle);
-      const changeLogData = await readChangeLogFile(directoryHandle);
-      state.storage.mode = "directory";
-      state.storage.directoryHandle = directoryHandle;
-      state.storage.directoryName = directoryHandle.name || "";
-      if (fileData) {
-        applyCubeData(fileData);
-        localMirrorSave();
-      }
-      if (priceHistoryData) {
-        applyPriceHistoryData(priceHistoryData);
-        savePriceHistoryLocal();
-      }
-      if (changeLogData) {
-        applyChangeLogData(changeLogData);
-        saveChangeLogLocal();
-      }
-      renderAll();
+      await activateDirectoryHandle(directoryHandle);
     } catch (error) {
       // Fallback to local mirror on startup.
     }
@@ -2142,7 +2176,7 @@
     elements.healthCheckBtn.addEventListener("click", openWorkspaceHealthCheck);
     $("#restoreBtn").addEventListener("click", () => elements.backupFileInput.click());
     elements.backupFileInput.addEventListener("change", (event) => restoreJsonBackup(event.target.files[0]));
-    elements.connectFolderBtn.addEventListener("click", connectCubeFolder);
+    elements.connectFolderBtn.addEventListener("click", handleConnectFolderClick);
     elements.cacheImagesBtn.addEventListener("click", cacheAllImages);
     elements.syncFolderBtn.addEventListener("click", syncCurrentDataToDirectory);
     elements.reloadFolderBtn.addEventListener("click", reloadFromDirectory);
