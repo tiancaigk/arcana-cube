@@ -1213,6 +1213,7 @@
     const localizedName = getPreferredLocalizedName(card);
     const secondaryName = displayName === englishName ? localizedName : englishName;
     elements.imagePreview.innerHTML = `<div class="card-archive-preview">
+      <button type="button" class="close-button card-archive-close" data-close-image-preview aria-label="关闭卡图预览">×</button>
       <div class="card-archive-images${images.length > 1 ? " two-sided" : ""}">
       ${images.map((item) => `<img src="${escapeHtml(item.src)}" alt="${escapeHtml(item.alt)}" />`).join("")}
       </div>
@@ -2265,6 +2266,10 @@
       if (state.importing) event.preventDefault();
     });
     elements.imagePreviewDialog.addEventListener("click", (event) => {
+      if (event.target.closest("[data-close-image-preview]")) {
+        closeImagePreview();
+        return;
+      }
       if (event.target === elements.imagePreviewDialog || event.target.closest(".card-archive-images img")) closeImagePreview();
     });
     elements.imagePreviewDialog.addEventListener("cancel", clearImagePreview);
