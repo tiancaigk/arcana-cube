@@ -16,7 +16,7 @@
   const IMAGE_FETCH_TIMEOUT_MS = 25000;
   const IMAGE_CACHE_CHECKPOINT = 100;
   const SHEETJS_URL = "https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js";
-  const { buildBackup, buildExcelRows, buildLocalizedNameSearchUrl, buildLocalImageFileName, chooseValidFinish, computeStats, filterCards, filterPrintings, sortCards, getAvailableFinishes, getCardBucket, getCardImage, getFrontColors, getFrontDisplayName, getFrontTypeLine, getOracleId, getPreferredLocalizedName, getPriceNumber, getUsdPrice, isPaperPrinting, needsPriceRefresh, normalizeCardName, normalizeFinish, normalizeLocalizedNames, normalizeScryfallCard, parseBackup, parseDecklist, parseExcelRows, prepareTextImportRows, replacePrinting } = window.CubeCore;
+  const { buildBackup, buildExcelRows, buildLocalizedNameSearchUrl, buildLocalImageFileName, chooseValidFinish, computeStats, filterCards, filterPrintings, sortCards, getAvailableFinishes, getCardBucket, getCardImage, getFrontColors, getFrontDisplayName, getFrontTypeLine, getOracleId, getPreferredLocalizedName, getPriceNumber, getUsdPrice, isPaperPrinting, mergeArchiveMetadata, needsPriceRefresh, normalizeCardName, normalizeFinish, normalizeLocalizedNames, normalizeScryfallCard, parseBackup, parseDecklist, parseExcelRows, prepareTextImportRows, replacePrinting } = window.CubeCore;
   const { cardSeries, dailyPriceChanges, dateKey, emptyPriceHistory, normalizePriceHistory, parsePriceHistoryData, priceTrend, recordDailySnapshot, totalSeries, wrapPriceHistoryData } = window.CubePriceHistory;
   const { appendChange, emptyChangeLog, latestEntries, normalizeChangeLog, parseChangeLogData, wrapChangeLogData } = window.CubeChangeLog;
   const { analyzeWorkspaceHealth } = window.CubeHealth;
@@ -142,6 +142,9 @@
     nameSearchId: 0,
     nameSearchController: null,
     printingController: null,
+    previewCardId: null,
+    previewController: null,
+    previewMetadataAttempts: new Set(),
     refreshingPrices: false,
     imageCaching: false,
     folderSync: {
@@ -282,6 +285,12 @@
       localizedNames: normalizeLocalizedNames(card),
       frontColors: getFrontColors(card),
       frontTypeLine: getFrontTypeLine(card),
+      oracleText: card.oracleText || "",
+      backOracleText: card.backOracleText || "",
+      artist: card.artist || "",
+      backArtist: card.backArtist || "",
+      setName: card.setName || "",
+      releasedAt: card.releasedAt || "",
       finishes: getAvailableFinishes(card),
       finish: chooseValidFinish(card, card.finish),
       JapanPrint: card.JapanPrint === true
@@ -1172,9 +1181,27 @@
     return ({ W: "白色", U: "蓝色", B: "黑色", R: "红色", G: "绿色", C: "无色", M: "多色", L: "地牌" })[key] || "其他";
   }
 
-  function openImagePreview(cardId) {
-    const card = selectors.cardById(state.data.cards, state.dataRevision, cardId);
-    if (!card || !getCardImage(card, "front", true)) return;
+  function archiveValue(value) {
+    return escapeHtml(value || "暂无资料");
+  }
+
+  function archiveColor(card) {
+    const names = { W: "白", U: "蓝", B: "黑", R: "红", G: "绿" };
+    const colors = getFrontColors(card);
+    return colors.length ? colors.map((color) => names[color] || color).join(" / ") : "无色";
+  }
+
+  function renderArchiveRules(card) {
+    const faceNames = String(card.name || "").split(/\s*\/\/\s*/);
+    const blocks = [{ label: faceNames[0] || "正面", text: card.oracleText }];
+    if (card.backOracleText) blocks.push({ label: faceNames[1] || "背面", text: card.backOracleText });
+    return blocks.map((block) => `<div class="card-archive-rules-block">
+      <strong>${escapeHtml(block.label)}</strong>
+      <p>${archiveValue(block.text)}</p>
+    </div>`).join("");
+  }
+
+  function renderImagePreview(card) {
     const displayName = cardDisplayName(card);
     const finish = normalizeFinish(card.finish);
     const images = [
@@ -1182,21 +1209,86 @@
       { src: getCardImage(card, "back", true), alt: `${displayName} 背面` }
     ].filter((item) => item.src);
     const points = cardSeries(state.priceHistory, card, finish);
-    elements.imagePreview.innerHTML = `<div class="preview-image-grid${images.length > 1 ? " two-sided" : ""}">
+    const englishName = getFrontDisplayName(card.name);
+    const localizedName = getPreferredLocalizedName(card);
+    const secondaryName = displayName === englishName ? localizedName : englishName;
+    elements.imagePreview.innerHTML = `<div class="card-archive-preview">
+      <div class="card-archive-images${images.length > 1 ? " two-sided" : ""}">
       ${images.map((item) => `<img src="${escapeHtml(item.src)}" alt="${escapeHtml(item.alt)}" />`).join("")}
-    </div>
-    ${renderPriceHistoryPanel({
-      title: `${displayName} · ${finish === "foil" ? "Foil" : "Non-Foil"}`,
-      subtitle: `${card.set}${card.collectorNumber ? ` · ${card.collectorNumber}` : ""}`,
-      points,
-      emptyText: "这张牌当前版本还没有历史价格。点击总价旁边的刷新按钮后会记录。"
-    })}`;
+      </div>
+      <section class="card-archive-details">
+        <header class="card-archive-header">
+          <span>CARD ARCHIVE · ${escapeHtml(archiveColor(card))}</span>
+          <h2>${escapeHtml(displayName)}</h2>
+          ${secondaryName ? `<p>${escapeHtml(secondaryName)}</p>` : ""}
+          <small>${archiveValue(getFrontTypeLine(card))}</small>
+        </header>
+        <div class="card-archive-pills">
+          <span class="archive-pill ${finish}">${finish === "foil" ? "Foil" : "Non-Foil"}</span>
+          <span class="archive-pill">${escapeHtml(card.set || "—")}${card.collectorNumber ? ` · ${escapeHtml(card.collectorNumber)}` : ""}</span>
+          <span class="archive-pill">${card.JapanPrint === true ? "日印" : "非日印"}</span>
+          ${card.manaCost ? `<span class="archive-pill">${escapeHtml(card.manaCost)}</span>` : ""}
+        </div>
+        <section class="card-archive-rules"><span>规则文字</span>${renderArchiveRules(card)}</section>
+        <dl class="card-archive-meta">
+          <div><dt>系列与编号</dt><dd>${archiveValue(card.setName || card.set)}${card.collectorNumber ? ` · ${escapeHtml(card.collectorNumber)}` : ""}</dd></div>
+          <div><dt>稀有度</dt><dd>${archiveValue(card.rarity)}</dd></div>
+          <div><dt>画师</dt><dd>${archiveValue(card.artist)}</dd></div>
+          ${card.backArtist ? `<div><dt>背面画师</dt><dd>${escapeHtml(card.backArtist)}</dd></div>` : ""}
+          <div><dt>发行日期</dt><dd>${archiveValue(card.releasedAt)}</dd></div>
+          <div><dt>颜色</dt><dd>${escapeHtml(archiveColor(card))}</dd></div>
+          <div><dt>法术力值</dt><dd>${escapeHtml(String(Number(card.cmc) || 0))}</dd></div>
+          <div><dt>当前价格</dt><dd>${escapeHtml(formatUsd(cardPrice(card)))} · ${finish === "foil" ? "Foil" : "Non-Foil"}</dd></div>
+        </dl>
+        ${renderPriceHistoryPanel({
+          title: `${displayName} · ${finish === "foil" ? "Foil" : "Non-Foil"}`,
+          subtitle: `${card.set}${card.collectorNumber ? ` · ${card.collectorNumber}` : ""}`,
+          points,
+          emptyText: "这张牌当前版本还没有历史价格。点击总价旁边的刷新按钮后会记录。"
+        })}
+      </section>
+    </div>`;
+  }
+
+  async function enrichPreviewMetadata(cardId) {
+    const card = selectors.cardById(state.data.cards, state.dataRevision, cardId);
+    if (!card || !card.scryfallId || (card.setName && card.releasedAt) || state.previewMetadataAttempts.has(cardId)) return;
+    state.previewMetadataAttempts.add(cardId);
+    try {
+      const printing = await catalog.lookupById(card.scryfallId, state.previewController.signal);
+      if (!printing || state.previewCardId !== cardId || !elements.imagePreviewDialog.open) return;
+      const index = state.data.cards.findIndex((item) => item.id === cardId);
+      if (index < 0) return;
+      const current = state.data.cards[index];
+      state.data.cards[index] = mergeArchiveMetadata(current, printing);
+      saveState("cube");
+      renderImagePreview(state.data.cards[index]);
+    } catch (error) {
+      if (error.name !== "AbortError") console.warn("无法补全卡牌档案资料", error);
+    }
+  }
+
+  function openImagePreview(cardId) {
+    const card = selectors.cardById(state.data.cards, state.dataRevision, cardId);
+    if (!card || !getCardImage(card, "front", true)) return;
+    if (state.previewController) state.previewController.abort();
+    state.previewController = new AbortController();
+    state.previewCardId = cardId;
+    renderImagePreview(card);
     elements.imagePreviewDialog.showModal();
+    void enrichPreviewMetadata(cardId);
+  }
+
+  function clearImagePreview() {
+    if (state.previewController) state.previewController.abort();
+    state.previewController = null;
+    state.previewCardId = null;
+    elements.imagePreview.innerHTML = "";
   }
 
   function closeImagePreview() {
-    elements.imagePreviewDialog.close();
-    elements.imagePreview.innerHTML = "";
+    if (elements.imagePreviewDialog.open) elements.imagePreviewDialog.close();
+    clearImagePreview();
   }
 
   function cardTemplate(card, index, priceView = selectors.selectPriceView(state.data.cards, state.dataRevision, state.priceHistory, state.historyRevision)) {
@@ -2173,11 +2265,10 @@
       if (state.importing) event.preventDefault();
     });
     elements.imagePreviewDialog.addEventListener("click", (event) => {
-      if (event.target === elements.imagePreviewDialog || event.target.closest(".preview-image-grid img")) closeImagePreview();
+      if (event.target === elements.imagePreviewDialog || event.target.closest(".card-archive-images img")) closeImagePreview();
     });
-    elements.imagePreviewDialog.addEventListener("cancel", () => {
-      elements.imagePreview.innerHTML = "";
-    });
+    elements.imagePreviewDialog.addEventListener("cancel", clearImagePreview);
+    elements.imagePreviewDialog.addEventListener("close", clearImagePreview);
     elements.addCardDialog.addEventListener("close", clearNameResults);
     elements.printingDialog.addEventListener("close", () => {
       if (state.printingController) state.printingController.abort();

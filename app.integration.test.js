@@ -49,6 +49,17 @@ test("printing selector filters Foil-capable versions and forces Foil on selecti
   assert.match(html, /筛选支持 Foil 的实体版本/);
 });
 
+test("image preview renders and enriches a read-only card archive", () => {
+  assert.match(appSource, /class="card-archive-preview"/);
+  assert.match(appSource, /class="card-archive-images/);
+  assert.match(appSource, /class="card-archive-details"/);
+  assert.match(appSource, /规则文字/);
+  assert.match(appSource, /系列与编号/);
+  assert.match(appSource, /catalog\.lookupById\(card\.scryfallId/);
+  assert.match(appSource, /mergeArchiveMetadata\(current, printing\)/);
+  assert.match(appSource, /event\.target\.closest\("\.card-archive-images img"\)/);
+});
+
 test("key interactive regions expose accessible state", () => {
   assert.match(html, /id="sidebar"/);
   assert.match(html, /id="resultCount"[^>]+aria-live="polite"/);
