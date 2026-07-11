@@ -91,8 +91,14 @@
       colorIdentity: card.color_identity || [],
       typeLine: card.type_line || (face && face.type_line) || "Unknown",
       frontTypeLine,
+      oracleText: card.oracle_text || (face && face.oracle_text) || "",
+      backOracleText: (backFace && backFace.oracle_text) || "",
+      artist: card.artist || (face && face.artist) || "",
+      backArtist: (backFace && backFace.artist) || "",
       set: (card.set || "custom").toUpperCase(),
+      setName: card.set_name || "",
       collectorNumber: card.collector_number || "",
+      releasedAt: card.released_at || "",
       rarity: card.rarity || "common",
       image: remoteImage,
       remoteImage,
@@ -113,6 +119,19 @@
       finish: chooseValidFinish({ finishes }, "foil"),
       JapanPrint: false,
       addedAt: new Date().toISOString()
+    };
+  }
+
+  function mergeArchiveMetadata(currentCard, scryfallCard) {
+    const normalized = normalizeScryfallCard(scryfallCard);
+    return {
+      ...currentCard,
+      oracleText: normalized.oracleText,
+      backOracleText: normalized.backOracleText,
+      artist: normalized.artist,
+      backArtist: normalized.backArtist,
+      setName: normalized.setName,
+      releasedAt: normalized.releasedAt
     };
   }
 
@@ -489,5 +508,5 @@
     };
   }
 
-  return { COLOR_ORDER, SORT_ORDER, PRICE_TTL_MS, parseDecklist, normalizeFinish, parseFinish, parseJapanPrint, getAvailableFinishes, chooseValidFinish, normalizeLocalizedNames, getPreferredLocalizedName, normalizeScryfallCard, getOracleId, getFrontColors, getFrontTypeLine, getUsdPrice, getPriceNumber, needsPriceRefresh, getColorBucket, getPrimaryType, isLandCard, getCardBucket, computeStats, filterCards, sortCards, buildCardNameSearchUrl, buildPrintingsUrl, buildLocalizedNameSearchUrl, buildLocalImageFileName, getCardImage, isPaperPrinting, filterOraclePrintings, filterPrintings, replacePrinting, normalizeCardName, getFrontDisplayName, getLookupName, prepareTextImportRows, parseExcelRows, buildExcelRows, buildBackup, parseBackup };
+  return { COLOR_ORDER, SORT_ORDER, PRICE_TTL_MS, parseDecklist, normalizeFinish, parseFinish, parseJapanPrint, getAvailableFinishes, chooseValidFinish, normalizeLocalizedNames, getPreferredLocalizedName, normalizeScryfallCard, mergeArchiveMetadata, getOracleId, getFrontColors, getFrontTypeLine, getUsdPrice, getPriceNumber, needsPriceRefresh, getColorBucket, getPrimaryType, isLandCard, getCardBucket, computeStats, filterCards, sortCards, buildCardNameSearchUrl, buildPrintingsUrl, buildLocalizedNameSearchUrl, buildLocalImageFileName, getCardImage, isPaperPrinting, filterOraclePrintings, filterPrintings, replacePrinting, normalizeCardName, getFrontDisplayName, getLookupName, prepareTextImportRows, parseExcelRows, buildExcelRows, buildBackup, parseBackup };
 });

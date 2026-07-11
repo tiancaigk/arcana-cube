@@ -1,7 +1,7 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const { CURRENT_DATA_VERSION } = require("./migrations.js");
-const { buildBackup, buildCardNameSearchUrl, buildExcelRows, buildLocalizedNameSearchUrl, buildLocalImageFileName, buildPrintingsUrl, chooseValidFinish, computeStats, filterCards, filterOraclePrintings, filterPrintings, getAvailableFinishes, getCardBucket, getCardImage, getColorBucket, getFrontDisplayName, getFrontTypeLine, getLookupName, getOracleId, getPreferredLocalizedName, getPriceNumber, getUsdPrice, isLandCard, isPaperPrinting, needsPriceRefresh, normalizeCardName, normalizeFinish, normalizeLocalizedNames, normalizeScryfallCard, parseBackup, parseDecklist, parseExcelRows, prepareTextImportRows, replacePrinting, sortCards } = require("./core.js");
+const { buildBackup, buildCardNameSearchUrl, buildExcelRows, buildLocalizedNameSearchUrl, buildLocalImageFileName, buildPrintingsUrl, chooseValidFinish, computeStats, filterCards, filterOraclePrintings, filterPrintings, getAvailableFinishes, getCardBucket, getCardImage, getColorBucket, getFrontDisplayName, getFrontTypeLine, getLookupName, getOracleId, getPreferredLocalizedName, getPriceNumber, getUsdPrice, isLandCard, isPaperPrinting, mergeArchiveMetadata, needsPriceRefresh, normalizeCardName, normalizeFinish, normalizeLocalizedNames, normalizeScryfallCard, parseBackup, parseDecklist, parseExcelRows, prepareTextImportRows, replacePrinting, sortCards } = require("./core.js");
 
 const cards = [
   { name: "Alpha", colors: ["W"], cmc: 1, typeLine: "Creature — Human", set: "TST" },
@@ -207,6 +207,71 @@ test("normalizeScryfallCard prefers high quality png image urls", () => {
   assert.equal(card.remoteBackImage, "https://cards.scryfall.io/png/back/a/b/image-card.png");
   assert.equal(card.localBackImage, "");
   assert.equal(card.localBackThumbnail, "");
+});
+
+test("normalizeScryfallCard stores archive metadata for single and double-faced cards", () => {
+  const single = normalizeScryfallCard({
+    id: "single",
+    name: "Bolt",
+    set: "tst",
+    set_name: "Test Set",
+    collector_number: "1",
+    released_at: "2026-01-02",
+    type_line: "Instant",
+    oracle_text: "Deal 3 damage.",
+    artist: "Sample Artist"
+  });
+  assert.equal(single.oracleText, "Deal 3 damage.");
+  assert.equal(single.backOracleText, "");
+  assert.equal(single.artist, "Sample Artist");
+  assert.equal(single.backArtist, "");
+  assert.equal(single.setName, "Test Set");
+  assert.equal(single.releasedAt, "2026-01-02");
+
+  const doubleFaced = normalizeScryfallCard({
+    id: "double",
+    name: "Front // Back",
+    set: "tst",
+    set_name: "Test Set",
+    collector_number: "2",
+    released_at: "2026-01-03",
+    card_faces: [
+      { name: "Front", type_line: "Creature", oracle_text: "Front rules", artist: "Front Artist" },
+      { name: "Back", type_line: "Land", oracle_text: "Back rules", artist: "Back Artist" }
+    ]
+  });
+  assert.equal(doubleFaced.oracleText, "Front rules");
+  assert.equal(doubleFaced.backOracleText, "Back rules");
+  assert.equal(doubleFaced.artist, "Front Artist");
+  assert.equal(doubleFaced.backArtist, "Back Artist");
+});
+
+test("mergeArchiveMetadata adds Scryfall details without replacing collection state", () => {
+  const existing = {
+    id: "cube-card",
+    name: "Bolt",
+    localImage: "images/bolt.png",
+    finish: "foil",
+    JapanPrint: true,
+    addedAt: "saved-date"
+  };
+  const merged = mergeArchiveMetadata(existing, {
+    id: "printing",
+    name: "Bolt",
+    set: "tst",
+    set_name: "Test Set",
+    collector_number: "1",
+    released_at: "2026-01-02",
+    type_line: "Instant",
+    oracle_text: "Deal 3 damage.",
+    artist: "Sample Artist"
+  });
+  assert.equal(merged.oracleText, "Deal 3 damage.");
+  assert.equal(merged.setName, "Test Set");
+  assert.equal(merged.localImage, existing.localImage);
+  assert.equal(merged.finish, existing.finish);
+  assert.equal(merged.JapanPrint, true);
+  assert.equal(merged.addedAt, "saved-date");
 });
 
 test("buildLocalImageFileName uses set, collector number, and card name", () => {
