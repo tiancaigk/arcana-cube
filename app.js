@@ -136,6 +136,7 @@
     excelValidated: false,
     editingCardId: null,
     printings: [],
+    printingFinishFilter: "all",
     lookupMode: "name",
     nameResults: [],
     nameSearchId: 0,
@@ -1365,22 +1366,20 @@
     return `Non-Foil ${nonfoil} · Foil ${foil}`;
   }
 
-  function renderPrintingFinishToggle(card) {
-    const finish = normalizeFinish(card.finish);
-    const available = getAvailableFinishes(card);
-    const disabled = available.length < 2;
+  function renderPrintingFinishFilter() {
+    const foilOnly = state.printingFinishFilter === "foil";
     elements.printingFinishToggle.innerHTML = `
-      <button type="button" class="finish-toggle-button ${finish}" data-toggle-finish="${escapeHtml(card.id)}" ${disabled ? "disabled" : ""} title="${disabled ? `此版本仅支持 ${finish === "foil" ? "Foil" : "Non-Foil"}` : "切换 Finish"}">
-        <span>Finish</span>
-        <strong>${finish === "foil" ? "Foil" : "Non-Foil"}</strong>
+      <button type="button" class="finish-toggle-button ${foilOnly ? "foil" : "nonfoil"}" data-toggle-printing-finish-filter aria-pressed="${foilOnly ? "true" : "false"}" title="${foilOnly ? "仅显示支持 Foil 的实体版本" : "显示全部实体版本"}">
+        <span>版本</span>
+        <strong>${state.printingFinishFilter === "foil" ? "仅 Foil" : "全部"}</strong>
       </button>`;
   }
 
   function renderPrintings() {
     const card = state.data.cards.find((item) => item.id === state.editingCardId);
     if (!card) return;
-    renderPrintingFinishToggle(card);
-    const filtered = filterPrintings(state.printings, elements.printingSearchInput.value);
+    renderPrintingFinishFilter();
+    const filtered = filterPrintings(state.printings, elements.printingSearchInput.value, state.printingFinishFilter);
     elements.printingCount.textContent = `${filtered.length} 个版本`;
     elements.printingStatus.classList.toggle("hidden", filtered.length > 0);
     elements.printingStatus.classList.remove("error");
@@ -1404,6 +1403,7 @@
     const requestId = ++printingRequestId;
     state.editingCardId = cardId;
     state.printings = [];
+    state.printingFinishFilter = "all";
     elements.printingSearchInput.value = "";
     elements.printingGrid.innerHTML = "";
     elements.printingGrid.classList.add("hidden");
@@ -1411,6 +1411,7 @@
     elements.printingStatus.textContent = "正在获取可用版本…";
     elements.printingCount.textContent = "0 个版本";
     $("#printingDialogTitle").textContent = `${cardDisplayName(card)} · 选择版本`;
+    renderPrintingFinishFilter();
     elements.printingDialog.showModal();
     try {
       const { oracleId, printings } = await catalog.lookupAllPrintings(card, state.printingController.signal);
@@ -1433,7 +1434,7 @@
     const printing = state.printings.find((item) => item.id === scryfallId);
     if (cardIndex < 0 || !printing) return;
     const current = state.data.cards[cardIndex];
-    const next = replacePrinting(current, printing);
+    const next = replacePrinting(current, printing, state.printingFinishFilter === "foil" ? "foil" : current.finish);
     state.data.cards[cardIndex] = next;
     recordChange("card.versionChanged", `${current.name} 版本从 ${current.set} · ${current.collectorNumber} 改为 ${next.set} · ${next.collectorNumber}`, {
       card: cardLogInfo(next),
@@ -1466,8 +1467,7 @@
     saveState(["cube", "changeLog"]);
     requestCardMutationRender(cardId);
     if (state.editingCardId === cardId && elements.printingDialog.open) {
-      const card = state.data.cards[cardIndex];
-      renderPrintingFinishToggle(card);
+      renderPrintingFinishFilter();
     }
     toast("Finish 已更新", current.finish === "foil" ? "Foil" : "Non-Foil");
   }
@@ -2123,8 +2123,10 @@
     }, true);
     elements.printingSearchInput.addEventListener("input", renderPrintings);
     elements.printingFinishToggle.addEventListener("click", (event) => {
-      const button = event.target.closest("[data-toggle-finish]");
-      if (button) toggleCardFinish(button.dataset.toggleFinish);
+      const button = event.target.closest("[data-toggle-printing-finish-filter]");
+      if (!button) return;
+      state.printingFinishFilter = state.printingFinishFilter === "foil" ? "all" : "foil";
+      renderPrintings();
     });
     elements.printingGrid.addEventListener("click", (event) => {
       const button = event.target.closest("[data-select-printing]");

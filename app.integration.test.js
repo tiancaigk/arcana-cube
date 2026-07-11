@@ -39,6 +39,16 @@ test("grid cards use compact metadata while list cards retain cost and type", ()
   assert.match(styleSource, /\.list-mode \.card-cost,\s*\.list-mode \.card-type\s*\{\s*display:\s*block;/);
 });
 
+test("printing selector filters Foil-capable versions and forces Foil on selection", () => {
+  assert.match(appSource, /printingFinishFilter:\s*"all"/);
+  assert.match(appSource, /data-toggle-printing-finish-filter/);
+  assert.match(appSource, /<span>版本<\/span>/);
+  assert.match(appSource, /state\.printingFinishFilter === "foil" \? "仅 Foil" : "全部"/);
+  assert.match(appSource, /filterPrintings\(state\.printings, elements\.printingSearchInput\.value, state\.printingFinishFilter\)/);
+  assert.match(appSource, /replacePrinting\(current, printing, state\.printingFinishFilter === "foil" \? "foil" : current\.finish\)/);
+  assert.match(html, /筛选支持 Foil 的实体版本/);
+});
+
 test("key interactive regions expose accessible state", () => {
   assert.match(html, /id="sidebar"/);
   assert.match(html, /id="resultCount"[^>]+aria-live="polite"/);

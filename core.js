@@ -334,9 +334,9 @@
     return printings.filter((printing) => isPaperPrinting(printing) && getOracleId(printing) === normalizedId);
   }
 
-  function filterPrintings(printings, query) {
+  function filterPrintings(printings, query, finishFilter = "all") {
     const needle = (query || "").trim().toLocaleLowerCase();
-    const paperPrintings = printings.filter(isPaperPrinting);
+    const paperPrintings = printings.filter((printing) => isPaperPrinting(printing) && (finishFilter !== "foil" || getAvailableFinishes(printing).includes("foil")));
     if (!needle) return paperPrintings;
     return paperPrintings.filter((printing) => {
       const haystack = `${printing.set_name || ""} ${printing.set || ""} ${printing.collector_number || ""} ${printing.released_at || ""} ${printing.artist || ""}`.toLocaleLowerCase();
@@ -344,7 +344,7 @@
     });
   }
 
-  function replacePrinting(currentCard, printing) {
+  function replacePrinting(currentCard, printing, preferredFinish = currentCard.finish) {
     const normalized = normalizeScryfallCard(printing);
     const samePrinting = currentCard.scryfallId && normalized.scryfallId && currentCard.scryfallId === normalized.scryfallId;
     const localImage = samePrinting ? currentCard.localImage || "" : "";
@@ -366,7 +366,7 @@
       localBackThumbnail,
       backImage: localBackImage || normalized.backImage,
       JapanPrint: currentCard.JapanPrint === true,
-      finish: chooseValidFinish(normalized, currentCard.finish)
+      finish: chooseValidFinish(normalized, preferredFinish)
     };
   }
 

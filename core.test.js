@@ -332,10 +332,10 @@ test("printing helpers build, filter, and replace versions safely", () => {
   assert.match(decodeURIComponent(buildLocalizedNameSearchUrl(oracleId, "zht")), new RegExp(`oracleid:${oracleId} lang:zht game:paper`));
   assert.throws(() => buildPrintingsUrl(null), /Oracle ID/);
   const printings = [
-    { id: "alpha", oracle_id: oracleId, name: "Black Vise", set: "lea", set_name: "Limited Edition Alpha", collector_number: "233", type_line: "Artifact", games: ["paper"], digital: false },
-    { id: "beta", oracle_id: oracleId, name: "Black Vise", set: "leb", set_name: "Limited Edition Beta", collector_number: "234", type_line: "Artifact", games: ["paper", "mtgo"], digital: false },
-    { id: "other", oracle_id: "b817bc56-9b4d-4c50-bafa-3c652b99578f", name: "Other", set: "tst", set_name: "Other Set", collector_number: "1", type_line: "Creature", games: ["paper"], digital: false },
-    { id: "digital", oracle_id: oracleId, name: "Black Vise", set: "ana", set_name: "Arena", collector_number: "1", type_line: "Artifact", games: ["arena"], digital: true }
+    { id: "alpha", oracle_id: oracleId, name: "Black Vise", set: "lea", set_name: "Limited Edition Alpha", collector_number: "233", type_line: "Artifact", games: ["paper"], digital: false, finishes: ["foil", "nonfoil"], foil: true, nonfoil: true },
+    { id: "beta", oracle_id: oracleId, name: "Black Vise", set: "leb", set_name: "Limited Edition Beta", collector_number: "234", type_line: "Artifact", games: ["paper", "mtgo"], digital: false, finishes: ["nonfoil"], foil: false, nonfoil: true },
+    { id: "other", oracle_id: "b817bc56-9b4d-4c50-bafa-3c652b99578f", name: "Other", set: "tst", set_name: "Other Set", collector_number: "1", type_line: "Creature", games: ["paper"], digital: false, finishes: ["etched"], foil: false, nonfoil: false },
+    { id: "digital", oracle_id: oracleId, name: "Black Vise", set: "ana", set_name: "Arena", collector_number: "1", type_line: "Artifact", games: ["arena"], digital: true, finishes: ["foil"], foil: true, nonfoil: false }
   ];
   assert.equal(isPaperPrinting(printings[0]), true);
   assert.equal(isPaperPrinting(printings[3]), false);
@@ -343,6 +343,9 @@ test("printing helpers build, filter, and replace versions safely", () => {
   assert.deepEqual(filterPrintings(printings, "").map((card) => card.id), ["alpha", "beta", "other"]);
   assert.deepEqual(filterPrintings(printings, "LEA").map((card) => card.id), ["alpha"]);
   assert.deepEqual(filterPrintings(printings, "234").map((card) => card.id), ["beta"]);
+  assert.deepEqual(filterPrintings(printings, "", "foil").map((card) => card.id), ["alpha", "other"]);
+  assert.deepEqual(filterPrintings(printings, "LEA", "foil").map((card) => card.id), ["alpha"]);
+  assert.deepEqual(filterPrintings(printings, "234", "foil"), []);
   const replaced = replacePrinting({ id: "cube-card", addedAt: "saved-date", finish: "nonfoil" }, printings[1]);
   assert.equal(replaced.id, "cube-card");
   assert.equal(replaced.addedAt, "saved-date");
@@ -350,6 +353,7 @@ test("printing helpers build, filter, and replace versions safely", () => {
   assert.equal(replaced.set, "LEB");
   assert.equal(replaced.collectorNumber, "234");
   assert.equal(replaced.finish, "nonfoil");
+  assert.equal(replacePrinting({ id: "cube-card", finish: "nonfoil" }, printings[0], "foil").finish, "foil");
 });
 
 test("reversible paper cards use the front face Oracle ID", () => {
