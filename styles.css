@@ -329,11 +329,17 @@ select { height: 40px; min-width: 126px; padding: 0 30px 0 12px; border: 1px sol
 .basic-land-heading span { color: var(--accent); font: 500 8px/1 "DM Mono", monospace; letter-spacing: .16em; }
 .basic-land-heading h2 { margin: 7px 0 3px; font: 600 24px/1.1 "Playfair Display", serif; }
 .basic-land-heading p { margin: 0; color: var(--muted-2); font-size: 10px; }
+.basic-land-heading-actions { display: flex; align-items: center; gap: 12px; }
+.basic-land-grouping-toggle { display: flex; padding: 3px; border: 1px solid var(--line); border-radius: 8px; background: #141412; }
+.basic-land-grouping-toggle button { min-width: 58px; padding: 7px 10px; border: 0; border-radius: 5px; color: var(--muted-2); background: transparent; font-size: 9px; cursor: pointer; }
+.basic-land-grouping-toggle button.active { color: #17150f; background: var(--accent); }
 .basic-land-summary { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 8px; }
 .basic-land-summary article { padding: 12px 13px; border: 1px solid var(--line-soft); border-radius: 10px; background: #191917; }
 .basic-land-summary span { display: block; color: var(--muted-2); font-size: 8px; }
 .basic-land-summary strong { display: block; margin-top: 6px; color: var(--text); font: 500 14px/1 "DM Mono", monospace; }
 .basic-land-grid { display: grid; gap: 24px; }
+.basic-land-grid .card-group-grid { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+.basic-land-heading .basic-land-set-meta { color: var(--muted-2); font: 500 8px/1 "DM Mono", monospace; letter-spacing: .06em; }
 .price-history-panel.empty p { margin: 12px 0 2px; color: var(--muted); font-size: 11px; line-height: 1.65; }
 .price-history-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 9px; }
 .price-history-head span { display: block; margin-bottom: 5px; color: var(--accent); font: 500 8px/1 "DM Mono", monospace; letter-spacing: .16em; }

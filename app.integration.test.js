@@ -93,6 +93,16 @@ test("basic lands use a dedicated five-group collection view", () => {
   assert.match(styleSource, /\.basic-land-summary/);
 });
 
+test("basic lands switch between kind and release-ordered set groups", () => {
+  assert.match(html, /data-basic-land-grouping="kind"[^>]+aria-pressed="true"/);
+  assert.match(html, /data-basic-land-grouping="set"[^>]+aria-pressed="false"/);
+  assert.match(appSource, /BASIC_LAND_GROUPING_KEY\s*=\s*"arcana-cube-basic-land-grouping"/);
+  assert.match(appSource, /basicLandGrouping:\s*loadBasicLandGrouping\(\)/);
+  assert.match(appSource, /groupBasicLands\(cards, state\.basicLandGrouping\)/);
+  assert.match(appSource, /localStorage\.setItem\(BASIC_LAND_GROUPING_KEY, mode\)/);
+  assert.match(styleSource, /\.basic-land-grid \.card-group-grid\s*\{[^}]*grid-template-columns:\s*repeat\(5, minmax\(0, 1fr\)\)/s);
+});
+
 test("basic lands contribute to value and export but not draft analytics", () => {
   assert.match(appSource, /function getValuedCards\(\)/);
   assert.match(appSource, /return \[\.\.\.state\.data\.cards, \.\.\.state\.data\.basicLands\]/);

@@ -211,7 +211,13 @@
         <section class="basic-lands-view hidden" id="basicLandsView">
           <div class="basic-land-heading">
             <div><span>BASIC LAND ARCHIVE</span><h2>基本地收藏</h2><p>独立于600张轮抽牌池，计入 Cube 总价值。</p></div>
-            <button type="button" class="primary-button" id="addBasicLandBtn"><span>+</span> 添加基本地</button>
+            <div class="basic-land-heading-actions">
+              <div class="basic-land-grouping-toggle" aria-label="基本地分组方式">
+                <button type="button" class="active" data-basic-land-grouping="kind" aria-pressed="true">按类别</button>
+                <button type="button" data-basic-land-grouping="set" aria-pressed="false">按系列</button>
+              </div>
+              <button type="button" class="primary-button" id="addBasicLandBtn"><span>+</span> 添加基本地</button>
+            </div>
           </div>
           <div class="basic-land-summary" id="basicLandSummary"></div>
           <div class="card-grid basic-land-grid" id="basicLandGrid"></div>

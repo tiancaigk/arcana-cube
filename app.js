@@ -5,6 +5,7 @@
   const PRICE_HISTORY_STORAGE_KEY = "arcana-cube-price-history-v1";
   const CHANGE_LOG_STORAGE_KEY = "arcana-cube-change-log-v1";
   const NAME_LANGUAGE_KEY = "arcana-cube-card-name-language";
+  const BASIC_LAND_GROUPING_KEY = "arcana-cube-basic-land-grouping";
   const DIRECTORY_HANDLE_KEY = "cube-directory-handle";
   const CUBE_FILE_NAME = "cube-data.json";
   const PRICE_HISTORY_FILE_NAME = "price-history.json";
@@ -16,7 +17,7 @@
   const IMAGE_FETCH_TIMEOUT_MS = 25000;
   const IMAGE_CACHE_CHECKPOINT = 100;
   const SHEETJS_URL = "https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js";
-  const { buildBackup, buildExcelRows, buildLocalizedNameSearchUrl, buildLocalImageFileName, chooseValidFinish, computeStats, filterCards, filterPrintings, sortCards, getAvailableFinishes, getBasicLandKind, getCardBucket, getCardImage, getFrontColors, getFrontDisplayName, getFrontTypeLine, getOracleId, getPreferredLocalizedName, getPriceNumber, getUsdPrice, isPaperPrinting, isSupportedBasicLand, mergeArchiveMetadata, needsPriceRefresh, normalizeCardName, normalizeFinish, normalizeLocalizedNames, normalizeScryfallCard, parseBackup, parseDecklist, parseExcelRows, prepareTextImportRows, replacePrinting } = window.CubeCore;
+  const { buildBackup, buildExcelRows, buildLocalizedNameSearchUrl, buildLocalImageFileName, chooseValidFinish, computeStats, filterCards, filterPrintings, sortCards, getAvailableFinishes, getBasicLandKind, groupBasicLands, getCardBucket, getCardImage, getFrontColors, getFrontDisplayName, getFrontTypeLine, getOracleId, getPreferredLocalizedName, getPriceNumber, getUsdPrice, isPaperPrinting, isSupportedBasicLand, mergeArchiveMetadata, needsPriceRefresh, normalizeCardName, normalizeFinish, normalizeLocalizedNames, normalizeScryfallCard, parseBackup, parseDecklist, parseExcelRows, prepareTextImportRows, replacePrinting } = window.CubeCore;
   const { cardSeries, dailyPriceChanges, dateKey, emptyPriceHistory, normalizePriceHistory, parsePriceHistoryData, priceTrend, recordDailySnapshot, totalSeries, wrapPriceHistoryData } = window.CubePriceHistory;
   const { appendChange, emptyChangeLog, latestEntries, normalizeChangeLog, parseChangeLogData, wrapChangeLogData } = window.CubeChangeLog;
   const { analyzeWorkspaceHealth } = window.CubeHealth;
@@ -124,6 +125,7 @@
     analyticsColor: "all",
     mode: "grid",
     nameLanguage: loadNameLanguage(),
+    basicLandGrouping: loadBasicLandGrouping(),
     nameLocalization: {
       refreshing: false,
       failures: new Set()
@@ -1246,6 +1248,25 @@
     return [...state.data.cards, ...state.data.basicLands];
   }
 
+  function loadBasicLandGrouping() {
+    try {
+      return localStorage.getItem(BASIC_LAND_GROUPING_KEY) === "set" ? "set" : "kind";
+    } catch (_error) {
+      return "kind";
+    }
+  }
+
+  function setBasicLandGrouping(mode) {
+    if (mode !== "kind" && mode !== "set") return;
+    state.basicLandGrouping = mode;
+    try {
+      localStorage.setItem(BASIC_LAND_GROUPING_KEY, mode);
+    } catch (_error) {
+      // The view still switches when browser preference storage is unavailable.
+    }
+    renderScheduler.request("basics");
+  }
+
   function renderBasicLands() {
     const cards = state.data.basicLands;
     const priceView = selectors.selectPriceView(cards, state.dataRevision, state.priceHistory, state.historyRevision);
@@ -1255,11 +1276,19 @@
       ...BASIC_LAND_ORDER.map((kind) => [BASIC_LAND_LABELS[kind], counts[kind]]),
       ["基本地总价", formatUsd(priceView.currentTotal)]
     ].map(([label, value]) => `<article><span>${escapeHtml(label)}</span><strong>${escapeHtml(String(value))}</strong></article>`).join("");
-    elements.basicLandGrid.innerHTML = BASIC_LAND_ORDER.map((kind) => {
-      const group = cards.filter((card) => getBasicLandKind(card) === kind);
-      return `<section class="card-group" data-basic-land-group="${kind}">
-        <div class="card-group-heading"><span class="card-group-mark"></span><h2>${BASIC_LAND_LABELS[kind]}</h2><small>${group.length} 张</small></div>
-        <div class="card-group-grid">${group.map((card, index) => cardTemplate(card, index, priceView)).join("")}</div>
+    $$('[data-basic-land-grouping]').forEach((button) => {
+      const active = button.dataset.basicLandGrouping === state.basicLandGrouping;
+      button.classList.toggle("active", active);
+      button.setAttribute("aria-pressed", String(active));
+    });
+    elements.basicLandGrid.dataset.grouping = state.basicLandGrouping;
+    elements.basicLandGrid.innerHTML = groupBasicLands(cards, state.basicLandGrouping).map((group) => {
+      const setMeta = state.basicLandGrouping === "set"
+        ? `<span class="basic-land-set-meta">${group.setCode ? escapeHtml(group.setCode) : "—"}${group.releasedAt ? ` · ${escapeHtml(group.releasedAt)}` : ""}</span>`
+        : "";
+      return `<section class="card-group" data-basic-land-group="${escapeHtml(group.key)}">
+        <div class="card-group-heading"><span class="card-group-mark"></span><h2>${escapeHtml(group.label)}</h2>${setMeta}<small>${group.cards.length} 张</small></div>
+        <div class="card-group-grid">${group.cards.map((card, index) => cardTemplate(card, index, priceView)).join("")}</div>
       </section>`;
     }).join("");
     elements.basicLandEmpty.classList.toggle("hidden", cards.length > 0);
@@ -2261,6 +2290,7 @@
     });
     $("#addCardBtn").addEventListener("click", () => openAddCardDialog("draft"));
     elements.addBasicLandBtn.addEventListener("click", () => openAddCardDialog("basic"));
+    $$('[data-basic-land-grouping]').forEach((button) => button.addEventListener("click", () => setBasicLandGrouping(button.dataset.basicLandGrouping)));
     $("#addCardForm").addEventListener("submit", handleAddCard);
     elements.cardNameInput.addEventListener("input", clearNameResults);
     elements.lookupResult.addEventListener("click", (event) => {
