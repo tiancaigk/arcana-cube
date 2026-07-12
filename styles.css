@@ -323,6 +323,17 @@ select { height: 40px; min-width: 126px; padding: 0 30px 0 12px; border: 1px sol
 .price-history-modal > #priceHistoryContent { min-height: 0; overflow-y: auto; padding-right: 3px; scrollbar-color: #615840 #151513; scrollbar-width: thin; }
 .price-history-panel { width: 100%; padding: 15px 16px 13px; border: 1px solid rgba(217,181,111,.16); border-radius: 14px; background: linear-gradient(145deg, rgba(32,32,29,.94), rgba(17,17,15,.92)); box-shadow: inset 0 1px rgba(255,255,255,.03); }
 .card-archive-details .price-history-panel { width: 100%; cursor: default; }
+.basic-lands-view { display: grid; gap: 20px; }
+.basic-lands-view.hidden { display: none; }
+.basic-land-heading { display: flex; align-items: flex-end; justify-content: space-between; gap: 24px; padding: 22px 24px; border: 1px solid var(--line); border-radius: 14px; background: linear-gradient(145deg, #22211d, #171715); }
+.basic-land-heading span { color: var(--accent); font: 500 8px/1 "DM Mono", monospace; letter-spacing: .16em; }
+.basic-land-heading h2 { margin: 7px 0 3px; font: 600 24px/1.1 "Playfair Display", serif; }
+.basic-land-heading p { margin: 0; color: var(--muted-2); font-size: 10px; }
+.basic-land-summary { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 8px; }
+.basic-land-summary article { padding: 12px 13px; border: 1px solid var(--line-soft); border-radius: 10px; background: #191917; }
+.basic-land-summary span { display: block; color: var(--muted-2); font-size: 8px; }
+.basic-land-summary strong { display: block; margin-top: 6px; color: var(--text); font: 500 14px/1 "DM Mono", monospace; }
+.basic-land-grid { display: grid; gap: 24px; }
 .price-history-panel.empty p { margin: 12px 0 2px; color: var(--muted); font-size: 11px; line-height: 1.65; }
 .price-history-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 9px; }
 .price-history-head span { display: block; margin-bottom: 5px; color: var(--accent); font: 500 8px/1 "DM Mono", monospace; letter-spacing: .16em; }

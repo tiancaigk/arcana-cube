@@ -513,7 +513,8 @@
     return {
       meta: data.meta,
       notes: typeof data.notes === "string" ? data.notes : "",
-      cards: data.cards
+      cards: data.cards,
+      basicLands: data.basicLands
     };
   }
 

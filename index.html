@@ -30,6 +30,10 @@
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 19V9M10 19V5M16 19v-7M22 19H2"/></svg>
             分析
           </button>
+          <button class="nav-item" data-view="basicLands">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v18M7 8c-3-1-4-3-4-5 4 0 7 2 9 6M17 10c3-1 4-3 4-6-4 0-7 2-9 6"/></svg>
+            基本地
+          </button>
         </nav>
 
         <div class="sidebar-section">
@@ -202,6 +206,16 @@
             <article class="panel type-panel"><div class="panel-heading"><div><span>CARD TYPES</span><h2>类别构成</h2></div><small>主类别</small></div><div id="typeAnalysis"></div></article>
             <article class="panel health-panel"><div class="panel-heading"><div><span>CUBE NOTES</span><h2>环境速记</h2></div><button class="text-button" id="editNotesBtn">编辑</button></div><textarea id="cubeNotes" placeholder="记录轮抽反馈、待替换牌张或设计目标…"></textarea></article>
           </div>
+        </section>
+
+        <section class="basic-lands-view hidden" id="basicLandsView">
+          <div class="basic-land-heading">
+            <div><span>BASIC LAND ARCHIVE</span><h2>基本地收藏</h2><p>独立于600张轮抽牌池，计入 Cube 总价值。</p></div>
+            <button type="button" class="primary-button" id="addBasicLandBtn"><span>+</span> 添加基本地</button>
+          </div>
+          <div class="basic-land-summary" id="basicLandSummary"></div>
+          <div class="card-grid basic-land-grid" id="basicLandGrid"></div>
+          <div class="empty-state hidden" id="basicLandEmpty"><span>∅</span><h3>还没有基本地</h3><p>添加平原、海岛、沼泽、山脉或树林的具体版本。</p></div>
         </section>
       </main>
     </div>

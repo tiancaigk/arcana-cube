@@ -492,7 +492,7 @@ test("buildExcelRows exports a re-importable table with finish and price", () =>
 });
 
 test("JSON backups preserve the complete Cube and accept legacy exports", () => {
-  const data = { meta: { name: "Test Cube", description: "Desc" }, notes: "Notes", cards: [{ id: "1", name: "Black Vise", finish: "nonfoil" }] };
+  const data = { meta: { name: "Test Cube", description: "Desc" }, notes: "Notes", cards: [{ id: "1", name: "Black Vise", finish: "nonfoil" }], basicLands: [{ id: "2", name: "Plains", finish: "foil" }] };
   const backup = buildBackup(data, "2026-06-22T00:00:00.000Z");
   assert.equal(backup.version, 2);
   assert.equal(backup.dataVersion, CURRENT_DATA_VERSION);
@@ -501,5 +501,6 @@ test("JSON backups preserve the complete Cube and accept legacy exports", () => 
   assert.equal(migratedLegacy.cards[0].name, "Black Vise");
   assert.equal(migratedLegacy.cards[0].JapanPrint, false);
   assert.equal(migratedLegacy.cards[0].localThumbnail, "");
+  assert.deepEqual(migratedLegacy.basicLands, [{ id: "2", name: "Plains", finish: "foil", localizedNames: {}, prices: {}, localImage: "", localThumbnail: "", remoteImage: "", image: "", localBackImage: "", localBackThumbnail: "", remoteBackImage: "", backImage: "", JapanPrint: false }]);
   assert.throws(() => parseBackup('{"not":"a cube"}'), /有效/);
 });

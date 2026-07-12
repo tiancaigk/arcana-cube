@@ -16,7 +16,7 @@
   const IMAGE_FETCH_TIMEOUT_MS = 25000;
   const IMAGE_CACHE_CHECKPOINT = 100;
   const SHEETJS_URL = "https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js";
-  const { buildBackup, buildExcelRows, buildLocalizedNameSearchUrl, buildLocalImageFileName, chooseValidFinish, computeStats, filterCards, filterPrintings, sortCards, getAvailableFinishes, getCardBucket, getCardImage, getFrontColors, getFrontDisplayName, getFrontTypeLine, getOracleId, getPreferredLocalizedName, getPriceNumber, getUsdPrice, isPaperPrinting, mergeArchiveMetadata, needsPriceRefresh, normalizeCardName, normalizeFinish, normalizeLocalizedNames, normalizeScryfallCard, parseBackup, parseDecklist, parseExcelRows, prepareTextImportRows, replacePrinting } = window.CubeCore;
+  const { buildBackup, buildExcelRows, buildLocalizedNameSearchUrl, buildLocalImageFileName, chooseValidFinish, computeStats, filterCards, filterPrintings, sortCards, getAvailableFinishes, getBasicLandKind, getCardBucket, getCardImage, getFrontColors, getFrontDisplayName, getFrontTypeLine, getOracleId, getPreferredLocalizedName, getPriceNumber, getUsdPrice, isPaperPrinting, isSupportedBasicLand, mergeArchiveMetadata, needsPriceRefresh, normalizeCardName, normalizeFinish, normalizeLocalizedNames, normalizeScryfallCard, parseBackup, parseDecklist, parseExcelRows, prepareTextImportRows, replacePrinting } = window.CubeCore;
   const { cardSeries, dailyPriceChanges, dateKey, emptyPriceHistory, normalizePriceHistory, parsePriceHistoryData, priceTrend, recordDailySnapshot, totalSeries, wrapPriceHistoryData } = window.CubePriceHistory;
   const { appendChange, emptyChangeLog, latestEntries, normalizeChangeLog, parseChangeLogData, wrapChangeLogData } = window.CubeChangeLog;
   const { analyzeWorkspaceHealth } = window.CubeHealth;
@@ -105,13 +105,15 @@
       description: "为四至八人轮抽设计的中速环境，强调墓地、神器与多色协同。"
     },
     notes: "设计目标：互动优先，让每种颜色都拥有至少两条清晰的轮抽路径。\n\n下次轮抽观察：红色快攻的一费生物密度；蓝黑墓地套牌是否需要更多弃牌出口。",
-    cards: seedCards
+    cards: seedCards,
+    basicLands: []
   };
 
   const state = {
     data: (() => {
       const loaded = loadState();
       loaded.cards = normalizeStoredCards(loaded.cards || []);
+      loaded.basicLands = normalizeStoredCards(loaded.basicLands || []);
       return loaded;
     })(),
     priceHistory: loadPriceHistoryState(),
@@ -138,6 +140,7 @@
     printings: [],
     printingFinishFilter: "all",
     lookupMode: "name",
+    addTarget: "draft",
     nameResults: [],
     nameSearchId: 0,
     nameSearchController: null,
@@ -189,7 +192,8 @@
   const elements = {
     statsGrid: $("#statsGrid"), cardGrid: $("#cardGrid"), resultCount: $("#resultCount"),
     emptyState: $("#emptyState"), searchInput: $("#searchInput"), typeFilter: $("#typeFilter"), finishFilter: $("#finishFilter"), japanPrintFilter: $("#japanPrintFilter"),
-    collectionView: $("#collectionView"), analyticsView: $("#analyticsView"),
+    collectionView: $("#collectionView"), analyticsView: $("#analyticsView"), basicLandsView: $("#basicLandsView"),
+    basicLandSummary: $("#basicLandSummary"), basicLandGrid: $("#basicLandGrid"), basicLandEmpty: $("#basicLandEmpty"), addBasicLandBtn: $("#addBasicLandBtn"),
     addCardDialog: $("#addCardDialog"), importDialog: $("#importDialog"), editCubeDialog: $("#editCubeDialog"),
     toastRegion: $("#toastRegion"), cardNameInput: $("#cardNameInput"), lookupButton: $("#lookupButton"),
     setCodeInput: $("#setCodeInput"), collectorNumberInput: $("#collectorNumberInput"),
@@ -213,11 +217,12 @@
     stats: renderStats,
     nameLanguage: renderNameLanguageToggle,
     cards: renderCards,
+    basics: renderBasicLands,
     analytics: () => {
       if (state.view === "analytics") renderAnalytics();
     },
     storage: renderStorageStatus
-  }, { order: ["meta", "stats", "nameLanguage", "cards", "analytics", "storage"] });
+  }, { order: ["meta", "stats", "nameLanguage", "cards", "basics", "analytics", "storage"] });
   let searchRenderFrame = 0;
 
   function loadNameLanguage() {
@@ -329,7 +334,8 @@
     state.data = {
       meta: { ...(data.meta || defaultState.meta) },
       notes: typeof data.notes === "string" ? data.notes : "",
-      cards: normalizeStoredCards(data.cards || [])
+      cards: normalizeStoredCards(data.cards || []),
+      basicLands: normalizeStoredCards(data.basicLands || [])
     };
     if (!state.data.meta.name) state.data.meta.name = defaultState.meta.name;
     if (typeof state.data.meta.description !== "string") state.data.meta.description = defaultState.meta.description;
@@ -596,7 +602,7 @@
     state.imageCaching = true;
     renderStorageStatus();
     try {
-      const summary = await imageCache.cacheAll(state.data.cards, {
+      const summary = await imageCache.cacheAll(getValuedCards(), {
         checkpointEvery: IMAGE_CACHE_CHECKPOINT,
         onProgress: ({ index, total }) => {
           if (elements.cacheImagesBtn) elements.cacheImagesBtn.textContent = `整理卡图 ${index}/${total}`;
@@ -803,7 +809,7 @@
     if (state.nameLanguage === nextLanguage) return;
     state.nameLanguage = nextLanguage;
     saveNameLanguage(nextLanguage);
-    renderScheduler.request("nameLanguage", "cards");
+    renderScheduler.request("nameLanguage", "cards", "basics");
   }
 
   function missingLocalizedNameCards(cards) {
@@ -852,7 +858,7 @@
 
   function applyLocalizedName(oracleId, lang, name) {
     let updated = false;
-    state.data.cards.forEach((card) => {
+    getValuedCards().forEach((card) => {
       if (getOracleId(card) !== oracleId) return;
       const names = normalizeLocalizedNames(card);
       if (names[lang] === name) return;
@@ -860,6 +866,7 @@
       updateCardNameNode(card);
       updated = true;
     });
+    if (updated) renderScheduler.request("basics");
     return updated;
   }
 
@@ -916,7 +923,7 @@
   }
 
   function renderAll() {
-    renderScheduler.request("meta", "stats", "nameLanguage", "cards", "analytics");
+    renderScheduler.request("meta", "stats", "nameLanguage", "cards", "basics", "analytics");
     renderScheduler.flush();
   }
 
@@ -933,7 +940,7 @@
 
   function renderStats() {
     const stats = selectors.selectStats(state.data.cards, state.dataRevision);
-    const priceView = selectors.selectPriceView(state.data.cards, state.dataRevision, state.priceHistory, state.historyRevision);
+    const priceView = selectors.selectPriceView(getValuedCards(), state.dataRevision, state.priceHistory, state.historyRevision);
     const priceInfo = priceStatus(priceView);
     const totalPriceTrend = priceView.totalTrend;
     const priceAction = `<button type="button" class="stat-action icon-only" data-show-total-history aria-label="查看总价历史" title="查看总价历史">
@@ -1049,7 +1056,7 @@
 
   function openTodayPriceChanges() {
     const today = dateKey();
-    const changes = dailyPriceChanges(state.priceHistory, state.data.cards, today);
+    const changes = dailyPriceChanges(state.priceHistory, getValuedCards(), today);
     const renderChanges = (items) => items.map((change) => {
       const card = change.card || {};
       const displayName = cardDisplayName(card);
@@ -1131,7 +1138,7 @@
       elements.healthCheckContent.innerHTML = `<p class="workspace-health-loading">正在核对牌表与本地图片…</p>`;
       elements.healthCheckDialog.showModal();
       const imageFiles = await collectWorkspaceImageFiles();
-      renderWorkspaceHealth(analyzeWorkspaceHealth({ cards: state.data.cards, ...imageFiles }));
+      renderWorkspaceHealth(analyzeWorkspaceHealth({ cards: getValuedCards(), ...imageFiles }));
     } catch (error) {
       elements.healthCheckContent.innerHTML = `<p class="workspace-health-loading">检查失败：${escapeHtml(error.message || "无法读取文件夹")}</p>`;
     } finally {
@@ -1147,7 +1154,7 @@
   }
 
   function recordCurrentPriceHistory() {
-    state.priceHistory = recordDailySnapshot(state.priceHistory, state.data.cards);
+    state.priceHistory = recordDailySnapshot(state.priceHistory, getValuedCards());
   }
 
   function excelPriceExtras(card) {
@@ -1213,6 +1220,50 @@
 
   function cardGroupLabel(key) {
     return ({ W: "白色", U: "蓝色", B: "黑色", R: "红色", G: "绿色", C: "无色", M: "多色", L: "地牌" })[key] || "其他";
+  }
+
+  const BASIC_LAND_ORDER = ["Plains", "Island", "Swamp", "Mountain", "Forest"];
+  const BASIC_LAND_LABELS = { Plains: "平原", Island: "海岛", Swamp: "沼泽", Mountain: "山脉", Forest: "树林" };
+
+  function findCardLocation(cardId) {
+    const draftIndex = state.data.cards.findIndex((card) => card.id === cardId);
+    if (draftIndex >= 0) return { cards: state.data.cards, index: draftIndex, pool: "draft" };
+    const basicIndex = state.data.basicLands.findIndex((card) => card.id === cardId);
+    return basicIndex >= 0 ? { cards: state.data.basicLands, index: basicIndex, pool: "basic" } : null;
+  }
+
+  function cardByIdAny(cardId) {
+    const location = findCardLocation(cardId);
+    return location ? location.cards[location.index] : null;
+  }
+
+  function requestPoolRender(pool) {
+    if (pool === "basic") renderScheduler.request("basics", "stats");
+    else requestDataRender();
+  }
+
+  function getValuedCards() {
+    return [...state.data.cards, ...state.data.basicLands];
+  }
+
+  function renderBasicLands() {
+    const cards = state.data.basicLands;
+    const priceView = selectors.selectPriceView(cards, state.dataRevision, state.priceHistory, state.historyRevision);
+    const counts = Object.fromEntries(BASIC_LAND_ORDER.map((kind) => [kind, cards.filter((card) => getBasicLandKind(card) === kind).length]));
+    elements.basicLandSummary.innerHTML = [
+      ["基本地总数", cards.length],
+      ...BASIC_LAND_ORDER.map((kind) => [BASIC_LAND_LABELS[kind], counts[kind]]),
+      ["基本地总价", formatUsd(priceView.currentTotal)]
+    ].map(([label, value]) => `<article><span>${escapeHtml(label)}</span><strong>${escapeHtml(String(value))}</strong></article>`).join("");
+    elements.basicLandGrid.innerHTML = BASIC_LAND_ORDER.map((kind) => {
+      const group = cards.filter((card) => getBasicLandKind(card) === kind);
+      return `<section class="card-group" data-basic-land-group="${kind}">
+        <div class="card-group-heading"><span class="card-group-mark"></span><h2>${BASIC_LAND_LABELS[kind]}</h2><small>${group.length} 张</small></div>
+        <div class="card-group-grid">${group.map((card, index) => cardTemplate(card, index, priceView)).join("")}</div>
+      </section>`;
+    }).join("");
+    elements.basicLandEmpty.classList.toggle("hidden", cards.length > 0);
+    if (state.nameLanguage === "zh") refreshMissingLocalizedNames(cards);
   }
 
   function archiveValue(value) {
@@ -1286,25 +1337,25 @@
   }
 
   async function enrichPreviewMetadata(cardId) {
-    const card = selectors.cardById(state.data.cards, state.dataRevision, cardId);
+    const card = cardByIdAny(cardId);
     if (!card || !card.scryfallId || (card.setName && card.releasedAt) || state.previewMetadataAttempts.has(cardId)) return;
     state.previewMetadataAttempts.add(cardId);
     try {
       const printing = await catalog.lookupById(card.scryfallId, state.previewController.signal);
       if (!printing || state.previewCardId !== cardId || !elements.imagePreviewDialog.open) return;
-      const index = state.data.cards.findIndex((item) => item.id === cardId);
-      if (index < 0) return;
-      const current = state.data.cards[index];
-      state.data.cards[index] = mergeArchiveMetadata(current, printing);
+      const location = findCardLocation(cardId);
+      if (!location) return;
+      const current = location.cards[location.index];
+      location.cards[location.index] = mergeArchiveMetadata(current, printing);
       saveState("cube");
-      renderImagePreview(state.data.cards[index]);
+      renderImagePreview(location.cards[location.index]);
     } catch (error) {
       if (error.name !== "AbortError") console.warn("无法补全卡牌档案资料", error);
     }
   }
 
   function openImagePreview(cardId) {
-    const card = selectors.cardById(state.data.cards, state.dataRevision, cardId);
+    const card = cardByIdAny(cardId);
     if (!card || !getCardImage(card, "front", true)) return;
     if (state.previewController) state.previewController.abort();
     state.previewController = new AbortController();
@@ -1415,7 +1466,7 @@
 
   async function refreshStalePrices(force = false) {
     if (state.refreshingPrices) return;
-    const targets = state.data.cards.filter((card) => force || needsPriceRefresh(card));
+    const targets = getValuedCards().filter((card) => force || needsPriceRefresh(card));
     if (!targets.length) {
       if (force) {
         recordCurrentPriceHistory();
@@ -1436,14 +1487,14 @@
       targets.forEach((target) => {
         const printing = cardsByPrinting.get(printingKey(target.set, target.collectorNumber));
         if (!printing) return;
-        const cardIndex = state.data.cards.findIndex((item) => item.id === target.id);
-        if (cardIndex < 0) return;
-        const current = state.data.cards[cardIndex];
+        const location = findCardLocation(target.id);
+        if (!location) return;
+        const current = location.cards[location.index];
         const samePrinting = current.scryfallId
           ? current.scryfallId === target.scryfallId
           : current.set === target.set && current.collectorNumber === target.collectorNumber;
         if (samePrinting && (force || needsPriceRefresh(current))) {
-          state.data.cards[cardIndex] = replacePrinting(current, printing);
+          location.cards[location.index] = replacePrinting(current, printing);
           updated = true;
         }
       });
@@ -1466,7 +1517,7 @@
         ...(updated ? ["cube"] : []),
         ...(force ? ["priceHistory", "changeLog"] : [])
       ]);
-      renderScheduler.request("stats", "cards");
+      renderScheduler.request("stats", "cards", "basics");
       if (force) toast("价格已更新", `已检查 ${targets.length} 张牌，并保存今天的价格历史`);
       return;
     }
@@ -1503,7 +1554,7 @@
   }
 
   function renderPrintings() {
-    const card = state.data.cards.find((item) => item.id === state.editingCardId);
+    const card = cardByIdAny(state.editingCardId);
     if (!card) return;
     renderPrintingFinishFilter();
     const filtered = filterPrintings(state.printings, elements.printingSearchInput.value, state.printingFinishFilter);
@@ -1523,7 +1574,7 @@
   }
 
   async function openPrintingDialog(cardId) {
-    const card = selectors.cardById(state.data.cards, state.dataRevision, cardId);
+    const card = cardByIdAny(cardId);
     if (!card) return;
     if (state.printingController) state.printingController.abort();
     state.printingController = new AbortController();
@@ -1557,27 +1608,27 @@
   }
 
   function selectPrinting(scryfallId) {
-    const cardIndex = state.data.cards.findIndex((item) => item.id === state.editingCardId);
+    const location = findCardLocation(state.editingCardId);
     const printing = state.printings.find((item) => item.id === scryfallId);
-    if (cardIndex < 0 || !printing) return;
-    const current = state.data.cards[cardIndex];
+    if (!location || !printing) return;
+    const current = location.cards[location.index];
     const next = replacePrinting(current, printing, state.printingFinishFilter === "foil" ? "foil" : current.finish);
-    state.data.cards[cardIndex] = next;
+    location.cards[location.index] = next;
     recordChange("card.versionChanged", `${current.name} 版本从 ${current.set} · ${current.collectorNumber} 改为 ${next.set} · ${next.collectorNumber}`, {
       card: cardLogInfo(next),
       before: { set: current.set, collectorNumber: current.collectorNumber, finish: current.finish },
       after: { set: next.set, collectorNumber: next.collectorNumber, finish: next.finish }
     }, { persist: false });
     saveState(["cube", "changeLog"]);
-    requestDataRender();
+    requestPoolRender(location.pool);
     elements.printingDialog.close();
     toast("版本已更新", `${printing.set.toUpperCase()} · ${printing.collector_number}`);
   }
 
   function toggleCardFinish(cardId) {
-    const cardIndex = state.data.cards.findIndex((item) => item.id === cardId);
-    if (cardIndex < 0) return;
-    const current = state.data.cards[cardIndex];
+    const location = findCardLocation(cardId);
+    if (!location) return;
+    const current = location.cards[location.index];
     const available = getAvailableFinishes(current);
     if (available.length < 2) {
       toast("无法切换", `此版本仅支持 ${available[0] === "foil" ? "Foil" : "Non-Foil"}`, true);
@@ -1585,14 +1636,15 @@
     }
     const before = normalizeFinish(current.finish);
     current.finish = normalizeFinish(current.finish) === "foil" ? "nonfoil" : "foil";
-    state.data.cards[cardIndex] = current;
+    location.cards[location.index] = current;
     recordChange("card.finishChanged", `${current.name} 从 ${before === "foil" ? "Foil" : "Non-Foil"} 切换为 ${current.finish === "foil" ? "Foil" : "Non-Foil"}`, {
       card: cardLogInfo(current),
       before: { finish: before },
       after: { finish: current.finish }
     }, { persist: false });
     saveState(["cube", "changeLog"]);
-    requestCardMutationRender(cardId);
+    if (location.pool === "basic") renderScheduler.request("basics", "stats");
+    else requestCardMutationRender(cardId);
     if (state.editingCardId === cardId && elements.printingDialog.open) {
       renderPrintingFinishFilter();
     }
@@ -1600,19 +1652,20 @@
   }
 
   function toggleJapanPrint(cardId) {
-    const cardIndex = state.data.cards.findIndex((item) => item.id === cardId);
-    if (cardIndex < 0) return;
-    const current = state.data.cards[cardIndex];
+    const location = findCardLocation(cardId);
+    if (!location) return;
+    const current = location.cards[location.index];
     const before = current.JapanPrint === true;
     current.JapanPrint = current.JapanPrint !== true;
-    state.data.cards[cardIndex] = current;
+    location.cards[location.index] = current;
     recordChange("card.japanPrintChanged", `${current.name} ${current.JapanPrint ? "标记为日印" : "取消日印标记"}`, {
       card: cardLogInfo(current),
       before: { JapanPrint: before },
       after: { JapanPrint: current.JapanPrint === true }
     }, { persist: false });
     saveState(["cube", "changeLog"]);
-    requestCardMutationRender(cardId);
+    if (location.pool === "basic") renderScheduler.request("basics");
+    else requestCardMutationRender(cardId);
     toast("日印状态已更新", current.JapanPrint ? "已标记为日印" : "已标记为非日印");
   }
 
@@ -1646,11 +1699,40 @@
   }
 
   function addCard(card) {
+    if (state.addTarget === "basic") {
+      if (!isSupportedBasicLand(card)) {
+        toast("不是支持的基本地", "只允许添加平原、海岛、沼泽、山脉或树林", true);
+        return false;
+      }
+      const duplicate = state.data.basicLands.some((item) => card.scryfallId && item.scryfallId === card.scryfallId);
+      if (duplicate) {
+        toast("无法重复添加", "已经收藏了这个基本地版本", true);
+        return false;
+      }
+      state.data.basicLands.unshift(card);
+      recordChange("basicLand.added", `添加基本地：${card.name}`, { card: cardLogInfo(card), after: cardLogInfo(card) }, { persist: false });
+      saveState(["cube", "changeLog"]);
+      renderScheduler.request("basics", "stats");
+      return true;
+    }
     state.data.cards.unshift(card);
     state.data.cards = sortCards(state.data.cards);
     recordChange("card.added", `添加卡牌：${card.name}`, { card: cardLogInfo(card), after: cardLogInfo(card) }, { persist: false });
     saveState(["cube", "changeLog"]);
     requestDataRender();
+    return true;
+  }
+
+  function openAddCardDialog(target = "draft") {
+    state.addTarget = target;
+    const basicMode = target === "basic";
+    $("#addCardDialog h2").textContent = basicMode ? "添加基本地" : "添加卡牌";
+    $("#addCardDialog .modal-copy").textContent = basicMode
+      ? "只允许平原、海岛、沼泽、山脉和树林；可按名称或系列与编号定位具体版本。"
+      : "按牌名模糊查找，或用系列代码和收藏编号定位一个准确版本。";
+    elements.cardNameInput.placeholder = basicMode ? "例如：Plains" : "例如：Lightning Bolt";
+    elements.addCardDialog.showModal();
+    setTimeout(() => (state.lookupMode === "printing" ? elements.setCodeInput : elements.cardNameInput).focus(), 20);
   }
 
   function renderNameResults() {
@@ -1678,7 +1760,7 @@
     const result = state.nameResults.find((card) => card.id === scryfallId);
     if (!result) return;
     const card = normalizeScryfallCard(result);
-    addCard(card);
+    if (!addCard(card)) return;
     elements.addCardDialog.close();
     elements.cardNameInput.value = "";
     clearNameResults();
@@ -1701,15 +1783,16 @@
         const searchId = ++state.nameSearchId;
         elements.lookupResult.classList.remove("hidden");
         elements.lookupResult.innerHTML = '<div class="name-result-empty">正在搜索实体卡牌…</div>';
-        const results = await catalog.searchByName(name, state.nameSearchController.signal);
+        const basicName = BASIC_LAND_ORDER.find((candidate) => candidate.toLocaleLowerCase() === name.toLocaleLowerCase());
+        const results = state.addTarget === "basic" ? basicName ? [await catalog.lookupNamed(basicName, state.nameSearchController.signal)] : [] : await catalog.searchByName(name, state.nameSearchController.signal);
         if (searchId !== state.nameSearchId) return;
-        state.nameResults = results;
+        state.nameResults = state.addTarget === "basic" && basicName ? results.filter(isSupportedBasicLand).slice(0, 1) : state.addTarget === "basic" ? [] : results;
         renderNameResults();
         return;
       }
       const result = await catalog.lookupPrinting(setCode, collectorNumber);
       const card = normalizeScryfallCard(result);
-      addCard(card);
+      if (!addCard(card)) return;
       elements.addCardDialog.close();
       elements.cardNameInput.value = "";
       elements.setCodeInput.value = "";
@@ -2022,21 +2105,26 @@
     try {
       const XLSX = await loadSheetJs();
       const extras = {
-        byCardId: Object.fromEntries(state.data.cards.map((card) => [card.id, excelPriceExtras(card)]))
+        byCardId: Object.fromEntries(getValuedCards().map((card) => [card.id, excelPriceExtras(card)]))
       };
       const rows = buildExcelRows(state.data.cards, extras);
+      const basicLandRows = buildExcelRows(state.data.basicLands, extras);
       const worksheet = XLSX.utils.aoa_to_sheet(rows);
+      const basicLandWorksheet = XLSX.utils.aoa_to_sheet(basicLandRows);
       worksheet["!cols"] = [
         { wch: 10 }, { wch: 12 }, { wch: 34 }, { wch: 14 }, { wch: 12 }, { wch: 8 },
         { wch: 18 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 22 }, { wch: 38 },
         { wch: 36 }, { wch: 36 }, { wch: 16 }
       ];
       worksheet["!autofilter"] = { ref: `A1:O${rows.length}` };
+      basicLandWorksheet["!cols"] = worksheet["!cols"].map((column) => ({ ...column }));
+      basicLandWorksheet["!autofilter"] = { ref: `A1:O${basicLandRows.length}` };
       const workbook = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(workbook, worksheet, "Cube 牌表");
+      XLSX.utils.book_append_sheet(workbook, basicLandWorksheet, "基本地");
       const fileName = `${state.data.meta.name.replace(/[\\/:*?"<>|]/g, "-") || "Cube牌表"}.xlsx`;
       XLSX.writeFile(workbook, fileName, { compression: true });
-      toast("已导出", `Excel 表格包含 ${state.data.cards.length} 张牌`);
+      toast("已导出", `Excel 表格包含 ${state.data.cards.length} 张轮抽牌和 ${state.data.basicLands.length} 张基本地`);
     } catch (error) {
       toast("导出失败", error.message || "Excel 组件加载失败，请稍后重试", true);
     }
@@ -2062,7 +2150,8 @@
       state.data = {
         meta: { ...restored.meta },
         notes: typeof restored.notes === "string" ? restored.notes : "",
-        cards: normalizeStoredCards(restored.cards)
+        cards: normalizeStoredCards(restored.cards),
+        basicLands: normalizeStoredCards(restored.basicLands || [])
       };
       recordChange("backup.restored", `恢复 JSON 备份：${state.data.cards.length} 张牌`, { meta: { count: state.data.cards.length, name: restored.meta.name } }, { persist: false });
       saveState(["cube", "changeLog"]);
@@ -2077,21 +2166,21 @@
   }
 
   function removeCard(id) {
-    const index = state.data.cards.findIndex((card) => card.id === id);
-    if (index < 0) return;
-    const [removed] = state.data.cards.splice(index, 1);
+    const location = findCardLocation(id);
+    if (!location) return;
+    const [removed] = location.cards.splice(location.index, 1);
     recordChange("card.removed", `移除卡牌：${removed.name}`, { card: cardLogInfo(removed), before: cardLogInfo(removed) }, { persist: false });
     saveState(["cube", "changeLog"]);
-    requestDataRender();
+    requestPoolRender(location.pool);
     toast("已移除", removed.name, false, {
       label: "撤销",
       run: () => {
-        if (state.data.cards.some((card) => card.id === removed.id)) return;
-        state.data.cards.push(removed);
-        state.data.cards = sortCards(state.data.cards);
+        if (location.cards.some((card) => card.id === removed.id)) return;
+        location.cards.push(removed);
+        if (location.pool === "draft") state.data.cards = sortCards(state.data.cards);
         recordChange("card.removeUndone", `撤销移除：${removed.name}`, { card: cardLogInfo(removed), after: cardLogInfo(removed) }, { persist: false });
         saveState(["cube", "changeLog"]);
-        requestDataRender();
+        requestPoolRender(location.pool);
         toast("已恢复", removed.name);
       }
     });
@@ -2101,6 +2190,8 @@
     state.view = view;
     elements.collectionView.classList.toggle("hidden", view !== "collection");
     elements.analyticsView.classList.toggle("hidden", view !== "analytics");
+    elements.basicLandsView.classList.toggle("hidden", view !== "basicLands");
+    $("#addCardBtn").classList.toggle("hidden", view === "basicLands");
     $$(".nav-item").forEach((button) => {
       const active = button.dataset.view === view;
       button.classList.toggle("active", active);
@@ -2108,6 +2199,7 @@
       else button.removeAttribute("aria-current");
     });
     if (view === "analytics") renderScheduler.request("analytics");
+    if (view === "basicLands") renderScheduler.request("basics");
   }
 
   function bindTabKeyboard(selector) {
@@ -2139,6 +2231,19 @@
     if (options.render !== false) renderScheduler.request("cards");
   }
 
+  function handleCollectionCardClick(event) {
+    const imageButton = event.target.closest("[data-preview-image]");
+    if (imageButton) return openImagePreview(imageButton.dataset.previewImage);
+    const japanPrintButton = event.target.closest("[data-toggle-japan-print]");
+    if (japanPrintButton) return toggleJapanPrint(japanPrintButton.dataset.toggleJapanPrint);
+    const finishButton = event.target.closest("[data-toggle-finish]");
+    if (finishButton) return toggleCardFinish(finishButton.dataset.toggleFinish);
+    const removeButton = event.target.closest("[data-remove]");
+    if (removeButton) return removeCard(removeButton.dataset.remove);
+    const printingButton = event.target.closest("[data-change-printing]");
+    if (printingButton) openPrintingDialog(printingButton.dataset.changePrinting);
+  }
+
   function bindEvents() {
     elements.statsGrid.addEventListener("click", (event) => {
       const historyButton = event.target.closest("[data-show-total-history]");
@@ -2154,7 +2259,8 @@
       const button = event.target.closest("[data-refresh-prices]");
       if (button) refreshStalePrices(true);
     });
-    $("#addCardBtn").addEventListener("click", () => { elements.addCardDialog.showModal(); setTimeout(() => (state.lookupMode === "printing" ? elements.setCodeInput : elements.cardNameInput).focus(), 20); });
+    $("#addCardBtn").addEventListener("click", () => openAddCardDialog("draft"));
+    elements.addBasicLandBtn.addEventListener("click", () => openAddCardDialog("basic"));
     $("#addCardForm").addEventListener("submit", handleAddCard);
     elements.cardNameInput.addEventListener("input", clearNameResults);
     elements.lookupResult.addEventListener("click", (event) => {
@@ -2221,33 +2327,11 @@
       renderScheduler.request("cards");
     }));
     $$("[data-name-language]").forEach((button) => button.addEventListener("click", () => setNameLanguage(button.dataset.nameLanguage)));
-    elements.cardGrid.addEventListener("click", (event) => {
-      const imageButton = event.target.closest("[data-preview-image]");
-      if (imageButton) {
-        openImagePreview(imageButton.dataset.previewImage);
-        return;
-      }
-      const japanPrintButton = event.target.closest("[data-toggle-japan-print]");
-      if (japanPrintButton) {
-        toggleJapanPrint(japanPrintButton.dataset.toggleJapanPrint);
-        return;
-      }
-      const finishButton = event.target.closest("[data-toggle-finish]");
-      if (finishButton) {
-        toggleCardFinish(finishButton.dataset.toggleFinish);
-        return;
-      }
-      const button = event.target.closest("[data-remove]");
-      if (button) {
-        removeCard(button.dataset.remove);
-        return;
-      }
-      const printingButton = event.target.closest("[data-change-printing]");
-      if (printingButton) openPrintingDialog(printingButton.dataset.changePrinting);
-    });
-    elements.cardGrid.addEventListener("error", (event) => {
+    elements.cardGrid.addEventListener("click", handleCollectionCardClick);
+    elements.basicLandGrid.addEventListener("click", handleCollectionCardClick);
+    [elements.cardGrid, elements.basicLandGrid].forEach((grid) => grid.addEventListener("error", (event) => {
       if (event.target.classList && event.target.classList.contains("card-image")) event.target.classList.add("hidden");
-    }, true);
+    }, true));
     elements.printingSearchInput.addEventListener("input", renderPrintings);
     elements.printingFinishToggle.addEventListener("click", (event) => {
       const button = event.target.closest("[data-toggle-printing-finish-filter]");

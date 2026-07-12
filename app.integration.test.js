@@ -26,7 +26,7 @@ test("application shell loads dependencies before app.js", () => {
 });
 
 test("card image failures use one delegated listener", () => {
-  assert.match(appSource, /cardGrid\.addEventListener\("error"/);
+  assert.match(appSource, /\[elements\.cardGrid, elements\.basicLandGrid\]\.forEach\(\(grid\) => grid\.addEventListener\("error"/);
   assert.doesNotMatch(appSource, /image\.addEventListener\("error"/);
 });
 
@@ -76,6 +76,31 @@ test("remembered Cube folders reconnect without reopening the picker", () => {
   assert.match(appSource, /function handleConnectFolderClick\(\)/);
   assert.match(appSource, /state\.storage\.rememberedDirectoryHandle \? reconnectRememberedFolder\(\) : connectCubeFolder\(\)/);
   assert.match(appSource, /state\.storage\.mode !== "directory" && !state\.storage\.rememberedDirectoryHandle/);
+});
+
+test("basic lands use a dedicated five-group collection view", () => {
+  assert.match(html, /data-view="basicLands"/);
+  assert.match(html, /id="basicLandsView"/);
+  assert.match(html, /id="basicLandGrid"/);
+  assert.match(html, /id="basicLandSummary"/);
+  assert.match(appSource, /basicLands:\s*\[\]/);
+  assert.match(appSource, /function renderBasicLands\(\)/);
+  assert.match(appSource, /\["Plains", "Island", "Swamp", "Mountain", "Forest"\]/);
+  assert.match(appSource, /function findCardLocation\(cardId\)/);
+  assert.match(appSource, /isSupportedBasicLand\(card\)/);
+  assert.match(appSource, /已经收藏了这个基本地版本/);
+  assert.match(appSource, /state\.addTarget === "basic" \? basicName \? \[await catalog\.lookupNamed/);
+  assert.match(styleSource, /\.basic-land-summary/);
+});
+
+test("basic lands contribute to value and export but not draft analytics", () => {
+  assert.match(appSource, /function getValuedCards\(\)/);
+  assert.match(appSource, /return \[\.\.\.state\.data\.cards, \.\.\.state\.data\.basicLands\]/);
+  assert.match(appSource, /recordDailySnapshot\(state\.priceHistory, getValuedCards\(\)\)/);
+  assert.match(appSource, /dailyPriceChanges\(state\.priceHistory, getValuedCards\(\), today\)/);
+  assert.match(appSource, /book_append_sheet\(workbook, basicLandWorksheet, "基本地"\)/);
+  assert.match(appSource, /selectors\.selectStats\(state\.data\.cards/);
+  assert.match(appSource, /selectors\.selectAnalytics\(state\.data\.cards/);
 });
 
 test("key interactive regions expose accessible state", () => {
