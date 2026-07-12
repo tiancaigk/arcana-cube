@@ -1,7 +1,7 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const { CURRENT_DATA_VERSION } = require("./migrations.js");
-const { buildBackup, buildCardNameSearchUrl, buildExcelRows, buildLocalizedNameSearchUrl, buildLocalImageFileName, buildPrintingsUrl, chooseValidFinish, computeStats, filterCards, filterOraclePrintings, filterPrintings, getAvailableFinishes, getCardBucket, getCardImage, getColorBucket, getFrontDisplayName, getFrontTypeLine, getLookupName, getOracleId, getPreferredLocalizedName, getPriceNumber, getUsdPrice, isLandCard, isPaperPrinting, mergeArchiveMetadata, needsPriceRefresh, normalizeCardName, normalizeFinish, normalizeLocalizedNames, normalizeScryfallCard, parseBackup, parseDecklist, parseExcelRows, prepareTextImportRows, replacePrinting, sortCards } = require("./core.js");
+const { buildBackup, buildCardNameSearchUrl, buildExcelRows, buildLocalizedNameSearchUrl, buildLocalImageFileName, buildPrintingsUrl, chooseValidFinish, computeStats, filterCards, filterOraclePrintings, filterPrintings, getAvailableFinishes, getBasicLandKind, getCardBucket, getCardImage, getColorBucket, getFrontDisplayName, getFrontTypeLine, getLookupName, getOracleId, getPreferredLocalizedName, getPriceNumber, getUsdPrice, isLandCard, isPaperPrinting, isSupportedBasicLand, mergeArchiveMetadata, needsPriceRefresh, normalizeCardName, normalizeFinish, normalizeLocalizedNames, normalizeScryfallCard, parseBackup, parseDecklist, parseExcelRows, prepareTextImportRows, replacePrinting, sortCards } = require("./core.js");
 
 const cards = [
   { name: "Alpha", colors: ["W"], cmc: 1, typeLine: "Creature — Human", set: "TST" },
@@ -91,6 +91,16 @@ test("colorless and land filters use separate display buckets", () => {
   assert.equal(stats.creatures, 1);
   assert.equal(stats.averageCmc, 0);
   assert.equal(stats.curve[0], 0);
+});
+
+test("basic land helpers accept only the five supported exact names", () => {
+  assert.equal(getBasicLandKind({ name: "Plains" }), "Plains");
+  assert.equal(getBasicLandKind({ name: "Island // Other" }), "Island");
+  assert.equal(getBasicLandKind({ name: "Snow-Covered Island" }), "");
+  assert.equal(getBasicLandKind({ name: "Wastes" }), "");
+  assert.equal(getBasicLandKind({ name: "Tundra", typeLine: "Land — Plains Island" }), "");
+  assert.equal(isSupportedBasicLand({ name: "Forest" }), true);
+  assert.equal(isSupportedBasicLand({ name: "Wastes" }), false);
 });
 
 test("sortCards orders by WUBRG, then colorless, multicolor, lands, then name", () => {

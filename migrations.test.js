@@ -28,6 +28,15 @@ test("version 0 Cube data migrates image and collection fields without mutation"
   assert.equal(migrated.cards[0].localBackThumbnail, "");
   assert.deepEqual(migrated.cards[0].localizedNames, {});
   assert.deepEqual(migrated.cards[0].prices, {});
+  assert.deepEqual(migrated.basicLands, []);
+});
+
+test("version 1 data preserves and normalizes the basic land pool", () => {
+  const migrated = migrateCubeData({ meta: { name: "Basics" }, notes: "", cards: [], basicLands: [{ name: "Plains", finish: "nonfoil" }] }, 1);
+  assert.equal(migrated.basicLands.length, 1);
+  assert.equal(migrated.basicLands[0].name, "Plains");
+  assert.equal(migrated.basicLands[0].finish, "nonfoil");
+  assert.equal(migrated.basicLands[0].JapanPrint, false);
 });
 
 test("current data migration is idempotent and future versions are rejected", () => {

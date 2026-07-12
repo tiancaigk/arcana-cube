@@ -5,7 +5,7 @@
 })(typeof globalThis !== "undefined" ? globalThis : this, function () {
   "use strict";
 
-  const CURRENT_DATA_VERSION = 1;
+  const CURRENT_DATA_VERSION = 2;
 
   function clone(value) {
     if (typeof structuredClone === "function") return structuredClone(value);
@@ -57,6 +57,13 @@
         meta: source.meta && typeof source.meta === "object" ? source.meta : { name: "" },
         notes: typeof source.notes === "string" ? source.notes : "",
         cards: Array.isArray(source.cards) ? source.cards.map(migrateCardToVersion1) : []
+      };
+    },
+    2(data) {
+      const source = data && typeof data === "object" ? data : {};
+      return {
+        ...source,
+        basicLands: Array.isArray(source.basicLands) ? source.basicLands.map(migrateCardToVersion1) : []
       };
     }
   };
