@@ -431,6 +431,54 @@
     return Boolean(getBasicLandKind(card));
   }
 
+  const BASIC_LAND_ORDER = ["Plains", "Island", "Swamp", "Mountain", "Forest"];
+  const BASIC_LAND_LABELS = { Plains: "平原", Island: "海岛", Swamp: "沼泽", Mountain: "山脉", Forest: "树林" };
+
+  function validReleaseDate(value) {
+    const date = String(value || "").trim();
+    return /^\d{4}-\d{2}-\d{2}$/.test(date) && Number.isFinite(Date.parse(date)) ? date : "";
+  }
+
+  function compareCollectorNumbers(left, right) {
+    return String(left.collectorNumber || "").localeCompare(String(right.collectorNumber || ""), undefined, { numeric: true, sensitivity: "base" });
+  }
+
+  function groupBasicLands(cards, mode = "kind") {
+    const source = Array.isArray(cards) ? cards.filter(isSupportedBasicLand) : [];
+    const kindRank = new Map(BASIC_LAND_ORDER.map((kind, index) => [kind, index]));
+    if (mode !== "set") {
+      return BASIC_LAND_ORDER.map((kind) => ({
+        key: kind,
+        label: BASIC_LAND_LABELS[kind],
+        setCode: "",
+        releasedAt: "",
+        cards: source.filter((card) => getBasicLandKind(card) === kind).sort((left, right) => {
+          const dateOrder = validReleaseDate(right.releasedAt).localeCompare(validReleaseDate(left.releasedAt));
+          return dateOrder || compareCollectorNumbers(left, right);
+        })
+      }));
+    }
+
+    const sets = new Map();
+    source.forEach((card) => {
+      const setCode = String(card.set || "").trim().toUpperCase();
+      const key = setCode || "UNKNOWN";
+      if (!sets.has(key)) sets.set(key, { key, label: String(card.setName || "").trim() || (setCode || "未知系列"), setCode, releasedAt: validReleaseDate(card.releasedAt), cards: [] });
+      const group = sets.get(key);
+      if (!group.releasedAt) group.releasedAt = validReleaseDate(card.releasedAt);
+      group.cards.push(card);
+    });
+    return [...sets.values()].map((group) => ({
+      ...group,
+      cards: group.cards.sort((left, right) => (kindRank.get(getBasicLandKind(left)) - kindRank.get(getBasicLandKind(right))) || compareCollectorNumbers(left, right))
+    })).sort((left, right) => {
+      if (left.releasedAt && right.releasedAt) return right.releasedAt.localeCompare(left.releasedAt) || left.label.localeCompare(right.label);
+      if (left.releasedAt) return -1;
+      if (right.releasedAt) return 1;
+      return left.label.localeCompare(right.label);
+    });
+  }
+
   function prepareTextImportRows(names, existingNames = []) {
     const seen = new Set();
     const existing = new Set(existingNames.map(normalizeCardName));
@@ -518,5 +566,5 @@
     };
   }
 
-  return { COLOR_ORDER, SORT_ORDER, PRICE_TTL_MS, parseDecklist, normalizeFinish, parseFinish, parseJapanPrint, getAvailableFinishes, chooseValidFinish, normalizeLocalizedNames, getPreferredLocalizedName, normalizeScryfallCard, mergeArchiveMetadata, getOracleId, getFrontColors, getFrontTypeLine, getUsdPrice, getPriceNumber, needsPriceRefresh, getColorBucket, getPrimaryType, isLandCard, getBasicLandKind, isSupportedBasicLand, getCardBucket, computeStats, filterCards, sortCards, buildCardNameSearchUrl, buildPrintingsUrl, buildLocalizedNameSearchUrl, buildLocalImageFileName, getCardImage, isPaperPrinting, filterOraclePrintings, filterPrintings, replacePrinting, normalizeCardName, getFrontDisplayName, getLookupName, prepareTextImportRows, parseExcelRows, buildExcelRows, buildBackup, parseBackup };
+  return { COLOR_ORDER, SORT_ORDER, PRICE_TTL_MS, parseDecklist, normalizeFinish, parseFinish, parseJapanPrint, getAvailableFinishes, chooseValidFinish, normalizeLocalizedNames, getPreferredLocalizedName, normalizeScryfallCard, mergeArchiveMetadata, getOracleId, getFrontColors, getFrontTypeLine, getUsdPrice, getPriceNumber, needsPriceRefresh, getColorBucket, getPrimaryType, isLandCard, getBasicLandKind, isSupportedBasicLand, groupBasicLands, getCardBucket, computeStats, filterCards, sortCards, buildCardNameSearchUrl, buildPrintingsUrl, buildLocalizedNameSearchUrl, buildLocalImageFileName, getCardImage, isPaperPrinting, filterOraclePrintings, filterPrintings, replacePrinting, normalizeCardName, getFrontDisplayName, getLookupName, prepareTextImportRows, parseExcelRows, buildExcelRows, buildBackup, parseBackup };
 });

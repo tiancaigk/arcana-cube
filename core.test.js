@@ -1,7 +1,7 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const { CURRENT_DATA_VERSION } = require("./migrations.js");
-const { buildBackup, buildCardNameSearchUrl, buildExcelRows, buildLocalizedNameSearchUrl, buildLocalImageFileName, buildPrintingsUrl, chooseValidFinish, computeStats, filterCards, filterOraclePrintings, filterPrintings, getAvailableFinishes, getBasicLandKind, getCardBucket, getCardImage, getColorBucket, getFrontDisplayName, getFrontTypeLine, getLookupName, getOracleId, getPreferredLocalizedName, getPriceNumber, getUsdPrice, isLandCard, isPaperPrinting, isSupportedBasicLand, mergeArchiveMetadata, needsPriceRefresh, normalizeCardName, normalizeFinish, normalizeLocalizedNames, normalizeScryfallCard, parseBackup, parseDecklist, parseExcelRows, prepareTextImportRows, replacePrinting, sortCards } = require("./core.js");
+const { buildBackup, buildCardNameSearchUrl, buildExcelRows, buildLocalizedNameSearchUrl, buildLocalImageFileName, buildPrintingsUrl, chooseValidFinish, computeStats, filterCards, filterOraclePrintings, filterPrintings, getAvailableFinishes, getBasicLandKind, getCardBucket, getCardImage, getColorBucket, getFrontDisplayName, getFrontTypeLine, getLookupName, getOracleId, getPreferredLocalizedName, getPriceNumber, getUsdPrice, groupBasicLands, isLandCard, isPaperPrinting, isSupportedBasicLand, mergeArchiveMetadata, needsPriceRefresh, normalizeCardName, normalizeFinish, normalizeLocalizedNames, normalizeScryfallCard, parseBackup, parseDecklist, parseExcelRows, prepareTextImportRows, replacePrinting, sortCards } = require("./core.js");
 
 const cards = [
   { name: "Alpha", colors: ["W"], cmc: 1, typeLine: "Creature — Human", set: "TST" },
@@ -101,6 +101,37 @@ test("basic land helpers accept only the five supported exact names", () => {
   assert.equal(getBasicLandKind({ name: "Tundra", typeLine: "Land — Plains Island" }), "");
   assert.equal(isSupportedBasicLand({ name: "Forest" }), true);
   assert.equal(isSupportedBasicLand({ name: "Wastes" }), false);
+});
+
+test("groupBasicLands keeps the fixed basic-land kind order", () => {
+  const groups = groupBasicLands([
+    { name: "Forest", set: "FDN", collectorNumber: "281", releasedAt: "2024-11-15" },
+    { name: "Plains", set: "ONE", collectorNumber: "262", releasedAt: "2023-02-10" },
+    { name: "Island", set: "FDN", collectorNumber: "275", releasedAt: "2024-11-15" }
+  ], "kind");
+  assert.deepEqual(groups.map((group) => group.key), ["Plains", "Island", "Swamp", "Mountain", "Forest"]);
+  assert.deepEqual(groups.map((group) => group.cards.length), [1, 1, 0, 0, 1]);
+});
+
+test("groupBasicLands orders sets newest first and cards by kind then collector number", () => {
+  const groups = groupBasicLands([
+    { name: "Forest", set: "FDN", setName: "Foundations", collectorNumber: "281", releasedAt: "2024-11-15" },
+    { name: "Plains", set: "FDN", setName: "Foundations", collectorNumber: "272", releasedAt: "2024-11-15" },
+    { name: "Plains", set: "FDN", setName: "Foundations", collectorNumber: "271", releasedAt: "2024-11-15" },
+    { name: "Island", set: "ONE", setName: "Phyrexia", collectorNumber: "263", releasedAt: "2023-02-10" }
+  ], "set");
+  assert.deepEqual(groups.map((group) => group.key), ["FDN", "ONE"]);
+  assert.deepEqual(groups[0].cards.map((card) => `${card.name}-${card.collectorNumber}`), ["Plains-271", "Plains-272", "Forest-281"]);
+});
+
+test("groupBasicLands puts undated and unknown sets last", () => {
+  const groups = groupBasicLands([
+    { name: "Island", set: "OLD", setName: "Old Set", collectorNumber: "2" },
+    { name: "Plains", collectorNumber: "1" },
+    { name: "Swamp", set: "NEW", setName: "New Set", collectorNumber: "3", releasedAt: "2025-01-01" }
+  ], "set");
+  assert.deepEqual(groups.map((group) => group.key), ["NEW", "OLD", "UNKNOWN"]);
+  assert.equal(groups[2].label, "未知系列");
 });
 
 test("sortCards orders by WUBRG, then colorless, multicolor, lands, then name", () => {
