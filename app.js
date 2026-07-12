@@ -17,7 +17,7 @@
   const IMAGE_FETCH_TIMEOUT_MS = 25000;
   const IMAGE_CACHE_CHECKPOINT = 100;
   const SHEETJS_URL = "https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js";
-  const { buildBackup, buildExcelRows, buildLocalizedNameSearchUrl, buildLocalImageFileName, chooseValidFinish, computeStats, filterCards, filterPrintings, sortCards, getAvailableFinishes, getBasicLandKind, groupBasicLands, getCardBucket, getCardImage, getFrontColors, getFrontDisplayName, getFrontTypeLine, getOracleId, getPreferredLocalizedName, getPriceNumber, getUsdPrice, isPaperPrinting, isSupportedBasicLand, mergeArchiveMetadata, needsPriceRefresh, normalizeCardName, normalizeFinish, normalizeLocalizedNames, normalizeScryfallCard, parseBackup, parseDecklist, parseExcelRows, prepareTextImportRows, replacePrinting } = window.CubeCore;
+  const { buildBackup, buildExcelRows, buildLocalizedNameSearchUrl, buildLocalImageFileName, chooseValidFinish, computeStats, filterCards, filterPrintings, sortCards, getAvailableFinishes, getBasicLandKind, groupBasicLands, getCardBucket, getCardImage, getFrontColors, getFrontDisplayName, getFrontTypeLine, getOracleId, getPreferredLocalizedName, getPriceNumber, getUsdPrice, isPaperPrinting, isSupportedBasicLand, mergeArchiveMetadata, needsPriceRefresh, normalizeCardName, normalizeFinish, normalizeLocalizedNames, normalizeScryfallCard, parseBackup, parseCollectorNumberRange, parseDecklist, parseExcelRows, prepareTextImportRows, replacePrinting } = window.CubeCore;
   const { cardSeries, dailyPriceChanges, dateKey, emptyPriceHistory, normalizePriceHistory, parsePriceHistoryData, priceTrend, recordDailySnapshot, totalSeries, wrapPriceHistoryData } = window.CubePriceHistory;
   const { appendChange, emptyChangeLog, latestEntries, normalizeChangeLog, parseChangeLogData, wrapChangeLogData } = window.CubeChangeLog;
   const { analyzeWorkspaceHealth } = window.CubeHealth;
@@ -1760,6 +1760,10 @@
       ? "只允许平原、海岛、沼泽、山脉和树林；可按名称或系列与编号定位具体版本。"
       : "按牌名模糊查找，或用系列代码和收藏编号定位一个准确版本。";
     elements.cardNameInput.placeholder = basicMode ? "例如：Plains" : "例如：Lightning Bolt";
+    elements.collectorNumberInput.placeholder = basicMode ? "例如：212-216" : "例如：233";
+    $("#printingLookupHint").innerHTML = basicMode
+      ? '系列代码可在卡牌左下角找到；收藏编号支持单张或纯数字区间，例如 <code>UST</code> <code>212-216</code>。'
+      : '系列代码可在卡牌左下角找到，例如 <code>MH3</code>、<code>NEO</code> 或 <code>LEA</code>。';
     elements.addCardDialog.showModal();
     setTimeout(() => (state.lookupMode === "printing" ? elements.setCodeInput : elements.cardNameInput).focus(), 20);
   }
@@ -1796,6 +1800,63 @@
     toast("已添加", card.name);
   }
 
+  function renderBasicLandRangeResult(summary) {
+    const skipped = summary.items.filter((item) => item.status !== "added");
+    elements.lookupResult.classList.remove("hidden");
+    elements.lookupResult.innerHTML = `<div class="basic-range-result">
+      <div class="basic-range-result-heading"><strong>基本地区间结果</strong><span>${escapeHtml(summary.setCode)} ${escapeHtml(summary.first)}-${escapeHtml(summary.last)}</span></div>
+      <div class="basic-range-counts">
+        <span><strong>${summary.counts.added}</strong> 已添加</span>
+        <span><strong>${summary.counts.missing}</strong> 缺少卡牌</span>
+        <span><strong>${summary.counts.unsupported}</strong> 不是五种基本地</span>
+        <span><strong>${summary.counts.digital}</strong> 仅有电子版</span>
+        <span><strong>${summary.counts.duplicate}</strong> 已经收藏</span>
+      </div>
+      ${skipped.length ? `<div class="basic-range-skips">${skipped.map((item) => `<div><code>${escapeHtml(item.collectorNumber)}</code><span>${escapeHtml(item.reason)}</span></div>`).join("")}</div>` : '<p class="basic-range-complete">区间内的基本地已全部添加。</p>'}
+    </div>`;
+  }
+
+  async function addBasicLandRange(setCode, collectorNumbers) {
+    const targets = collectorNumbers.map((collectorNumber) => ({ setCode, collectorNumber }));
+    const cardsByPrinting = await catalog.lookupPrintingBatch(targets);
+    const existingIds = new Set(state.data.basicLands.map((card) => card.scryfallId).filter(Boolean));
+    const items = [];
+    const counts = { added: 0, missing: 0, unsupported: 0, digital: 0, duplicate: 0 };
+    targets.forEach((target) => {
+      const result = cardsByPrinting.get(printingKey(target.setCode, target.collectorNumber));
+      let status = "added";
+      let reason = "已添加";
+      if (!result) {
+        status = "missing";
+        reason = "没有找到这个系列与编号的卡牌";
+      } else if (!isPaperPrinting(result)) {
+        status = "digital";
+        reason = "这个编号仅有电子版";
+      } else if (!isSupportedBasicLand(result)) {
+        status = "unsupported";
+        reason = "不是平原、海岛、沼泽、山脉或树林";
+      } else if (result.id && existingIds.has(result.id)) {
+        status = "duplicate";
+        reason = "已经收藏了这个基本地版本";
+      } else {
+        const card = normalizeScryfallCard(result);
+        state.data.basicLands.unshift(card);
+        if (card.scryfallId) existingIds.add(card.scryfallId);
+        recordChange("basicLand.added", `添加基本地：${card.name}`, { card: cardLogInfo(card), after: cardLogInfo(card) }, { persist: false });
+      }
+      counts[status] += 1;
+      items.push({ collectorNumber: target.collectorNumber, status, reason });
+    });
+    if (counts.added) {
+      saveState(["cube", "changeLog"]);
+      renderScheduler.request("basics", "stats");
+    }
+    const summary = { setCode: setCode.toUpperCase(), first: collectorNumbers[0], last: collectorNumbers[collectorNumbers.length - 1], counts, items };
+    renderBasicLandRangeResult(summary);
+    toast("批量添加完成", `添加 ${counts.added} 张，跳过 ${items.length - counts.added} 张`);
+    return summary;
+  }
+
   async function handleAddCard(event) {
     event.preventDefault();
     const isNameLookup = state.lookupMode !== "printing";
@@ -1819,6 +1880,12 @@
         renderNameResults();
         return;
       }
+      const parsedCollector = parseCollectorNumberRange(collectorNumber);
+      if (state.addTarget === "basic" && parsedCollector.isRange) {
+        await addBasicLandRange(setCode, parsedCollector.numbers);
+        return;
+      }
+      if (parsedCollector.isRange) throw new Error("普通牌表只能输入单个收藏编号");
       const result = await catalog.lookupPrinting(setCode, collectorNumber);
       const card = normalizeScryfallCard(result);
       if (!addCard(card)) return;

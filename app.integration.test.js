@@ -103,6 +103,19 @@ test("basic lands switch between kind and release-ordered set groups", () => {
   assert.match(styleSource, /\.basic-land-grid \.card-group-grid\s*\{[^}]*grid-template-columns:\s*repeat\(5, minmax\(0, 1fr\)\)/s);
 });
 
+test("basic lands support partial-success collector number range additions", () => {
+  assert.match(appSource, /parseCollectorNumberRange/);
+  assert.match(appSource, /async function addBasicLandRange\(setCode, collectorNumbers\)/);
+  assert.match(appSource, /catalog\.lookupPrintingBatch\(targets\)/);
+  assert.match(appSource, /缺少卡牌|不是五种基本地|仅有电子版|已经收藏/);
+  assert.match(appSource, /saveState\(\["cube", "changeLog"\]\)/);
+  assert.match(appSource, /state\.addTarget === "basic" && parsedCollector\.isRange/);
+  assert.match(appSource, /基本地区间结果/);
+  assert.match(appSource, /普通牌表只能输入单个收藏编号/);
+  assert.match(html, /id="printingLookupHint"/);
+  assert.match(styleSource, /\.basic-range-result/);
+});
+
 test("basic lands contribute to value and export but not draft analytics", () => {
   assert.match(appSource, /function getValuedCards\(\)/);
   assert.match(appSource, /return \[\.\.\.state\.data\.cards, \.\.\.state\.data\.basicLands\]/);
