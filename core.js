@@ -24,6 +24,20 @@
       });
   }
 
+  function parseCollectorNumberRange(value, maxItems = 100) {
+    const input = String(value || "").trim();
+    if (!input) throw new Error("请输入收藏编号");
+    if (!input.includes("-")) return { isRange: false, numbers: [input] };
+    const match = input.match(/^(\d+)\s*-\s*(\d+)$/);
+    if (!match) throw new Error("编号区间两端必须是纯数字，例如 112-115");
+    const start = Number(match[1]);
+    const end = Number(match[2]);
+    if (start > end) throw new Error("起始编号不能大于结束编号");
+    const count = end - start + 1;
+    if (count > maxItems) throw new Error(`一次最多 100 张基本地`);
+    return { isRange: true, numbers: Array.from({ length: count }, (_, index) => String(start + index)) };
+  }
+
   function normalizeOracleId(value) {
     const oracleId = String(value || "").trim().toLocaleLowerCase();
     return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(oracleId) ? oracleId : "";
@@ -566,5 +580,5 @@
     };
   }
 
-  return { COLOR_ORDER, SORT_ORDER, PRICE_TTL_MS, parseDecklist, normalizeFinish, parseFinish, parseJapanPrint, getAvailableFinishes, chooseValidFinish, normalizeLocalizedNames, getPreferredLocalizedName, normalizeScryfallCard, mergeArchiveMetadata, getOracleId, getFrontColors, getFrontTypeLine, getUsdPrice, getPriceNumber, needsPriceRefresh, getColorBucket, getPrimaryType, isLandCard, getBasicLandKind, isSupportedBasicLand, groupBasicLands, getCardBucket, computeStats, filterCards, sortCards, buildCardNameSearchUrl, buildPrintingsUrl, buildLocalizedNameSearchUrl, buildLocalImageFileName, getCardImage, isPaperPrinting, filterOraclePrintings, filterPrintings, replacePrinting, normalizeCardName, getFrontDisplayName, getLookupName, prepareTextImportRows, parseExcelRows, buildExcelRows, buildBackup, parseBackup };
+  return { COLOR_ORDER, SORT_ORDER, PRICE_TTL_MS, parseDecklist, parseCollectorNumberRange, normalizeFinish, parseFinish, parseJapanPrint, getAvailableFinishes, chooseValidFinish, normalizeLocalizedNames, getPreferredLocalizedName, normalizeScryfallCard, mergeArchiveMetadata, getOracleId, getFrontColors, getFrontTypeLine, getUsdPrice, getPriceNumber, needsPriceRefresh, getColorBucket, getPrimaryType, isLandCard, getBasicLandKind, isSupportedBasicLand, groupBasicLands, getCardBucket, computeStats, filterCards, sortCards, buildCardNameSearchUrl, buildPrintingsUrl, buildLocalizedNameSearchUrl, buildLocalImageFileName, getCardImage, isPaperPrinting, filterOraclePrintings, filterPrintings, replacePrinting, normalizeCardName, getFrontDisplayName, getLookupName, prepareTextImportRows, parseExcelRows, buildExcelRows, buildBackup, parseBackup };
 });

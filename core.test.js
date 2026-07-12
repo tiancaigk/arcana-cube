@@ -1,7 +1,7 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const { CURRENT_DATA_VERSION } = require("./migrations.js");
-const { buildBackup, buildCardNameSearchUrl, buildExcelRows, buildLocalizedNameSearchUrl, buildLocalImageFileName, buildPrintingsUrl, chooseValidFinish, computeStats, filterCards, filterOraclePrintings, filterPrintings, getAvailableFinishes, getBasicLandKind, getCardBucket, getCardImage, getColorBucket, getFrontDisplayName, getFrontTypeLine, getLookupName, getOracleId, getPreferredLocalizedName, getPriceNumber, getUsdPrice, groupBasicLands, isLandCard, isPaperPrinting, isSupportedBasicLand, mergeArchiveMetadata, needsPriceRefresh, normalizeCardName, normalizeFinish, normalizeLocalizedNames, normalizeScryfallCard, parseBackup, parseDecklist, parseExcelRows, prepareTextImportRows, replacePrinting, sortCards } = require("./core.js");
+const { buildBackup, buildCardNameSearchUrl, buildExcelRows, buildLocalizedNameSearchUrl, buildLocalImageFileName, buildPrintingsUrl, chooseValidFinish, computeStats, filterCards, filterOraclePrintings, filterPrintings, getAvailableFinishes, getBasicLandKind, getCardBucket, getCardImage, getColorBucket, getFrontDisplayName, getFrontTypeLine, getLookupName, getOracleId, getPreferredLocalizedName, getPriceNumber, getUsdPrice, groupBasicLands, isLandCard, isPaperPrinting, isSupportedBasicLand, mergeArchiveMetadata, needsPriceRefresh, normalizeCardName, normalizeFinish, normalizeLocalizedNames, normalizeScryfallCard, parseBackup, parseCollectorNumberRange, parseDecklist, parseExcelRows, prepareTextImportRows, replacePrinting, sortCards } = require("./core.js");
 
 const cards = [
   { name: "Alpha", colors: ["W"], cmc: 1, typeLine: "Creature — Human", set: "TST" },
@@ -132,6 +132,24 @@ test("groupBasicLands puts undated and unknown sets last", () => {
   ], "set");
   assert.deepEqual(groups.map((group) => group.key), ["NEW", "OLD", "UNKNOWN"]);
   assert.equal(groups[2].label, "未知系列");
+});
+
+test("parseCollectorNumberRange preserves exact single collector numbers", () => {
+  assert.deepEqual(parseCollectorNumberRange("126★"), { isRange: false, numbers: ["126★"] });
+});
+
+test("parseCollectorNumberRange expands inclusive numeric ranges", () => {
+  assert.deepEqual(parseCollectorNumberRange("112 - 115"), { isRange: true, numbers: ["112", "113", "114", "115"] });
+});
+
+test("parseCollectorNumberRange rejects malformed and descending ranges", () => {
+  assert.throws(() => parseCollectorNumberRange("126★-130"), /纯数字/);
+  assert.throws(() => parseCollectorNumberRange("115-112"), /起始编号不能大于结束编号/);
+});
+
+test("parseCollectorNumberRange limits ranges to 100 collector numbers", () => {
+  assert.equal(parseCollectorNumberRange("1-100").numbers.length, 100);
+  assert.throws(() => parseCollectorNumberRange("1-101"), /最多 100 张/);
 });
 
 test("sortCards orders by WUBRG, then colorless, multicolor, lands, then name", () => {
