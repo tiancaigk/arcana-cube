@@ -459,7 +459,6 @@
 
   function groupBasicLands(cards, mode = "kind") {
     const source = Array.isArray(cards) ? cards.filter(isSupportedBasicLand) : [];
-    const kindRank = new Map(BASIC_LAND_ORDER.map((kind, index) => [kind, index]));
     if (mode !== "set") {
       return BASIC_LAND_ORDER.map((kind) => ({
         key: kind,
@@ -484,7 +483,7 @@
     });
     return [...sets.values()].map((group) => ({
       ...group,
-      cards: group.cards.sort((left, right) => (kindRank.get(getBasicLandKind(left)) - kindRank.get(getBasicLandKind(right))) || compareCollectorNumbers(left, right))
+      cards: group.cards.sort(compareCollectorNumbers)
     })).sort((left, right) => {
       if (left.releasedAt && right.releasedAt) return right.releasedAt.localeCompare(left.releasedAt) || left.label.localeCompare(right.label);
       if (left.releasedAt) return -1;

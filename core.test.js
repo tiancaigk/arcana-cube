@@ -113,15 +113,18 @@ test("groupBasicLands keeps the fixed basic-land kind order", () => {
   assert.deepEqual(groups.map((group) => group.cards.length), [1, 1, 0, 0, 1]);
 });
 
-test("groupBasicLands orders sets newest first and cards by kind then collector number", () => {
+test("groupBasicLands orders sets newest first and cards by natural collector number", () => {
   const groups = groupBasicLands([
-    { name: "Forest", set: "FDN", setName: "Foundations", collectorNumber: "281", releasedAt: "2024-11-15" },
-    { name: "Plains", set: "FDN", setName: "Foundations", collectorNumber: "272", releasedAt: "2024-11-15" },
-    { name: "Plains", set: "FDN", setName: "Foundations", collectorNumber: "271", releasedAt: "2024-11-15" },
+    { name: "Plains", set: "FDN", setName: "Foundations", collectorNumber: "10", releasedAt: "2024-11-15" },
+    { name: "Forest", set: "FDN", setName: "Foundations", collectorNumber: "2", releasedAt: "2024-11-15" },
+    { name: "Island", set: "FDN", setName: "Foundations", collectorNumber: "9", releasedAt: "2024-11-15" },
+    { name: "Swamp", set: "FDN", setName: "Foundations", collectorNumber: "126★", releasedAt: "2024-11-15" },
+    { name: "Mountain", set: "FDN", setName: "Foundations", collectorNumber: "126", releasedAt: "2024-11-15" },
+    { name: "Forest", set: "FDN", setName: "Foundations", collectorNumber: "127", releasedAt: "2024-11-15" },
     { name: "Island", set: "ONE", setName: "Phyrexia", collectorNumber: "263", releasedAt: "2023-02-10" }
   ], "set");
   assert.deepEqual(groups.map((group) => group.key), ["FDN", "ONE"]);
-  assert.deepEqual(groups[0].cards.map((card) => `${card.name}-${card.collectorNumber}`), ["Plains-271", "Plains-272", "Forest-281"]);
+  assert.deepEqual(groups[0].cards.map((card) => card.collectorNumber), ["2", "9", "10", "126", "126★", "127"]);
 });
 
 test("groupBasicLands puts undated and unknown sets last", () => {
