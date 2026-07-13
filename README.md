@@ -24,6 +24,12 @@ npm run serve
 
 然后访问 [http://127.0.0.1:4173/](http://127.0.0.1:4173/)。不要直接双击打开 `index.html`；`file:` 页面会受到浏览器 CORS 和文件源安全限制。牌张搜索、价格与首次下载卡图需要联网。
 
+局域网测试时可显式监听所有网卡：
+
+```sh
+npm run serve -- --host 0.0.0.0 --port 4173
+```
+
 ## 文件夹模式
 
 Chromium 浏览器支持 File System Access API。点击“选择 Cube 文件夹”并授权后，运行数据保存在：
@@ -63,6 +69,8 @@ Cube/
 `app.js` 是浏览器组合入口，负责状态变更、DOM 事件和用户反馈；可测试的业务能力拆分在独立 UMD 模块中：
 
 - `core.js`、`migrations.js`：卡牌规则、导入导出和数据迁移
+- `basicLands.js`：五种基本地的编号解析、分组和批量判定
+- `collectionCommands.js`、`viewPreferences.js`：收藏变更副作用和非关键视图偏好
 - `scryfall.js`、`catalog.js`：Scryfall 请求与卡牌目录查询
 - `storage.js`、`workspace.js`、`persistence.js`：浏览器镜像、文件夹读写和按域保存
 - `imageCache.js`：高清原图与 WebP 缩略图缓存

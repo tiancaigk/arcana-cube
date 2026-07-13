@@ -7,7 +7,10 @@
 ```mermaid
 flowchart LR
   UI["DOM 事件与弹窗"] --> APP["app.js 组合与状态变更"]
-  APP --> CORE["core / migrations"]
+  APP --> CORE["core / migrations / basicLands"]
+  APP --> COMMANDS["collectionCommands"]
+  COMMANDS --> PERSIST["persistence"]
+  COMMANDS --> RENDER["renderScheduler"]
   APP --> CATALOG["catalog"]
   CATALOG --> HTTP["scryfall"]
   APP --> SELECTORS["selectors"]
@@ -28,6 +31,9 @@ flowchart LR
 | --- | --- | --- |
 | `migrations.js` | 按版本升级 Cube 数据，拒绝未知未来版本 | UI 和持久化 |
 | `core.js` | 卡牌规范化、正面分类、排序筛选、统计、导入导出 | 网络和 DOM |
+| `basicLands.js` | 五种基本地的编号区间解析、分组排序和批量添加判定 | DOM、网络请求和状态写入 |
+| `collectionCommands.js` | 一次收藏变更的日志、保存、渲染和反馈副作用顺序 | 业务校验和数据变更 |
+| `viewPreferences.js` | 枚举型视图偏好的规范化读写与存储异常降级 | Cube 业务数据 |
 | `priceHistory.js` | 每日快照、趋势、逐卡价格索引 | Scryfall 请求 |
 | `changeLog.js` | 改动记录规范化、限长、文件包装 | 触发业务操作 |
 | `health.js` | 只读分析文件夹缺图、孤立文件和数据完整性 | 修复或删除文件 |
@@ -55,6 +61,19 @@ flowchart LR
 
 文件夹写入失败时，该域保持 dirty，不能把“已写入文件夹”当作成功。重新载入、断开和显式写入文件夹前必须先 `flush()`。不要绕过 `persistence.js` 直接为普通业务变更写 JSON 文件。
 
+名称语言和基本地分组属于非关键视图偏好，由 `viewPreferences.js` 单独写入 `localStorage`。它们不进入 `cube-data.json`；无效旧值或浏览器拒绝存储时使用默认值，不得影响 Cube 数据加载和保存。
+
+## 收藏变更流程
+
+版本替换、Finish、日印、单张/批量添加以及删除撤销遵循同一流程：
+
+1. `app.js` 完成业务校验并修改内存状态。
+2. `collectionCommands.execute()` 记录一条或多条 change log，记录阶段不单独持久化。
+3. 整个用户操作只调用一次 `saveState()`，一次标记所有变化域。
+4. 请求最小渲染范围，最后显示一次反馈；无实际变化的命令不产生任何副作用。
+
+命令执行器不修改状态，也不判断某张牌是否合法。新增收藏操作时应把规则留在领域模块或 `app.js` 的协调函数里，只把统一的操作结果描述交给执行器。
+
 ## 派生数据
 
 `dataRevision` 在 `cube` 变更后递增，`historyRevision` 在价格历史变更后递增。`selectors.js` 用数据引用、修订号和筛选条件作为缓存键：
@@ -68,15 +87,17 @@ flowchart LR
 
 ## 渲染失效
 
-渲染区域固定为 `meta`、`stats`、`nameLanguage`、`cards`、`analytics`、`storage`。常见失效规则如下：
+渲染区域固定为 `meta`、`stats`、`nameLanguage`、`cards`、`basics`、`analytics`、`storage`。常见失效规则如下：
 
 | 操作 | 请求区域 |
 | --- | --- |
 | 搜索、筛选、显示模式 | `cards` |
 | 修改 Cube 名称或简介 | `meta` |
-| 切换名称语言 | `nameLanguage`, `cards` |
+| 切换名称语言 | `nameLanguage`, `cards`, `basics` |
+| 基本地分组 | `basics` |
 | Finish 或日印 | `stats`，并优先替换单卡节点；筛选不再匹配时回退到 `cards` |
 | 添加、删除、换版、导入 | `meta`, `stats`, `cards`, `analytics` |
+| 基本地添加、删除或换版 | `basics`, `stats` |
 | 价格刷新 | `stats`, `cards` |
 | 启动、恢复、文件夹重载 | `renderAll()` |
 
@@ -84,12 +105,23 @@ flowchart LR
 
 ## 扩展规则
 
-1. 卡牌分类、筛选、排序或导入格式变化放在 `core.js`，先补纯函数测试。
+1. 卡牌分类、筛选、排序或导入格式变化放在 `core.js`，先补纯函数测试；五种基本地专属规则放在 `basicLands.js`。
 2. 新的 Scryfall 用例放在 `catalog.js`；只有传输、重试或取消策略才改 `scryfall.js`。
 3. 新的文件夹数据必须先定义独立保存域及兼容格式，再扩展 `workspace.js` 和 `persistence.js`。
 4. 新的派生视图放入 `selectors.js`，用明确修订号失效，不在卡片模板循环中重复扫描全量数据。
-5. 新 UI 操作在状态变更后请求最小渲染区域；只有跨区域载入或恢复才调用 `renderAll()`。
-6. 真实 `cube-data.json`、价格历史、改动记录和 `images/` 始终保持 Git 忽略。
+5. 新的收藏修改应通过 `collectionCommands.js` 汇总副作用，并请求最小渲染区域；只有跨区域载入或恢复才调用 `renderAll()`。
+6. 仅影响显示的枚举选项放入 `viewPreferences.js`；会随 Cube 文件夹迁移的数据必须进入正式数据域并通过 migration 演进。
+7. 真实 `cube-data.json`、价格历史、改动记录和 `images/` 始终保持 Git 忽略。
+
+## 本地服务
+
+`scripts/local-server.js` 同时提供静态文件和 Scryfall 图片代理。默认只监听 `127.0.0.1:4173`；局域网测试可显式运行：
+
+```sh
+npm run serve -- --host 0.0.0.0 --port 4173
+```
+
+`--host` 只改变监听地址，不改变浏览器文件夹授权模型。日常单机使用保留默认回环地址，只有确实需要局域网访问时才开放监听。
 
 ## 验证工作流
 
