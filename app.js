@@ -1326,10 +1326,10 @@
     const englishName = getFrontDisplayName(card.name);
     const localizedName = getPreferredLocalizedName(card);
     const secondaryName = displayName === englishName ? localizedName : englishName;
-    elements.imagePreview.innerHTML = `<div class="card-archive-preview">
+    elements.imagePreview.innerHTML = `<div class="card-archive-preview" data-finish="${finish}">
       <button type="button" class="close-button card-archive-close" data-close-image-preview aria-label="关闭卡图预览">×</button>
       <div class="card-archive-images${images.length > 1 ? " two-sided" : ""}">
-      ${images.map((item) => `<img src="${escapeHtml(item.src)}" alt="${escapeHtml(item.alt)}" />`).join("")}
+      ${images.map((item) => `<span class="card-archive-image-frame"><img src="${escapeHtml(item.src)}" alt="${escapeHtml(item.alt)}" /></span>`).join("")}
       </div>
       <section class="card-archive-details">
         <header class="card-archive-header">

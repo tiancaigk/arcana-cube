@@ -50,8 +50,9 @@ test("printing selector filters Foil-capable versions and forces Foil on selecti
 });
 
 test("image preview renders and enriches a read-only card archive", () => {
-  assert.match(appSource, /class="card-archive-preview"/);
+  assert.match(appSource, /class="card-archive-preview" data-finish="\$\{finish\}"/);
   assert.match(appSource, /class="card-archive-images/);
+  assert.match(appSource, /class="card-archive-image-frame"/);
   assert.match(appSource, /class="card-archive-details"/);
   assert.match(appSource, /规则文字/);
   assert.match(appSource, /系列与编号/);
@@ -61,6 +62,11 @@ test("image preview renders and enriches a read-only card archive", () => {
   assert.match(styleSource, /\.card-archive-preview\s*\{[^}]*grid-template-columns:/s);
   assert.match(styleSource, /\.card-archive-details\s*\{[^}]*overflow-y:\s*auto/s);
   assert.match(styleSource, /\.card-archive-images\.two-sided/);
+  assert.match(styleSource, /\.card-archive-preview\[data-finish="foil"\] \.card-archive-image-frame::before/);
+  assert.match(styleSource, /\.card-archive-preview\[data-finish="foil"\] \.card-archive-image-frame::after/);
+  assert.match(styleSource, /@keyframes archiveFoilSweep/);
+  assert.match(styleSource, /@keyframes archiveFoilAura/);
+  assert.match(styleSource, /prefers-reduced-motion:[^)]+\)[\s\S]*\.card-archive-preview\[data-finish="foil"\] \.card-archive-image-frame::after/);
   assert.match(appSource, /data-close-image-preview/);
   assert.match(appSource, /aria-label="关闭卡图预览"/);
   assert.match(appSource, /closest\("\[data-close-image-preview\]"\)/);
