@@ -21,11 +21,12 @@ test("application shell loads dependencies before app.js", () => {
   const catalog = html.indexOf('src="catalog.js"');
   const basicLands = html.indexOf('src="basicLands.js"');
   const collectionCommands = html.indexOf('src="collectionCommands.js"');
+  const viewPreferences = html.indexOf('src="viewPreferences.js"');
   const imageCache = html.indexOf('src="imageCache.js"');
   const selectors = html.indexOf('src="selectors.js"');
   const renderScheduler = html.indexOf('src="renderScheduler.js"');
   const app = html.indexOf('src="app.js"');
-  assert.ok(migrations >= 0 && migrations < core && core < priceHistory && priceHistory < changeLog && changeLog < health && health < storage && storage < workspace && workspace < persistence && persistence < scryfall && scryfall < catalog && catalog < basicLands && basicLands < collectionCommands && collectionCommands < imageCache && imageCache < selectors && selectors < renderScheduler && renderScheduler < app);
+  assert.ok(migrations >= 0 && migrations < core && core < priceHistory && priceHistory < changeLog && changeLog < health && health < storage && storage < workspace && workspace < persistence && persistence < scryfall && scryfall < catalog && catalog < basicLands && basicLands < collectionCommands && collectionCommands < viewPreferences && viewPreferences < imageCache && imageCache < selectors && selectors < renderScheduler && renderScheduler < app);
 });
 
 test("card image failures use one delegated listener", () => {
@@ -108,7 +109,7 @@ test("basic lands switch between kind and release-ordered set groups", () => {
   assert.match(appSource, /BASIC_LAND_GROUPING_KEY\s*=\s*"arcana-cube-basic-land-grouping"/);
   assert.match(appSource, /basicLandGrouping:\s*loadBasicLandGrouping\(\)/);
   assert.match(appSource, /groupBasicLands\(cards, state\.basicLandGrouping\)/);
-  assert.match(appSource, /localStorage\.setItem\(BASIC_LAND_GROUPING_KEY, mode\)/);
+  assert.match(appSource, /viewPreferences\.set\("basicLandGrouping", mode\)/);
   assert.match(styleSource, /\.basic-land-grid \.card-group-grid\s*\{[^}]*grid-template-columns:\s*repeat\(5, minmax\(0, 1fr\)\)/s);
 });
 

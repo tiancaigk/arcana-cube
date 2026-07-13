@@ -27,11 +27,16 @@
   const { createCatalog, printingKey } = window.CubeCatalog;
   const { BASIC_LAND_LABELS, BASIC_LAND_ORDER, classifyBasicLandBatch, groupBasicLands, parseCollectorNumberRange } = window.CubeBasicLands;
   const { createCollectionCommandExecutor } = window.CubeCollectionCommands;
+  const { createViewPreferenceStore } = window.CubeViewPreferences;
   const { createImageCache, isRemoteImageUrl, preferPngImageUrl } = window.CubeImageCache;
   const { createCubeSelectors } = window.CubeSelectors;
   const { createRenderScheduler } = window.CubeRenderScheduler;
   const cubeStorage = window.CubeStorage.createStorage(localStorage, STORAGE_KEY);
   const cubeHandleStore = window.CubeStorage.createHandleStore(window.indexedDB);
+  const viewPreferences = createViewPreferenceStore(localStorage, {
+    nameLanguage: { key: NAME_LANGUAGE_KEY, allowedValues: ["en", "zh"], fallback: "en" },
+    basicLandGrouping: { key: BASIC_LAND_GROUPING_KEY, allowedValues: ["kind", "set"], fallback: "kind" }
+  });
   const workspace = createWorkspaceService({
     cubeFileName: CUBE_FILE_NAME,
     priceHistoryFileName: PRICE_HISTORY_FILE_NAME,
@@ -236,19 +241,7 @@
   let searchRenderFrame = 0;
 
   function loadNameLanguage() {
-    try {
-      return localStorage.getItem(NAME_LANGUAGE_KEY) === "zh" ? "zh" : "en";
-    } catch (error) {
-      return "en";
-    }
-  }
-
-  function saveNameLanguage(language) {
-    try {
-      localStorage.setItem(NAME_LANGUAGE_KEY, language === "zh" ? "zh" : "en");
-    } catch (error) {
-      // Display preference is optional; the Cube data itself still works.
-    }
+    return viewPreferences.get("nameLanguage");
   }
 
   function isLocalImagePath(value) {
@@ -818,7 +811,7 @@
     const nextLanguage = language === "zh" ? "zh" : "en";
     if (state.nameLanguage === nextLanguage) return;
     state.nameLanguage = nextLanguage;
-    saveNameLanguage(nextLanguage);
+    viewPreferences.set("nameLanguage", nextLanguage);
     renderScheduler.request("nameLanguage", "cards", "basics");
   }
 
@@ -1260,21 +1253,13 @@
   }
 
   function loadBasicLandGrouping() {
-    try {
-      return localStorage.getItem(BASIC_LAND_GROUPING_KEY) === "set" ? "set" : "kind";
-    } catch (_error) {
-      return "kind";
-    }
+    return viewPreferences.get("basicLandGrouping");
   }
 
   function setBasicLandGrouping(mode) {
     if (mode !== "kind" && mode !== "set") return;
     state.basicLandGrouping = mode;
-    try {
-      localStorage.setItem(BASIC_LAND_GROUPING_KEY, mode);
-    } catch (_error) {
-      // The view still switches when browser preference storage is unavailable.
-    }
+    viewPreferences.set("basicLandGrouping", mode);
     renderScheduler.request("basics");
   }
 
