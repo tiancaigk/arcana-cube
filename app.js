@@ -17,7 +17,7 @@
   const IMAGE_FETCH_TIMEOUT_MS = 25000;
   const IMAGE_CACHE_CHECKPOINT = 100;
   const SHEETJS_URL = "https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js";
-  const { buildBackup, buildExcelRows, buildLocalizedNameSearchUrl, buildLocalImageFileName, chooseValidFinish, computeStats, filterCards, filterPrintings, sortCards, getAvailableFinishes, getBasicLandKind, groupBasicLands, getCardBucket, getCardImage, getFrontColors, getFrontDisplayName, getFrontTypeLine, getOracleId, getPreferredLocalizedName, getPriceNumber, getUsdPrice, isPaperPrinting, isSupportedBasicLand, mergeArchiveMetadata, needsPriceRefresh, normalizeCardName, normalizeFinish, normalizeLocalizedNames, normalizeScryfallCard, parseBackup, parseCollectorNumberRange, parseDecklist, parseExcelRows, prepareTextImportRows, replacePrinting } = window.CubeCore;
+  const { buildBackup, buildExcelRows, buildLocalizedNameSearchUrl, buildLocalImageFileName, chooseValidFinish, computeStats, filterCards, filterPrintings, sortCards, getAvailableFinishes, getBasicLandKind, getCardBucket, getCardImage, getFrontColors, getFrontDisplayName, getFrontTypeLine, getOracleId, getPreferredLocalizedName, getPriceNumber, getUsdPrice, isPaperPrinting, isSupportedBasicLand, mergeArchiveMetadata, needsPriceRefresh, normalizeCardName, normalizeFinish, normalizeLocalizedNames, normalizeScryfallCard, parseBackup, parseDecklist, parseExcelRows, prepareTextImportRows, replacePrinting } = window.CubeCore;
   const { cardSeries, dailyPriceChanges, dateKey, emptyPriceHistory, normalizePriceHistory, parsePriceHistoryData, priceTrend, recordDailySnapshot, totalSeries, wrapPriceHistoryData } = window.CubePriceHistory;
   const { appendChange, emptyChangeLog, latestEntries, normalizeChangeLog, parseChangeLogData, wrapChangeLogData } = window.CubeChangeLog;
   const { analyzeWorkspaceHealth } = window.CubeHealth;
@@ -25,6 +25,7 @@
   const { createPersistenceCoordinator } = window.CubePersistence;
   const { requestJson: scryfallRequest } = window.ScryfallClient;
   const { createCatalog, printingKey } = window.CubeCatalog;
+  const { BASIC_LAND_LABELS, BASIC_LAND_ORDER, classifyBasicLandBatch, groupBasicLands, parseCollectorNumberRange } = window.CubeBasicLands;
   const { createImageCache, isRemoteImageUrl, preferPngImageUrl } = window.CubeImageCache;
   const { createCubeSelectors } = window.CubeSelectors;
   const { createRenderScheduler } = window.CubeRenderScheduler;
@@ -1224,9 +1225,6 @@
     return ({ W: "白色", U: "蓝色", B: "黑色", R: "红色", G: "绿色", C: "无色", M: "多色", L: "地牌" })[key] || "其他";
   }
 
-  const BASIC_LAND_ORDER = ["Plains", "Island", "Swamp", "Mountain", "Forest"];
-  const BASIC_LAND_LABELS = { Plains: "平原", Island: "海岛", Swamp: "沼泽", Mountain: "山脉", Forest: "树林" };
-
   function findCardLocation(cardId) {
     const draftIndex = state.data.cards.findIndex((card) => card.id === cardId);
     if (draftIndex >= 0) return { cards: state.data.cards, index: draftIndex, pool: "draft" };
@@ -1819,34 +1817,13 @@
   async function addBasicLandRange(setCode, collectorNumbers) {
     const targets = collectorNumbers.map((collectorNumber) => ({ setCode, collectorNumber }));
     const cardsByPrinting = await catalog.lookupPrintingBatch(targets);
-    const existingIds = new Set(state.data.basicLands.map((card) => card.scryfallId).filter(Boolean));
-    const items = [];
-    const counts = { added: 0, missing: 0, unsupported: 0, digital: 0, duplicate: 0 };
-    targets.forEach((target) => {
-      const result = cardsByPrinting.get(printingKey(target.setCode, target.collectorNumber));
-      let status = "added";
-      let reason = "已添加";
-      if (!result) {
-        status = "missing";
-        reason = "没有找到这个系列与编号的卡牌";
-      } else if (!isPaperPrinting(result)) {
-        status = "digital";
-        reason = "这个编号仅有电子版";
-      } else if (!isSupportedBasicLand(result)) {
-        status = "unsupported";
-        reason = "不是平原、海岛、沼泽、山脉或树林";
-      } else if (result.id && existingIds.has(result.id)) {
-        status = "duplicate";
-        reason = "已经收藏了这个基本地版本";
-      } else {
-        const card = normalizeScryfallCard(result);
-        state.data.basicLands.unshift(card);
-        if (card.scryfallId) existingIds.add(card.scryfallId);
-        recordChange("basicLand.added", `添加基本地：${card.name}`, { card: cardLogInfo(card), after: cardLogInfo(card) }, { persist: false });
-      }
-      counts[status] += 1;
-      items.push({ collectorNumber: target.collectorNumber, status, reason });
+    const classified = classifyBasicLandBatch(targets, cardsByPrinting, state.data.basicLands);
+    classified.accepted.forEach((result) => {
+      const card = normalizeScryfallCard(result);
+      state.data.basicLands.unshift(card);
+      recordChange("basicLand.added", `添加基本地：${card.name}`, { card: cardLogInfo(card), after: cardLogInfo(card) }, { persist: false });
     });
+    const { counts, items } = classified;
     if (counts.added) {
       saveState(["cube", "changeLog"]);
       renderScheduler.request("basics", "stats");

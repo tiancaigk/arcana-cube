@@ -5,6 +5,7 @@ const path = require("node:path");
 
 const html = fs.readFileSync(path.join(__dirname, "index.html"), "utf8");
 const appSource = fs.readFileSync(path.join(__dirname, "app.js"), "utf8");
+const basicLandsSource = fs.readFileSync(path.join(__dirname, "basicLands.js"), "utf8");
 const styleSource = fs.readFileSync(path.join(__dirname, "styles.css"), "utf8");
 
 test("application shell loads dependencies before app.js", () => {
@@ -18,11 +19,12 @@ test("application shell loads dependencies before app.js", () => {
   const persistence = html.indexOf('src="persistence.js"');
   const scryfall = html.indexOf('src="scryfall.js"');
   const catalog = html.indexOf('src="catalog.js"');
+  const basicLands = html.indexOf('src="basicLands.js"');
   const imageCache = html.indexOf('src="imageCache.js"');
   const selectors = html.indexOf('src="selectors.js"');
   const renderScheduler = html.indexOf('src="renderScheduler.js"');
   const app = html.indexOf('src="app.js"');
-  assert.ok(migrations >= 0 && migrations < core && core < priceHistory && priceHistory < changeLog && changeLog < health && health < storage && storage < workspace && workspace < persistence && persistence < scryfall && scryfall < catalog && catalog < imageCache && imageCache < selectors && selectors < renderScheduler && renderScheduler < app);
+  assert.ok(migrations >= 0 && migrations < core && core < priceHistory && priceHistory < changeLog && changeLog < health && health < storage && storage < workspace && workspace < persistence && persistence < scryfall && scryfall < catalog && catalog < basicLands && basicLands < imageCache && imageCache < selectors && selectors < renderScheduler && renderScheduler < app);
 });
 
 test("card image failures use one delegated listener", () => {
@@ -91,7 +93,7 @@ test("basic lands use a dedicated five-group collection view", () => {
   assert.match(html, /id="basicLandSummary"/);
   assert.match(appSource, /basicLands:\s*\[\]/);
   assert.match(appSource, /function renderBasicLands\(\)/);
-  assert.match(appSource, /\["Plains", "Island", "Swamp", "Mountain", "Forest"\]/);
+  assert.match(basicLandsSource, /\["Plains", "Island", "Swamp", "Mountain", "Forest"\]/);
   assert.match(appSource, /function findCardLocation\(cardId\)/);
   assert.match(appSource, /isSupportedBasicLand\(card\)/);
   assert.match(appSource, /已经收藏了这个基本地版本/);
@@ -111,6 +113,7 @@ test("basic lands switch between kind and release-ordered set groups", () => {
 
 test("basic lands support partial-success collector number range additions", () => {
   assert.match(appSource, /parseCollectorNumberRange/);
+  assert.match(appSource, /classifyBasicLandBatch\(targets, cardsByPrinting, state\.data\.basicLands\)/);
   assert.match(appSource, /async function addBasicLandRange\(setCode, collectorNumbers\)/);
   assert.match(appSource, /catalog\.lookupPrintingBatch\(targets\)/);
   assert.match(appSource, /缺少卡牌|不是五种基本地|仅有电子版|已经收藏/);
