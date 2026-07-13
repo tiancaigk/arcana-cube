@@ -5,6 +5,6 @@
   "scripts": {
     "serve": "node scripts/local-server.js",
     "test": "node --test *.test.js",
-    "check": "node --check migrations.js && node --check core.js && node --check basicLands.js && node --check priceHistory.js && node --check changeLog.js && node --check health.js && node --check storage.js && node --check workspace.js && node --check persistence.js && node --check scryfall.js && node --check catalog.js && node --check imageCache.js && node --check selectors.js && node --check renderScheduler.js && node --check app.js && node --check scripts/local-server.js"
+    "check": "node --check migrations.js && node --check core.js && node --check basicLands.js && node --check collectionCommands.js && node --check priceHistory.js && node --check changeLog.js && node --check health.js && node --check storage.js && node --check workspace.js && node --check persistence.js && node --check scryfall.js && node --check catalog.js && node --check imageCache.js && node --check selectors.js && node --check renderScheduler.js && node --check app.js && node --check scripts/local-server.js"
   }
 }

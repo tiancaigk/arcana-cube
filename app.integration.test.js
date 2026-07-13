@@ -20,11 +20,12 @@ test("application shell loads dependencies before app.js", () => {
   const scryfall = html.indexOf('src="scryfall.js"');
   const catalog = html.indexOf('src="catalog.js"');
   const basicLands = html.indexOf('src="basicLands.js"');
+  const collectionCommands = html.indexOf('src="collectionCommands.js"');
   const imageCache = html.indexOf('src="imageCache.js"');
   const selectors = html.indexOf('src="selectors.js"');
   const renderScheduler = html.indexOf('src="renderScheduler.js"');
   const app = html.indexOf('src="app.js"');
-  assert.ok(migrations >= 0 && migrations < core && core < priceHistory && priceHistory < changeLog && changeLog < health && health < storage && storage < workspace && workspace < persistence && persistence < scryfall && scryfall < catalog && catalog < basicLands && basicLands < imageCache && imageCache < selectors && selectors < renderScheduler && renderScheduler < app);
+  assert.ok(migrations >= 0 && migrations < core && core < priceHistory && priceHistory < changeLog && changeLog < health && health < storage && storage < workspace && workspace < persistence && persistence < scryfall && scryfall < catalog && catalog < basicLands && basicLands < collectionCommands && collectionCommands < imageCache && imageCache < selectors && selectors < renderScheduler && renderScheduler < app);
 });
 
 test("card image failures use one delegated listener", () => {
@@ -117,7 +118,7 @@ test("basic lands support partial-success collector number range additions", () 
   assert.match(appSource, /async function addBasicLandRange\(setCode, collectorNumbers\)/);
   assert.match(appSource, /catalog\.lookupPrintingBatch\(targets\)/);
   assert.match(appSource, /缺少卡牌|不是五种基本地|仅有电子版|已经收藏/);
-  assert.match(appSource, /saveState\(\["cube", "changeLog"\]\)/);
+  assert.match(appSource, /collectionCommands\.execute\(\{ changed: counts\.added > 0, changes, render:/);
   assert.match(appSource, /state\.addTarget === "basic" && parsedCollector\.isRange/);
   assert.match(appSource, /基本地区间结果/);
   assert.match(appSource, /普通牌表只能输入单个收藏编号/);

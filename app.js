@@ -26,6 +26,7 @@
   const { requestJson: scryfallRequest } = window.ScryfallClient;
   const { createCatalog, printingKey } = window.CubeCatalog;
   const { BASIC_LAND_LABELS, BASIC_LAND_ORDER, classifyBasicLandBatch, groupBasicLands, parseCollectorNumberRange } = window.CubeBasicLands;
+  const { createCollectionCommandExecutor } = window.CubeCollectionCommands;
   const { createImageCache, isRemoteImageUrl, preferPngImageUrl } = window.CubeImageCache;
   const { createCubeSelectors } = window.CubeSelectors;
   const { createRenderScheduler } = window.CubeRenderScheduler;
@@ -226,6 +227,12 @@
     },
     storage: renderStorageStatus
   }, { order: ["meta", "stats", "nameLanguage", "cards", "basics", "analytics", "storage"] });
+  const collectionCommands = createCollectionCommandExecutor({
+    recordChange,
+    saveState,
+    requestRender: requestCollectionCommandRender,
+    toast
+  });
   let searchRenderFrame = 0;
 
   function loadNameLanguage() {
@@ -1242,6 +1249,12 @@
     else requestDataRender();
   }
 
+  function requestCollectionCommandRender(render) {
+    if (render.pool) requestPoolRender(render.pool);
+    else if (render.cardId) requestCardMutationRender(render.cardId);
+    else if (Array.isArray(render.scopes)) renderScheduler.request(...render.scopes);
+  }
+
   function getValuedCards() {
     return [...state.data.cards, ...state.data.basicLands];
   }
@@ -1641,15 +1654,21 @@
     const current = location.cards[location.index];
     const next = replacePrinting(current, printing, state.printingFinishFilter === "foil" ? "foil" : current.finish);
     location.cards[location.index] = next;
-    recordChange("card.versionChanged", `${current.name} 版本从 ${current.set} · ${current.collectorNumber} 改为 ${next.set} · ${next.collectorNumber}`, {
-      card: cardLogInfo(next),
-      before: { set: current.set, collectorNumber: current.collectorNumber, finish: current.finish },
-      after: { set: next.set, collectorNumber: next.collectorNumber, finish: next.finish }
-    }, { persist: false });
-    saveState(["cube", "changeLog"]);
-    requestPoolRender(location.pool);
+    collectionCommands.execute({
+      changed: true,
+      changes: [{
+        type: "card.versionChanged",
+        summary: `${current.name} 版本从 ${current.set} · ${current.collectorNumber} 改为 ${next.set} · ${next.collectorNumber}`,
+        details: {
+          card: cardLogInfo(next),
+          before: { set: current.set, collectorNumber: current.collectorNumber, finish: current.finish },
+          after: { set: next.set, collectorNumber: next.collectorNumber, finish: next.finish }
+        }
+      }],
+      render: { pool: location.pool },
+      feedback: { title: "版本已更新", message: `${printing.set.toUpperCase()} · ${printing.collector_number}` }
+    });
     elements.printingDialog.close();
-    toast("版本已更新", `${printing.set.toUpperCase()} · ${printing.collector_number}`);
   }
 
   function toggleCardFinish(cardId) {
@@ -1664,18 +1683,19 @@
     const before = normalizeFinish(current.finish);
     current.finish = normalizeFinish(current.finish) === "foil" ? "nonfoil" : "foil";
     location.cards[location.index] = current;
-    recordChange("card.finishChanged", `${current.name} 从 ${before === "foil" ? "Foil" : "Non-Foil"} 切换为 ${current.finish === "foil" ? "Foil" : "Non-Foil"}`, {
-      card: cardLogInfo(current),
-      before: { finish: before },
-      after: { finish: current.finish }
-    }, { persist: false });
-    saveState(["cube", "changeLog"]);
-    if (location.pool === "basic") renderScheduler.request("basics", "stats");
-    else requestCardMutationRender(cardId);
+    collectionCommands.execute({
+      changed: true,
+      changes: [{
+        type: "card.finishChanged",
+        summary: `${current.name} 从 ${before === "foil" ? "Foil" : "Non-Foil"} 切换为 ${current.finish === "foil" ? "Foil" : "Non-Foil"}`,
+        details: { card: cardLogInfo(current), before: { finish: before }, after: { finish: current.finish } }
+      }],
+      render: location.pool === "basic" ? { pool: "basic" } : { cardId },
+      feedback: { title: "Finish 已更新", message: current.finish === "foil" ? "Foil" : "Non-Foil" }
+    });
     if (state.editingCardId === cardId && elements.printingDialog.open) {
       renderPrintingFinishFilter();
     }
-    toast("Finish 已更新", current.finish === "foil" ? "Foil" : "Non-Foil");
   }
 
   function toggleJapanPrint(cardId) {
@@ -1685,15 +1705,16 @@
     const before = current.JapanPrint === true;
     current.JapanPrint = current.JapanPrint !== true;
     location.cards[location.index] = current;
-    recordChange("card.japanPrintChanged", `${current.name} ${current.JapanPrint ? "标记为日印" : "取消日印标记"}`, {
-      card: cardLogInfo(current),
-      before: { JapanPrint: before },
-      after: { JapanPrint: current.JapanPrint === true }
-    }, { persist: false });
-    saveState(["cube", "changeLog"]);
-    if (location.pool === "basic") renderScheduler.request("basics");
-    else requestCardMutationRender(cardId);
-    toast("日印状态已更新", current.JapanPrint ? "已标记为日印" : "已标记为非日印");
+    collectionCommands.execute({
+      changed: true,
+      changes: [{
+        type: "card.japanPrintChanged",
+        summary: `${current.name} ${current.JapanPrint ? "标记为日印" : "取消日印标记"}`,
+        details: { card: cardLogInfo(current), before: { JapanPrint: before }, after: { JapanPrint: current.JapanPrint === true } }
+      }],
+      render: location.pool === "basic" ? { scopes: ["basics"] } : { cardId },
+      feedback: { title: "日印状态已更新", message: current.JapanPrint ? "已标记为日印" : "已标记为非日印" }
+    });
   }
 
   function clearNameResults() {
@@ -1737,16 +1758,20 @@
         return false;
       }
       state.data.basicLands.unshift(card);
-      recordChange("basicLand.added", `添加基本地：${card.name}`, { card: cardLogInfo(card), after: cardLogInfo(card) }, { persist: false });
-      saveState(["cube", "changeLog"]);
-      renderScheduler.request("basics", "stats");
+      collectionCommands.execute({
+        changed: true,
+        changes: [{ type: "basicLand.added", summary: `添加基本地：${card.name}`, details: { card: cardLogInfo(card), after: cardLogInfo(card) } }],
+        render: { scopes: ["basics", "stats"] }
+      });
       return true;
     }
     state.data.cards.unshift(card);
     state.data.cards = sortCards(state.data.cards);
-    recordChange("card.added", `添加卡牌：${card.name}`, { card: cardLogInfo(card), after: cardLogInfo(card) }, { persist: false });
-    saveState(["cube", "changeLog"]);
-    requestDataRender();
+    collectionCommands.execute({
+      changed: true,
+      changes: [{ type: "card.added", summary: `添加卡牌：${card.name}`, details: { card: cardLogInfo(card), after: cardLogInfo(card) } }],
+      render: { pool: "draft" }
+    });
     return true;
   }
 
@@ -1818,16 +1843,13 @@
     const targets = collectorNumbers.map((collectorNumber) => ({ setCode, collectorNumber }));
     const cardsByPrinting = await catalog.lookupPrintingBatch(targets);
     const classified = classifyBasicLandBatch(targets, cardsByPrinting, state.data.basicLands);
-    classified.accepted.forEach((result) => {
+    const changes = classified.accepted.map((result) => {
       const card = normalizeScryfallCard(result);
       state.data.basicLands.unshift(card);
-      recordChange("basicLand.added", `添加基本地：${card.name}`, { card: cardLogInfo(card), after: cardLogInfo(card) }, { persist: false });
+      return { type: "basicLand.added", summary: `添加基本地：${card.name}`, details: { card: cardLogInfo(card), after: cardLogInfo(card) } };
     });
     const { counts, items } = classified;
-    if (counts.added) {
-      saveState(["cube", "changeLog"]);
-      renderScheduler.request("basics", "stats");
-    }
+    collectionCommands.execute({ changed: counts.added > 0, changes, render: { scopes: ["basics", "stats"] } });
     const summary = { setCode: setCode.toUpperCase(), first: collectorNumbers[0], last: collectorNumbers[collectorNumbers.length - 1], counts, items };
     renderBasicLandRangeResult(summary);
     toast("批量添加完成", `添加 ${counts.added} 张，跳过 ${items.length - counts.added} 张`);
@@ -2242,19 +2264,27 @@
     const location = findCardLocation(id);
     if (!location) return;
     const [removed] = location.cards.splice(location.index, 1);
-    recordChange("card.removed", `移除卡牌：${removed.name}`, { card: cardLogInfo(removed), before: cardLogInfo(removed) }, { persist: false });
-    saveState(["cube", "changeLog"]);
-    requestPoolRender(location.pool);
-    toast("已移除", removed.name, false, {
-      label: "撤销",
-      run: () => {
-        if (location.cards.some((card) => card.id === removed.id)) return;
-        location.cards.push(removed);
-        if (location.pool === "draft") state.data.cards = sortCards(state.data.cards);
-        recordChange("card.removeUndone", `撤销移除：${removed.name}`, { card: cardLogInfo(removed), after: cardLogInfo(removed) }, { persist: false });
-        saveState(["cube", "changeLog"]);
-        requestPoolRender(location.pool);
-        toast("已恢复", removed.name);
+    collectionCommands.execute({
+      changed: true,
+      changes: [{ type: "card.removed", summary: `移除卡牌：${removed.name}`, details: { card: cardLogInfo(removed), before: cardLogInfo(removed) } }],
+      render: { pool: location.pool },
+      feedback: {
+        title: "已移除",
+        message: removed.name,
+        action: {
+          label: "撤销",
+          run: () => {
+            if (location.cards.some((card) => card.id === removed.id)) return;
+            location.cards.push(removed);
+            if (location.pool === "draft") state.data.cards = sortCards(state.data.cards);
+            collectionCommands.execute({
+              changed: true,
+              changes: [{ type: "card.removeUndone", summary: `撤销移除：${removed.name}`, details: { card: cardLogInfo(removed), after: cardLogInfo(removed) } }],
+              render: { pool: location.pool },
+              feedback: { title: "已恢复", message: removed.name }
+            });
+          }
+        }
       }
     });
   }
