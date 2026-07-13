@@ -83,6 +83,10 @@ Cube/
 
 Git 跟踪应用代码、测试、文档和空示例数据。真实牌表、价格历史、改动记录、卡图与本地审计输出已在 `.gitignore` 中排除，避免把个人运行数据误提交到代码历史。
 
+## 原型备用区
+
+[`prototypes/foil-effects-22/`](./prototypes/foil-effects-22/) 保存使用 `FCA #4 Counterspell` 对比 22 种 Foil 材质的独立研究页面。该目录包含自己的来源与许可证说明，不会被正式应用加载。
+
 ## 验证
 
 ```sh
