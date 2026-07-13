@@ -7,8 +7,6 @@ const { Readable } = require("node:stream");
 const { URL } = require("node:url");
 
 const rootDir = path.resolve(__dirname, "..");
-const host = "127.0.0.1";
-const port = Number(process.env.PORT || readArg("--port") || 4173);
 
 const mimeTypes = new Map([
   [".css", "text/css; charset=utf-8"],
@@ -22,9 +20,18 @@ const mimeTypes = new Map([
   [".webp", "image/webp"]
 ]);
 
-function readArg(name) {
-  const index = process.argv.indexOf(name);
-  return index >= 0 ? process.argv[index + 1] : "";
+function readArg(argv, name) {
+  const index = argv.indexOf(name);
+  return index >= 0 ? argv[index + 1] : "";
+}
+
+function readServerOptions(argv = process.argv.slice(2), env = process.env) {
+  const host = String(readArg(argv, "--host") || env.HOST || "127.0.0.1").trim();
+  const rawPort = env.PORT || readArg(argv, "--port") || "4173";
+  const port = Number(rawPort);
+  if (!host) throw new Error("服务器地址不能为空");
+  if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error("服务器端口必须是 1 到 65535 的整数");
+  return { host, port };
 }
 
 function send(res, status, headers = {}, body = "") {
@@ -118,25 +125,35 @@ function serveStatic(req, res, requestUrl) {
   fs.createReadStream(filePath).pipe(res);
 }
 
-const server = http.createServer(async (req, res) => {
-  try {
-    const requestUrl = new URL(req.url || "/", `http://${req.headers.host || `${host}:${port}`}`);
-    if (requestUrl.pathname === "/image-proxy") {
-      if (req.method !== "GET" && req.method !== "HEAD") {
-        send(res, 405, { "Allow": "GET, HEAD", "Content-Type": "text/plain; charset=utf-8" }, "Method Not Allowed");
+function createLocalServer(options = {}) {
+  const host = options.host || "127.0.0.1";
+  const port = options.port || 4173;
+  return http.createServer(async (req, res) => {
+    try {
+      const requestUrl = new URL(req.url || "/", `http://${req.headers.host || `${host}:${port}`}`);
+      if (requestUrl.pathname === "/image-proxy") {
+        if (req.method !== "GET" && req.method !== "HEAD") {
+          send(res, 405, { "Allow": "GET, HEAD", "Content-Type": "text/plain; charset=utf-8" }, "Method Not Allowed");
+          return;
+        }
+        await proxyImage(req, res, requestUrl);
         return;
       }
-      await proxyImage(req, res, requestUrl);
-      return;
+      serveStatic(req, res, requestUrl);
+    } catch (error) {
+      console.error(error);
+      send(res, 500, { "Content-Type": "text/plain; charset=utf-8" }, error.message || "Server Error");
     }
-    serveStatic(req, res, requestUrl);
-  } catch (error) {
-    console.error(error);
-    send(res, 500, { "Content-Type": "text/plain; charset=utf-8" }, error.message || "Server Error");
-  }
-});
+  });
+}
 
-server.listen(port, host, () => {
-  console.log(`Arcana Cube local server running at http://${host}:${port}/`);
-  console.log("Use this localhost URL instead of opening index.html directly.");
-});
+if (require.main === module) {
+  const options = readServerOptions();
+  const server = createLocalServer(options);
+  server.listen(options.port, options.host, () => {
+    console.log(`Arcana Cube local server running at http://${options.host}:${options.port}/`);
+    console.log(options.host === "127.0.0.1" ? "Use this localhost URL instead of opening index.html directly." : "Devices on the same network can use this computer's LAN IP with the same port.");
+  });
+}
+
+module.exports = { createLocalServer, readServerOptions };
