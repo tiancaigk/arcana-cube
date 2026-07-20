@@ -1457,7 +1457,12 @@
     $("#manaChart").innerHTML = Object.entries(curveStats.curve).map(([key, value]) => `
       <div class="curve-column"><span class="curve-value">${value}</span><div class="curve-bar" style="height:${value / maxCurve * 155}px"></div><span class="curve-label">${key}</span></div>`).join("");
 
-    const typeEntries = Object.entries(stats.types).sort((a, b) => b[1] - a[1]);
+    const typeEntries = Object.entries(stats.types).sort(([keyA, countA], [keyB, countB]) => {
+      if (keyA === keyB) return 0;
+      if (keyA === "Land") return 1;
+      if (keyB === "Land") return -1;
+      return countB - countA;
+    });
     const maxType = Math.max(1, ...typeEntries.map(([, count]) => count));
     $("#typeAnalysis").innerHTML = typeEntries.map(([key, value]) => `
       <button type="button" class="type-row${analyticsScope.kind === "type" && analyticsScope.value === key ? " active" : ""}" data-analytics-type="${escapeHtml(key)}" data-card-type="${escapeHtml(key)}" aria-pressed="${analyticsScope.kind === "type" && analyticsScope.value === key ? "true" : "false"}" title="查看${typeNames[key] || key}的法力曲线">
