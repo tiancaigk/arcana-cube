@@ -129,7 +129,7 @@
     dataRevision: 0,
     historyRevision: 0,
     filters: { query: "", color: "all", type: "all", finish: "all", japanPrint: "all" },
-    analyticsColor: "all",
+    analyticsScope: { kind: "all", value: "all" },
     mode: "grid",
     nameLanguage: loadNameLanguage(),
     basicLandGrouping: loadBasicLandGrouping(),
@@ -1429,35 +1429,40 @@
   function renderAnalytics() {
     const stats = selectors.selectStats(state.data.cards, state.dataRevision);
     const colorNames = { W: "白色", U: "蓝色", B: "黑色", R: "红色", G: "绿色", C: "无色", M: "多色", L: "地牌" };
+    const typeNames = { Creature: "生物", Instant: "瞬间", Sorcery: "法术", Artifact: "神器", Enchantment: "结界", Planeswalker: "鹏洛客", Land: "地", Other: "其他" };
+    const analyticsScope = state.analyticsScope;
     const allColorButton = $("#analyticsAllColor");
     if (allColorButton) {
-      const active = state.analyticsColor === "all";
+      const active = analyticsScope.kind === "all";
       allColorButton.classList.toggle("active", active);
       allColorButton.setAttribute("aria-pressed", active ? "true" : "false");
     }
     const maxColor = Math.max(1, ...Object.values(stats.colors));
     $("#colorAnalysis").innerHTML = Object.entries(stats.colors).map(([key, value]) => `
-      <button type="button" class="color-row${state.analyticsColor === key ? " active" : ""}" data-analytics-color="${key}" data-color-bucket="${key}" aria-pressed="${state.analyticsColor === key ? "true" : "false"}" title="查看${colorNames[key]}的法力曲线">
+      <button type="button" class="color-row${analyticsScope.kind === "color" && analyticsScope.value === key ? " active" : ""}" data-analytics-color="${key}" data-color-bucket="${key}" aria-pressed="${analyticsScope.kind === "color" && analyticsScope.value === key ? "true" : "false"}" title="查看${colorNames[key]}的法力曲线">
         <span class="color-name">${colorNames[key]}</span><span class="analysis-track"><span class="analysis-fill" style="width:${value / maxColor * 100}%"></span></span><span class="analysis-value">${value}</span>
       </button>`).join("");
 
-    const curveView = selectors.selectAnalytics(state.data.cards, state.dataRevision, state.analyticsColor);
+    const curveView = selectors.selectAnalytics(state.data.cards, state.dataRevision, analyticsScope);
     const curveCards = curveView.cards;
     const curveStats = curveView.stats;
     const curveNonlands = curveCards.length - curveStats.lands;
-    const curveLabel = state.analyticsColor === "all" ? "全部" : colorNames[state.analyticsColor];
+    const curveLabel = analyticsScope.kind === "color" ? colorNames[analyticsScope.value] : analyticsScope.kind === "type" ? typeNames[analyticsScope.value] || analyticsScope.value : "全部";
     const averageLabel = curveNonlands ? `平均 CMC ${curveStats.averageCmc.toFixed(2)}` : "平均 CMC —";
     $("#manaCurveScope").textContent = `${curveLabel} · ${curveCards.length} 张 · ${averageLabel} · 地牌不计入`;
-    $("#manaChart").dataset.colorBucket = state.analyticsColor;
+    $("#manaChart").dataset.colorBucket = analyticsScope.kind === "color" ? analyticsScope.value : "all";
+    if (analyticsScope.kind === "type") $("#manaChart").dataset.cardType = analyticsScope.value;
+    else delete $("#manaChart").dataset.cardType;
     const maxCurve = Math.max(1, ...Object.values(curveStats.curve));
     $("#manaChart").innerHTML = Object.entries(curveStats.curve).map(([key, value]) => `
       <div class="curve-column"><span class="curve-value">${value}</span><div class="curve-bar" style="height:${value / maxCurve * 155}px"></div><span class="curve-label">${key}</span></div>`).join("");
 
-    const typeNames = { Creature: "生物", Instant: "瞬间", Sorcery: "法术", Artifact: "神器", Enchantment: "结界", Planeswalker: "鹏洛客", Land: "地", Other: "其他" };
     const typeEntries = Object.entries(stats.types).sort((a, b) => b[1] - a[1]);
     const maxType = Math.max(1, ...typeEntries.map(([, count]) => count));
     $("#typeAnalysis").innerHTML = typeEntries.map(([key, value]) => `
-      <div class="type-row" data-card-type="${escapeHtml(key)}"><span class="type-name">${typeNames[key] || key}</span><div class="analysis-track"><div class="analysis-fill" style="width:${value / maxType * 100}%"></div></div><span class="analysis-value">${value}</span></div>`).join("");
+      <button type="button" class="type-row${analyticsScope.kind === "type" && analyticsScope.value === key ? " active" : ""}" data-analytics-type="${escapeHtml(key)}" data-card-type="${escapeHtml(key)}" aria-pressed="${analyticsScope.kind === "type" && analyticsScope.value === key ? "true" : "false"}" title="查看${typeNames[key] || key}的法力曲线">
+        <span class="type-name">${typeNames[key] || key}</span><span class="analysis-track"><span class="analysis-fill" style="width:${value / maxType * 100}%"></span></span><span class="analysis-value">${value}</span>
+      </button>`).join("");
     $("#cubeNotes").value = state.data.notes || "";
   }
 
@@ -2392,9 +2397,20 @@
     elements.finishFilter.addEventListener("change", (event) => { state.filters.finish = event.target.value; renderScheduler.request("cards"); });
     elements.japanPrintFilter.addEventListener("change", (event) => { state.filters.japanPrint = event.target.value; renderScheduler.request("cards"); });
     $("#analyticsView").addEventListener("click", (event) => {
-      const button = event.target.closest("[data-analytics-color]");
-      if (!button) return;
-      state.analyticsColor = button.dataset.analyticsColor === "all" || state.analyticsColor === button.dataset.analyticsColor ? "all" : button.dataset.analyticsColor;
+      const colorButton = event.target.closest("[data-analytics-color]");
+      const typeButton = event.target.closest("[data-analytics-type]");
+      if (!colorButton && !typeButton) return;
+      if (colorButton) {
+        const color = colorButton.dataset.analyticsColor;
+        state.analyticsScope = color === "all" || (state.analyticsScope.kind === "color" && state.analyticsScope.value === color)
+          ? { kind: "all", value: "all" }
+          : { kind: "color", value: color };
+      } else {
+        const type = typeButton.dataset.analyticsType;
+        state.analyticsScope = state.analyticsScope.kind === "type" && state.analyticsScope.value === type
+          ? { kind: "all", value: "all" }
+          : { kind: "type", value: type };
+      }
       renderScheduler.request("analytics");
     });
     $$("[data-color]").forEach((button) => button.addEventListener("click", () => {

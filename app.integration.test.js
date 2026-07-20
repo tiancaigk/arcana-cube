@@ -154,5 +154,9 @@ test("key interactive regions expose accessible state", () => {
   assert.match(html, /id="manaChart"[^>]+data-color-bucket="all"/);
   assert.match(html, /id="analyticsAllColor"/);
   assert.match(appSource, /data-card-type=/);
+  assert.match(appSource, /data-analytics-type=/);
+  assert.match(appSource, /analyticsScope/);
+  assert.match(styleSource, /\.mana-chart\[data-card-type="Creature"\]/);
+  assert.match(styleSource, /\.type-row\s*\{[^}]*cursor:\s*pointer;/s);
   assert.match(appSource, /data-show-today-price-changes/);
 });

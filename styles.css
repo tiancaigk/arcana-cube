@@ -256,6 +256,14 @@ select { height: 40px; min-width: 126px; padding: 0 30px 0 12px; border: 1px sol
 .mana-chart[data-color-bucket="C"] { --bucket-fill: #929088; --bucket-dim: #55544f; --bucket-glow: rgba(196,194,185,.14); }
 .mana-chart[data-color-bucket="M"] { --bucket-fill: #c7983d; --bucket-dim: #6d5525; --bucket-glow: rgba(228,189,105,.18); }
 .mana-chart[data-color-bucket="L"] { --bucket-fill: #9d7550; --bucket-dim: #5d452f; --bucket-glow: rgba(207,173,131,.16); }
+.mana-chart[data-card-type="Creature"] { --bucket-fill: #67a371; --bucket-dim: #365d3d; --bucket-glow: rgba(155,197,155,.18); }
+.mana-chart[data-card-type="Instant"] { --bucket-fill: #5fa8c8; --bucket-dim: #315b6b; --bucket-glow: rgba(157,212,232,.18); }
+.mana-chart[data-card-type="Sorcery"] { --bucket-fill: #d06d55; --bucket-dim: #72382d; --bucket-glow: rgba(239,156,130,.18); }
+.mana-chart[data-card-type="Artifact"] { --bucket-fill: #929088; --bucket-dim: #55544f; --bucket-glow: rgba(196,194,185,.14); }
+.mana-chart[data-card-type="Enchantment"] { --bucket-fill: #c7983d; --bucket-dim: #6d5525; --bucket-glow: rgba(228,189,105,.18); }
+.mana-chart[data-card-type="Planeswalker"] { --bucket-fill: #8e7b9a; --bucket-dim: #51445b; --bucket-glow: rgba(197,185,205,.18); }
+.mana-chart[data-card-type="Land"] { --bucket-fill: #9d7550; --bucket-dim: #5d452f; --bucket-glow: rgba(207,173,131,.16); }
+.mana-chart[data-card-type="Other"] { --bucket-fill: #7c7970; --bucket-dim: #46443e; --bucket-glow: rgba(169,167,159,.14); }
 .type-row[data-card-type="Creature"] { --bucket-color: #9bc59b; --bucket-fill: #67a371; --bucket-dim: #365d3d; }
 .type-row[data-card-type="Instant"] { --bucket-color: #9dd4e8; --bucket-fill: #5fa8c8; --bucket-dim: #315b6b; }
 .type-row[data-card-type="Sorcery"] { --bucket-color: #ef9c82; --bucket-fill: #d06d55; --bucket-dim: #72382d; }
@@ -264,12 +272,14 @@ select { height: 40px; min-width: 126px; padding: 0 30px 0 12px; border: 1px sol
 .type-row[data-card-type="Planeswalker"] { --bucket-color: #c5b9cd; --bucket-fill: #8e7b9a; --bucket-dim: #51445b; }
 .type-row[data-card-type="Land"] { --bucket-color: #cfad83; --bucket-fill: #9d7550; --bucket-dim: #5d452f; }
 .type-row[data-card-type="Other"] { --bucket-color: #a9a79f; --bucket-fill: #7c7970; --bucket-dim: #46443e; }
+.type-row { width: 100%; padding: 0; border: 0; color: inherit; background: transparent; text-align: left; cursor: pointer; }
 .color-row .color-name { color: var(--bucket-color, var(--muted)); }
 .type-row .type-name { color: var(--bucket-color, var(--muted)); }
-.color-row:hover .color-name, .color-row.active .color-name { color: var(--text); }
-.color-row:hover .analysis-track, .color-row.active .analysis-track { background: #171714; box-shadow: inset 0 0 0 1px rgba(217,181,111,.12); }
+.color-row:hover .color-name, .color-row.active .color-name, .type-row:hover .type-name, .type-row.active .type-name { color: var(--text); }
+.color-row:hover .analysis-track, .color-row.active .analysis-track, .type-row:hover .analysis-track, .type-row.active .analysis-track { background: #171714; box-shadow: inset 0 0 0 1px rgba(217,181,111,.12); }
 .color-row .analysis-fill, .type-row .analysis-fill { background: linear-gradient(90deg, var(--bucket-dim, var(--accent-dark)), var(--bucket-fill, var(--accent))); }
 .color-row.active .analysis-fill { background: linear-gradient(90deg, var(--bucket-fill, var(--accent)), var(--bucket-bright, var(--accent-bright))); }
+.type-row.active .analysis-fill { background: linear-gradient(90deg, var(--bucket-fill, var(--accent)), var(--bucket-color, var(--accent-bright))); }
 .color-name, .type-name { color: var(--muted); font-size: 11px; }
 .analysis-track { display: block; height: 7px; border-radius: 6px; background: #11110f; overflow: hidden; }
 .analysis-fill { display: block; height: 100%; min-width: 2px; border-radius: 6px; background: linear-gradient(90deg, var(--accent-dark), var(--accent)); }

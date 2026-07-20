@@ -41,13 +41,20 @@ test("price view caches by history revision and provides indexed card trends", (
   assert.ok(first.currentTotal > 0);
 });
 
-test("analytics selectors cache overall and color-specific curves", () => {
+test("analytics selectors cache overall, color-specific, and type-specific curves", () => {
   const selectors = createCubeSelectors(core, priceHistory);
   const cards = buildCards(600);
-  const all = selectors.selectAnalytics(cards, 1, "all");
-  const white = selectors.selectAnalytics(cards, 1, "W");
-  assert.equal(all, selectors.selectAnalytics(cards, 1, "all"));
+  const allScope = { kind: "all", value: "all" };
+  const whiteScope = { kind: "color", value: "W" };
+  const creatureScope = { kind: "type", value: "Creature" };
+  const all = selectors.selectAnalytics(cards, 1, allScope);
+  const white = selectors.selectAnalytics(cards, 1, whiteScope);
+  const creatures = selectors.selectAnalytics(cards, 1, creatureScope);
+  assert.equal(all, selectors.selectAnalytics(cards, 1, { ...allScope }));
+  assert.equal(creatures, selectors.selectAnalytics(cards, 1, { ...creatureScope }));
   assert.equal(all.cards.length, 600);
   assert.equal(white.cards.every((card) => core.getCardBucket(card) === "W"), true);
+  assert.equal(creatures.cards.every((card) => core.getPrimaryType(core.getFrontTypeLine(card)) === "Creature"), true);
   assert.notEqual(all, white);
+  assert.notEqual(all, creatures);
 });

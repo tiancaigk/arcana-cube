@@ -80,14 +80,29 @@
       return priceView && priceView.byKey.get(priceHistory.cardPriceKey(card, finish)) || null;
     }
 
-    function selectAnalytics(cards, dataRevision, color = "all") {
+    function analyticsScopeKey(scope) {
+      if (typeof scope === "string") return scope === "all" ? "all" : `color:${scope}`;
+      if (scope && (scope.kind === "color" || scope.kind === "type") && scope.value) return `${scope.kind}:${scope.value}`;
+      return "all";
+    }
+
+    function selectAnalytics(cards, dataRevision, scope = { kind: "all", value: "all" }) {
       if (analyticsCache.cardsSource !== cards || analyticsCache.dataRevision !== dataRevision) {
         analyticsCache = { cardsSource: cards, dataRevision, values: new Map() };
       }
-      if (analyticsCache.values.has(color)) return analyticsCache.values.get(color);
-      const selected = color === "all" ? (cards || []) : (cards || []).filter((card) => core.getCardBucket(card) === color);
+      const key = analyticsScopeKey(scope);
+      if (analyticsCache.values.has(key)) return analyticsCache.values.get(key);
+      const source = cards || [];
+      let selected = source;
+      if (key.startsWith("color:")) {
+        const color = key.slice("color:".length);
+        selected = source.filter((card) => core.getCardBucket(card) === color);
+      } else if (key.startsWith("type:")) {
+        const type = key.slice("type:".length);
+        selected = source.filter((card) => core.getPrimaryType(core.getFrontTypeLine(card)) === type);
+      }
       const value = { cards: selected, stats: core.computeStats(selected) };
-      analyticsCache.values.set(color, value);
+      analyticsCache.values.set(key, value);
       return value;
     }
 
