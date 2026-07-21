@@ -162,5 +162,7 @@ test("key interactive regions expose accessible state", () => {
   assert.match(appSource, /if \(keyB === "Land"\) return -1;/);
   assert.match(styleSource, /\.mana-chart\[data-card-type="Creature"\]/);
   assert.match(styleSource, /\.type-row\s*\{[^}]*cursor:\s*pointer;/s);
+  assert.match(styleSource, /\.type-row\.active \.type-name\s*\{[^}]*color:\s*var\(--bucket-color/);
+  assert.match(styleSource, /\.type-row\.active\s*\{[^}]*outline:\s*1px solid var\(--bucket-color/);
   assert.match(appSource, /data-show-today-price-changes/);
 });
