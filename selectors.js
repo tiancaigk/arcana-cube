@@ -80,27 +80,31 @@
       return priceView && priceView.byKey.get(priceHistory.cardPriceKey(card, finish)) || null;
     }
 
-    function analyticsScopeKey(scope) {
-      if (typeof scope === "string") return scope === "all" ? "all" : `color:${scope}`;
-      if (scope && (scope.kind === "color" || scope.kind === "type") && scope.value) return `${scope.kind}:${scope.value}`;
-      return "all";
+    function normalizeAnalyticsFilters(scope) {
+      if (typeof scope === "string") return { color: scope === "all" ? "all" : scope, type: "all" };
+      if (scope && (Object.hasOwn(scope, "color") || Object.hasOwn(scope, "type"))) {
+        return { color: scope.color || "all", type: scope.type || "all" };
+      }
+      if (scope && scope.kind === "color" && scope.value) return { color: scope.value, type: "all" };
+      if (scope && scope.kind === "type" && scope.value) return { color: "all", type: scope.value };
+      return { color: "all", type: "all" };
     }
 
-    function selectAnalytics(cards, dataRevision, scope = { kind: "all", value: "all" }) {
+    function analyticsScopeKey(filters) {
+      return `color:${filters.color}|type:${filters.type}`;
+    }
+
+    function selectAnalytics(cards, dataRevision, scope = { color: "all", type: "all" }) {
       if (analyticsCache.cardsSource !== cards || analyticsCache.dataRevision !== dataRevision) {
         analyticsCache = { cardsSource: cards, dataRevision, values: new Map() };
       }
-      const key = analyticsScopeKey(scope);
+      const filters = normalizeAnalyticsFilters(scope);
+      const key = analyticsScopeKey(filters);
       if (analyticsCache.values.has(key)) return analyticsCache.values.get(key);
       const source = cards || [];
       let selected = source;
-      if (key.startsWith("color:")) {
-        const color = key.slice("color:".length);
-        selected = source.filter((card) => core.getCardBucket(card) === color);
-      } else if (key.startsWith("type:")) {
-        const type = key.slice("type:".length);
-        selected = source.filter((card) => core.getPrimaryType(core.getFrontTypeLine(card)) === type);
-      }
+      if (filters.color !== "all") selected = selected.filter((card) => core.getCardBucket(card) === filters.color);
+      if (filters.type !== "all") selected = selected.filter((card) => core.getPrimaryType(core.getFrontTypeLine(card)) === filters.type);
       const value = { cards: selected, stats: core.computeStats(selected) };
       analyticsCache.values.set(key, value);
       return value;

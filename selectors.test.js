@@ -41,20 +41,27 @@ test("price view caches by history revision and provides indexed card trends", (
   assert.ok(first.currentTotal > 0);
 });
 
-test("analytics selectors cache overall, color-specific, and type-specific curves", () => {
+test("analytics selectors cache overall, single-dimension, and combined curves", () => {
   const selectors = createCubeSelectors(core, priceHistory);
   const cards = buildCards(600);
-  const allScope = { kind: "all", value: "all" };
-  const whiteScope = { kind: "color", value: "W" };
-  const creatureScope = { kind: "type", value: "Creature" };
+  const allScope = { color: "all", type: "all" };
+  const whiteScope = { color: "W", type: "all" };
+  const creatureScope = { color: "all", type: "Creature" };
+  const whiteCreatureScope = { color: "W", type: "Creature" };
   const all = selectors.selectAnalytics(cards, 1, allScope);
   const white = selectors.selectAnalytics(cards, 1, whiteScope);
   const creatures = selectors.selectAnalytics(cards, 1, creatureScope);
+  const whiteCreatures = selectors.selectAnalytics(cards, 1, whiteCreatureScope);
   assert.equal(all, selectors.selectAnalytics(cards, 1, { ...allScope }));
   assert.equal(creatures, selectors.selectAnalytics(cards, 1, { ...creatureScope }));
+  assert.equal(whiteCreatures, selectors.selectAnalytics(cards, 1, { ...whiteCreatureScope }));
   assert.equal(all.cards.length, 600);
   assert.equal(white.cards.every((card) => core.getCardBucket(card) === "W"), true);
   assert.equal(creatures.cards.every((card) => core.getPrimaryType(core.getFrontTypeLine(card)) === "Creature"), true);
+  assert.ok(whiteCreatures.cards.length > 0);
+  assert.equal(whiteCreatures.cards.every((card) => core.getCardBucket(card) === "W" && core.getPrimaryType(core.getFrontTypeLine(card)) === "Creature"), true);
   assert.notEqual(all, white);
   assert.notEqual(all, creatures);
+  assert.notEqual(whiteCreatures, white);
+  assert.notEqual(whiteCreatures, creatures);
 });

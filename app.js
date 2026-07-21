@@ -129,7 +129,7 @@
     dataRevision: 0,
     historyRevision: 0,
     filters: { query: "", color: "all", type: "all", finish: "all", japanPrint: "all" },
-    analyticsScope: { kind: "all", value: "all" },
+    analyticsFilters: { color: "all", type: "all" },
     mode: "grid",
     nameLanguage: loadNameLanguage(),
     basicLandGrouping: loadBasicLandGrouping(),
@@ -1430,28 +1430,31 @@
     const stats = selectors.selectStats(state.data.cards, state.dataRevision);
     const colorNames = { W: "白色", U: "蓝色", B: "黑色", R: "红色", G: "绿色", C: "无色", M: "多色", L: "地牌" };
     const typeNames = { Creature: "生物", Instant: "瞬间", Sorcery: "法术", Artifact: "神器", Enchantment: "结界", Planeswalker: "鹏洛客", Land: "地", Other: "其他" };
-    const analyticsScope = state.analyticsScope;
+    const analyticsFilters = state.analyticsFilters;
     const allColorButton = $("#analyticsAllColor");
     if (allColorButton) {
-      const active = analyticsScope.kind === "all";
+      const active = analyticsFilters.color === "all";
       allColorButton.classList.toggle("active", active);
       allColorButton.setAttribute("aria-pressed", active ? "true" : "false");
     }
     const maxColor = Math.max(1, ...Object.values(stats.colors));
     $("#colorAnalysis").innerHTML = Object.entries(stats.colors).map(([key, value]) => `
-      <button type="button" class="color-row${analyticsScope.kind === "color" && analyticsScope.value === key ? " active" : ""}" data-analytics-color="${key}" data-color-bucket="${key}" aria-pressed="${analyticsScope.kind === "color" && analyticsScope.value === key ? "true" : "false"}" title="查看${colorNames[key]}的法力曲线">
+      <button type="button" class="color-row${analyticsFilters.color === key ? " active" : ""}" data-analytics-color="${key}" data-color-bucket="${key}" aria-pressed="${analyticsFilters.color === key ? "true" : "false"}" title="筛选${colorNames[key]}的法力曲线">
         <span class="color-name">${colorNames[key]}</span><span class="analysis-track"><span class="analysis-fill" style="width:${value / maxColor * 100}%"></span></span><span class="analysis-value">${value}</span>
       </button>`).join("");
 
-    const curveView = selectors.selectAnalytics(state.data.cards, state.dataRevision, analyticsScope);
+    const curveView = selectors.selectAnalytics(state.data.cards, state.dataRevision, analyticsFilters);
     const curveCards = curveView.cards;
     const curveStats = curveView.stats;
     const curveNonlands = curveCards.length - curveStats.lands;
-    const curveLabel = analyticsScope.kind === "color" ? colorNames[analyticsScope.value] : analyticsScope.kind === "type" ? typeNames[analyticsScope.value] || analyticsScope.value : "全部";
+    const curveLabels = [];
+    if (analyticsFilters.color !== "all") curveLabels.push(colorNames[analyticsFilters.color]);
+    if (analyticsFilters.type !== "all") curveLabels.push(typeNames[analyticsFilters.type] || analyticsFilters.type);
+    const curveLabel = curveLabels.join(" + ") || "全部";
     const averageLabel = curveNonlands ? `平均 CMC ${curveStats.averageCmc.toFixed(2)}` : "平均 CMC —";
     $("#manaCurveScope").textContent = `${curveLabel} · ${curveCards.length} 张 · ${averageLabel} · 地牌不计入`;
-    $("#manaChart").dataset.colorBucket = analyticsScope.kind === "color" ? analyticsScope.value : "all";
-    if (analyticsScope.kind === "type") $("#manaChart").dataset.cardType = analyticsScope.value;
+    $("#manaChart").dataset.colorBucket = analyticsFilters.color;
+    if (analyticsFilters.type !== "all" && analyticsFilters.color === "all") $("#manaChart").dataset.cardType = analyticsFilters.type;
     else delete $("#manaChart").dataset.cardType;
     const maxCurve = Math.max(1, ...Object.values(curveStats.curve));
     $("#manaChart").innerHTML = Object.entries(curveStats.curve).map(([key, value]) => `
@@ -1465,7 +1468,7 @@
     });
     const maxType = Math.max(1, ...typeEntries.map(([, count]) => count));
     $("#typeAnalysis").innerHTML = typeEntries.map(([key, value]) => `
-      <button type="button" class="type-row${analyticsScope.kind === "type" && analyticsScope.value === key ? " active" : ""}" data-analytics-type="${escapeHtml(key)}" data-card-type="${escapeHtml(key)}" aria-pressed="${analyticsScope.kind === "type" && analyticsScope.value === key ? "true" : "false"}" title="查看${typeNames[key] || key}的法力曲线">
+      <button type="button" class="type-row${analyticsFilters.type === key ? " active" : ""}" data-analytics-type="${escapeHtml(key)}" data-card-type="${escapeHtml(key)}" aria-pressed="${analyticsFilters.type === key ? "true" : "false"}" title="筛选${typeNames[key] || key}的法力曲线">
         <span class="type-name">${typeNames[key] || key}</span><span class="analysis-track"><span class="analysis-fill" style="width:${value / maxType * 100}%"></span></span><span class="analysis-value">${value}</span>
       </button>`).join("");
     $("#cubeNotes").value = state.data.notes || "";
@@ -2407,14 +2410,16 @@
       if (!colorButton && !typeButton) return;
       if (colorButton) {
         const color = colorButton.dataset.analyticsColor;
-        state.analyticsScope = color === "all" || (state.analyticsScope.kind === "color" && state.analyticsScope.value === color)
-          ? { kind: "all", value: "all" }
-          : { kind: "color", value: color };
+        state.analyticsFilters = {
+          ...state.analyticsFilters,
+          color: color === "all" || state.analyticsFilters.color === color ? "all" : color
+        };
       } else {
         const type = typeButton.dataset.analyticsType;
-        state.analyticsScope = state.analyticsScope.kind === "type" && state.analyticsScope.value === type
-          ? { kind: "all", value: "all" }
-          : { kind: "type", value: type };
+        state.analyticsFilters = {
+          ...state.analyticsFilters,
+          type: state.analyticsFilters.type === type ? "all" : type
+        };
       }
       renderScheduler.request("analytics");
     });
