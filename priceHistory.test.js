@@ -1,6 +1,6 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { buildPriceTrendIndex, cardPriceKey, cardSeries, dailyPriceChanges, dateKey, emptyPriceHistory, normalizePriceHistory, parsePriceHistoryData, priceTrend, recordDailySnapshot, totalSeries, wrapPriceHistoryData } = require("./priceHistory.js");
+const { buildPriceTrendIndex, cardPriceKey, cardSeries, dailyPriceChanges, dateKey, emptyPriceHistory, hasDailySnapshot, normalizePriceHistory, parsePriceHistoryData, priceTrend, recordDailySnapshot, totalSeries, wrapPriceHistoryData } = require("./priceHistory.js");
 const { buildCards, buildPriceHistory } = require("./testFixtures.js");
 
 test("dateKey formats local calendar dates", () => {
@@ -18,6 +18,12 @@ test("recordDailySnapshot stores one replaceable snapshot per date", () => {
   assert.deepEqual(Object.keys(second.snapshots), ["2026-07-02"]);
   assert.equal(second.snapshots["2026-07-02"].cards["bolt-printing|foil"], 6);
   assert.equal(second.snapshots["2026-07-02"].totalUsd, 6);
+});
+
+test("hasDailySnapshot distinguishes recorded and missing calendar days", () => {
+  const history = recordDailySnapshot(emptyPriceHistory(), [], { date: "2026-07-22" });
+  assert.equal(hasDailySnapshot(history, "2026-07-22"), true);
+  assert.equal(hasDailySnapshot(history, "2026-07-21"), false);
 });
 
 test("foil, nonfoil, and printing versions keep separate histories", () => {

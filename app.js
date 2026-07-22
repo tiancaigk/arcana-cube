@@ -16,9 +16,10 @@
   const THUMBNAIL_WEBP_QUALITY = 0.82;
   const IMAGE_FETCH_TIMEOUT_MS = 25000;
   const IMAGE_CACHE_CHECKPOINT = 100;
+  const PRICE_MAINTENANCE_INTERVAL_MS = 60 * 60 * 1000;
   const SHEETJS_URL = "https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js";
   const { buildBackup, buildExcelRows, buildLocalizedNameSearchUrl, buildLocalImageFileName, chooseValidFinish, computeStats, filterCards, filterPrintings, sortCards, getAvailableFinishes, getBasicLandKind, getCardBucket, getCardImage, getFrontColors, getFrontDisplayName, getFrontTypeLine, getOracleId, getPreferredLocalizedName, getPriceNumber, getUsdPrice, isPaperPrinting, isSupportedBasicLand, mergeArchiveMetadata, needsPriceRefresh, normalizeCardName, normalizeFinish, normalizeLocalizedNames, normalizeScryfallCard, parseBackup, parseDecklist, parseExcelRows, prepareTextImportRows, replacePrinting } = window.CubeCore;
-  const { cardSeries, dailyPriceChanges, dateKey, emptyPriceHistory, normalizePriceHistory, parsePriceHistoryData, priceTrend, recordDailySnapshot, totalSeries, wrapPriceHistoryData } = window.CubePriceHistory;
+  const { cardSeries, dailyPriceChanges, dateKey, emptyPriceHistory, hasDailySnapshot, normalizePriceHistory, parsePriceHistoryData, priceTrend, recordDailySnapshot, totalSeries, wrapPriceHistoryData } = window.CubePriceHistory;
   const { appendChange, emptyChangeLog, latestEntries, normalizeChangeLog, parseChangeLogData, wrapChangeLogData } = window.CubeChangeLog;
   const { analyzeWorkspaceHealth } = window.CubeHealth;
   const { createWorkspaceService } = window.CubeWorkspace;
@@ -1156,8 +1157,10 @@
     return parts.join(" · ");
   }
 
-  function recordCurrentPriceHistory() {
+  function recordCurrentPriceHistory(options = {}) {
+    if (options.onlyIfMissing && hasDailySnapshot(state.priceHistory)) return false;
     state.priceHistory = recordDailySnapshot(state.priceHistory, getValuedCards());
+    return true;
   }
 
   function excelPriceExtras(card) {
@@ -1506,12 +1509,15 @@
     if (state.refreshingPrices) return;
     const targets = getValuedCards().filter((card) => force || needsPriceRefresh(card));
     if (!targets.length) {
+      const recorded = recordCurrentPriceHistory({ onlyIfMissing: !force });
       if (force) {
-        recordCurrentPriceHistory();
         recordChange("prices.recorded", "记录价格历史：无需刷新", { meta: { checked: 0 } }, { persist: false });
         saveState(["priceHistory", "changeLog"]);
         renderScheduler.request("stats");
         toast("价格历史已记录", "当前牌表没有需要刷新的价格，已保存今天的快照");
+      } else if (recorded) {
+        saveState("priceHistory");
+        renderScheduler.request("stats");
       }
       return;
     }
@@ -1547,13 +1553,14 @@
       renderScheduler.request("stats");
       return;
     }
-    if (force) recordCurrentPriceHistory();
+    const recorded = updated || force ? recordCurrentPriceHistory() : false;
     if (force) recordChange("prices.refreshed", `更新价格：检查 ${targets.length} 张牌`, { meta: { checked: targets.length, updated } }, { persist: false });
-    if (updated || force) {
+    if (updated || recorded || force) {
       state.data.cards = sortCards(state.data.cards);
       saveState([
         ...(updated ? ["cube"] : []),
-        ...(force ? ["priceHistory", "changeLog"] : [])
+        ...(recorded ? ["priceHistory"] : []),
+        ...(force ? ["changeLog"] : [])
       ]);
       renderScheduler.request("stats", "cards", "basics");
       if (force) toast("价格已更新", `已检查 ${targets.length} 张牌，并保存今天的价格历史`);
@@ -1561,6 +1568,16 @@
     }
     renderScheduler.request("stats");
     if (force) toast("价格已是最新", "当前牌表没有新的价格变化");
+  }
+
+  function schedulePriceMaintenance() {
+    window.setTimeout(async () => {
+      try {
+        await refreshStalePrices();
+      } finally {
+        schedulePriceMaintenance();
+      }
+    }, PRICE_MAINTENANCE_INTERVAL_MS);
   }
 
   function printingImage(printing) {
@@ -2523,9 +2540,17 @@
     $$('[data-name-language]').forEach((button) => { button.tabIndex = button.dataset.nameLanguage === state.nameLanguage ? 0 : -1; });
   }
 
-  bindEvents();
-  renderAll();
-  renderStorageStatus();
-  restoreDirectoryMode();
-  setTimeout(() => refreshStalePrices(), 450);
+  async function initialize() {
+    bindEvents();
+    renderAll();
+    renderStorageStatus();
+    await restoreDirectoryMode();
+    try {
+      await refreshStalePrices();
+    } finally {
+      schedulePriceMaintenance();
+    }
+  }
+
+  void initialize();
 })();

@@ -101,6 +101,11 @@
     return Object.entries(normalized.snapshots).sort(([a], [b]) => a.localeCompare(b));
   }
 
+  function hasDailySnapshot(history, date = new Date()) {
+    const key = typeof date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(date) ? date : dateKey(date);
+    return Object.prototype.hasOwnProperty.call(normalizePriceHistory(history).snapshots, key);
+  }
+
   function recordDailySnapshot(history, cards, options = {}) {
     const date = options.date || dateKey(options.now || new Date());
     const next = normalizePriceHistory(history);
@@ -236,6 +241,7 @@
     dailyPriceChanges,
     dateKey,
     emptyPriceHistory,
+    hasDailySnapshot,
     normalizePriceHistory,
     parsePriceHistoryData,
     priceTrend,

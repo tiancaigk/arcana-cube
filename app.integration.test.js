@@ -137,6 +137,12 @@ test("basic lands contribute to value and export but not draft analytics", () =>
   assert.match(appSource, /selectors\.selectAnalytics\(state\.data\.cards/);
 });
 
+test("automatic price maintenance waits for folder restore and records daily history", () => {
+  assert.match(appSource, /const PRICE_MAINTENANCE_INTERVAL_MS\s*=\s*60 \* 60 \* 1000/);
+  assert.match(appSource, /recordCurrentPriceHistory\(\{ onlyIfMissing: !force \}\)/);
+  assert.match(appSource, /await restoreDirectoryMode\(\);[\s\S]*try\s*\{[\s\S]*await refreshStalePrices\(\);[\s\S]*finally\s*\{[\s\S]*schedulePriceMaintenance\(\);/);
+});
+
 test("key interactive regions expose accessible state", () => {
   assert.match(html, /id="sidebar"/);
   assert.match(html, /id="resultCount"[^>]+aria-live="polite"/);
