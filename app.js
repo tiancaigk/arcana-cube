@@ -28,6 +28,7 @@
   const { requestJson: scryfallRequest } = window.ScryfallClient;
   const { createCatalog, printingKey } = window.CubeCatalog;
   const { applyPriceUpdates } = window.CubePriceMaintenance;
+  const { datePositions } = window.CubeChart;
   const { BASIC_LAND_LABELS, BASIC_LAND_ORDER, classifyBasicLandBatch, groupBasicLands, parseCollectorNumberRange } = window.CubeBasicLands;
   const { createCollectionCommandExecutor } = window.CubeCollectionCommands;
   const { createViewPreferenceStore } = window.CubeViewPreferences;
@@ -252,6 +253,7 @@
     toast
   });
   let searchRenderFrame = 0;
+  const foilObservers = new Map();
 
   function loadNameLanguage() {
     return viewPreferences.get("nameLanguage");
@@ -1039,7 +1041,7 @@
   }
 
   function renderPriceHistoryPanel({ title, subtitle, points, emptyText }) {
-    const series = (points || []).filter((point) => Number.isFinite(Number(point.usd)));
+    const series = (points || []).filter((point) => Number.isFinite(Number(point.usd))).sort((a, b) => String(a.date).localeCompare(String(b.date)));
     if (!series.length) {
       return `<section class="price-history-panel empty">
         <div class="price-history-head"><div><span>PRICE HISTORY</span><strong>${escapeHtml(title)}</strong></div><small>${escapeHtml(subtitle || "")}</small></div>
@@ -1056,9 +1058,9 @@
     const min = rawMin === rawMax ? Math.max(0, rawMin - Math.max(1, rawMin * 0.05)) : rawMin;
     const max = rawMin === rawMax ? rawMax + Math.max(1, rawMax * 0.05) : rawMax;
     const range = max - min || 1;
-    const xFor = (index) => series.length === 1 ? width / 2 : padX + index * ((width - padX * 2) / (series.length - 1));
+    const xPositions = datePositions(series, padX, width - padX);
     const yFor = (value) => height - padY - ((value - min) / range) * (height - padY * 2);
-    const coords = series.map((point, index) => ({ ...point, x: xFor(index), y: yFor(Number(point.usd)) }));
+    const coords = series.map((point, index) => ({ ...point, x: xPositions[index], y: yFor(Number(point.usd)) }));
     const polyline = coords.map((point) => `${point.x.toFixed(1)},${point.y.toFixed(1)}`).join(" ");
     const first = series[0];
     const latest = series[series.length - 1];
@@ -1209,6 +1211,21 @@
     return missing.length ? `缺${missing.join("、")}` : "完整";
   }
 
+  function observeVisibleFoils(root) {
+    const previous = foilObservers.get(root);
+    if (previous) previous.disconnect();
+    const cards = $$('[data-finish="foil"]', root);
+    if (typeof IntersectionObserver !== "function") {
+      cards.forEach((card) => card.classList.add("foil-visible"));
+      return;
+    }
+    const observer = new IntersectionObserver((entries) => {
+      entries.forEach((entry) => entry.target.classList.toggle("foil-visible", entry.isIntersecting));
+    }, { rootMargin: "160px 0px" });
+    cards.forEach((card) => observer.observe(card));
+    foilObservers.set(root, observer);
+  }
+
   function renderCards() {
     const cardView = selectors.selectCards(state.data.cards, state.dataRevision, state.filters);
     const priceView = selectors.selectPriceView(state.data.cards, state.dataRevision, state.priceHistory, state.historyRevision);
@@ -1222,6 +1239,7 @@
         <div class="card-group-heading"><span class="card-group-mark"></span><h2>${cardGroupLabel(key)}</h2><small>${groupCards.length} 张</small></div>
         <div class="card-group-grid">${groupCards.map((card, index) => cardTemplate(card, index, priceView)).join("")}</div>
       </section>`).join("");
+    observeVisibleFoils(elements.cardGrid);
     if (state.nameLanguage === "zh") refreshMissingLocalizedNames(cards);
 
     const labels = [];
@@ -1244,6 +1262,7 @@
     const template = document.createElement("template");
     template.innerHTML = cardTemplate(card, 0, priceView).trim();
     node.replaceWith(template.content.firstElementChild);
+    observeVisibleFoils(elements.cardGrid);
     return true;
   }
 
@@ -1318,6 +1337,7 @@
         <div class="card-group-grid">${group.cards.map((card, index) => cardTemplate(card, index, priceView)).join("")}</div>
       </section>`;
     }).join("");
+    observeVisibleFoils(elements.basicLandGrid);
     elements.basicLandEmpty.classList.toggle("hidden", cards.length > 0);
     if (state.nameLanguage === "zh") refreshMissingLocalizedNames(cards);
   }
