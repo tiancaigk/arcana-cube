@@ -23,6 +23,7 @@
   const { appendChange, emptyChangeLog, latestEntries, normalizeChangeLog, parseChangeLogData, wrapChangeLogData } = window.CubeChangeLog;
   const { analyzeWorkspaceHealth } = window.CubeHealth;
   const { createWorkspaceService } = window.CubeWorkspace;
+  const { resolveWorkspaceDomains } = window.CubeWorkspaceSession;
   const { createPersistenceCoordinator } = window.CubePersistence;
   const { requestJson: scryfallRequest } = window.ScryfallClient;
   const { createCatalog, printingKey } = window.CubeCatalog;
@@ -110,6 +111,7 @@
 
   const defaultState = {
     meta: {
+      id: "cube-arcana-starter",
       name: "暮色典藏",
       description: "为四至八人轮抽设计的中速环境，强调墓地、神器与多色协同。"
     },
@@ -174,6 +176,15 @@
       rememberedDirectoryHandle: null
     }
   };
+  const initialWorkspace = resolveWorkspaceDomains({
+    cubeData: state.data,
+    priceHistoryData: state.priceHistory,
+    changeLogData: state.changeLog,
+    emptyPriceHistory,
+    emptyChangeLog
+  });
+  state.priceHistory = initialWorkspace.priceHistoryData;
+  state.changeLog = initialWorkspace.changeLogData;
 
   const persistence = createPersistenceCoordinator({
     browserWriters: {
@@ -353,6 +364,21 @@
 
   function applyChangeLogData(data) {
     state.changeLog = normalizeChangeLog(data);
+  }
+
+  function resolveLoadedWorkspace(cubeData, priceHistoryData, changeLogData) {
+    return resolveWorkspaceDomains({
+      cubeData,
+      priceHistoryData,
+      changeLogData,
+      emptyPriceHistory,
+      emptyChangeLog
+    });
+  }
+
+  async function persistWorkspaceUpgrades(directoryHandle, resolved) {
+    if (resolved.needsWrite.priceHistory) await writePriceHistoryFile(directoryHandle, resolved.priceHistoryData);
+    if (resolved.needsWrite.changeLog) await writeChangeLogFile(directoryHandle, resolved.changeLogData);
   }
 
   function localMirrorSave(data = state.data) {
@@ -649,9 +675,11 @@
       }
       const priceHistoryData = await readPriceHistoryFile(directoryHandle);
       const changeLogData = await readChangeLogFile(directoryHandle);
-      applyCubeData(fileData);
-      applyPriceHistoryData(priceHistoryData || emptyPriceHistory());
-      applyChangeLogData(changeLogData || emptyChangeLog());
+      const resolved = resolveLoadedWorkspace(fileData, priceHistoryData, changeLogData);
+      applyCubeData(resolved.cubeData);
+      applyPriceHistoryData(resolved.priceHistoryData);
+      applyChangeLogData(resolved.changeLogData);
+      await persistWorkspaceUpgrades(directoryHandle, resolved);
       localMirrorSave();
       savePriceHistoryLocal();
       saveChangeLogLocal();
@@ -682,11 +710,11 @@
       if (fileData) {
         const shouldLoad = window.confirm(`发现现有的 ${CUBE_FILE_NAME}。\n确定要载入文件里的 Cube 吗？\n选择“取消”会用当前牌表覆盖文件内容。`);
         if (shouldLoad) {
-          applyCubeData(fileData);
-          if (priceHistoryData) applyPriceHistoryData(priceHistoryData);
-          else await writePriceHistoryFile(directoryHandle, state.priceHistory);
-          if (changeLogData) applyChangeLogData(changeLogData);
-          else await writeChangeLogFile(directoryHandle, state.changeLog);
+          const resolved = resolveLoadedWorkspace(fileData, priceHistoryData, changeLogData);
+          applyCubeData(resolved.cubeData);
+          applyPriceHistoryData(resolved.priceHistoryData);
+          applyChangeLogData(resolved.changeLogData);
+          await persistWorkspaceUpgrades(directoryHandle, resolved);
         } else {
           await writeCubeDataFile(directoryHandle, snapshotCubeData(state.data));
           await writePriceHistoryFile(directoryHandle, state.priceHistory);
@@ -720,23 +748,19 @@
     const fileData = await readCubeDataFile(directoryHandle);
     const priceHistoryData = await readPriceHistoryFile(directoryHandle);
     const changeLogData = await readChangeLogFile(directoryHandle);
+    const resolved = resolveLoadedWorkspace(fileData, priceHistoryData, changeLogData);
     state.storage.mode = "directory";
     state.storage.directoryHandle = directoryHandle;
     state.storage.directoryName = directoryHandle.name || "";
     state.storage.rememberedDirectoryName = directoryHandle.name || "";
     state.storage.rememberedDirectoryHandle = directoryHandle;
-    if (fileData) {
-      applyCubeData(fileData);
-      localMirrorSave();
-    }
-    if (priceHistoryData) {
-      applyPriceHistoryData(priceHistoryData);
-      savePriceHistoryLocal();
-    }
-    if (changeLogData) {
-      applyChangeLogData(changeLogData);
-      saveChangeLogLocal();
-    }
+    applyCubeData(resolved.cubeData);
+    applyPriceHistoryData(resolved.priceHistoryData);
+    applyChangeLogData(resolved.changeLogData);
+    await persistWorkspaceUpgrades(directoryHandle, resolved);
+    localMirrorSave();
+    savePriceHistoryLocal();
+    saveChangeLogLocal();
     renderAll();
     renderStorageStatus();
   }
@@ -2548,6 +2572,9 @@
     renderAll();
     renderStorageStatus();
     await restoreDirectoryMode();
+    localMirrorSave();
+    savePriceHistoryLocal();
+    saveChangeLogLocal();
     try {
       await refreshStalePrices();
     } finally {

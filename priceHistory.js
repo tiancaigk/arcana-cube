@@ -51,9 +51,10 @@
     return `${fallback}|${normalizedFinish}`;
   }
 
-  function emptyPriceHistory() {
+  function emptyPriceHistory(cubeId = "") {
     return {
       version: PRICE_HISTORY_VERSION,
+      cubeId: String(cubeId || ""),
       currency: "USD",
       updatedAt: "",
       snapshots: {}
@@ -90,6 +91,7 @@
     });
     return {
       version: PRICE_HISTORY_VERSION,
+      cubeId: typeof source.cubeId === "string" ? source.cubeId : "",
       currency: "USD",
       updatedAt: typeof source.updatedAt === "string" ? source.updatedAt : "",
       snapshots

@@ -5,7 +5,7 @@
 })(typeof globalThis !== "undefined" ? globalThis : this, function () {
   "use strict";
 
-  const CURRENT_DATA_VERSION = 2;
+  const CURRENT_DATA_VERSION = 3;
 
   function clone(value) {
     if (typeof structuredClone === "function") return structuredClone(value);
@@ -49,6 +49,22 @@
     };
   }
 
+  function stableHash(value) {
+    let hash = 2166136261;
+    for (const char of String(value || "")) {
+      hash ^= char.codePointAt(0);
+      hash = Math.imul(hash, 16777619);
+    }
+    return (hash >>> 0).toString(36);
+  }
+
+  function legacyCubeId(source) {
+    const meta = source && source.meta || {};
+    const cards = [...(source && source.cards || []), ...(source && source.basicLands || [])];
+    const cardKeys = cards.map((card) => card.scryfallId || card.id || `${card.name || ""}|${card.set || ""}|${card.collectorNumber || ""}`).sort();
+    return `cube-${stableHash([meta.name || "", ...cardKeys].join("\u0000"))}`;
+  }
+
   const migrations = {
     1(data) {
       const source = data && typeof data === "object" ? data : {};
@@ -64,6 +80,17 @@
       return {
         ...source,
         basicLands: Array.isArray(source.basicLands) ? source.basicLands.map(migrateCardToVersion1) : []
+      };
+    },
+    3(data) {
+      const source = data && typeof data === "object" ? data : {};
+      const meta = source.meta && typeof source.meta === "object" ? source.meta : { name: "" };
+      return {
+        ...source,
+        meta: {
+          ...meta,
+          id: typeof meta.id === "string" && meta.id.trim() ? meta.id.trim() : legacyCubeId(source)
+        }
       };
     }
   };

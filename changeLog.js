@@ -17,9 +17,10 @@
     return `log-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
   }
 
-  function emptyChangeLog() {
+  function emptyChangeLog(cubeId = "") {
     return {
       version: CHANGE_LOG_VERSION,
+      cubeId: String(cubeId || ""),
       updatedAt: "",
       entries: []
     };
@@ -46,6 +47,7 @@
     entries.sort((a, b) => String(b.time).localeCompare(String(a.time)));
     return {
       version: CHANGE_LOG_VERSION,
+      cubeId: typeof source.cubeId === "string" ? source.cubeId : "",
       updatedAt: typeof source.updatedAt === "string" ? source.updatedAt : "",
       entries
     };

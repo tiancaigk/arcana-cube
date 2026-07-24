@@ -16,6 +16,7 @@ test("application shell loads dependencies before app.js", () => {
   const health = html.indexOf('src="health.js"');
   const storage = html.indexOf('src="storage.js"');
   const workspace = html.indexOf('src="workspace.js"');
+  const workspaceSession = html.indexOf('src="workspaceSession.js"');
   const persistence = html.indexOf('src="persistence.js"');
   const scryfall = html.indexOf('src="scryfall.js"');
   const catalog = html.indexOf('src="catalog.js"');
@@ -26,7 +27,7 @@ test("application shell loads dependencies before app.js", () => {
   const selectors = html.indexOf('src="selectors.js"');
   const renderScheduler = html.indexOf('src="renderScheduler.js"');
   const app = html.indexOf('src="app.js"');
-  assert.ok(migrations >= 0 && migrations < core && core < priceHistory && priceHistory < changeLog && changeLog < health && health < storage && storage < workspace && workspace < persistence && persistence < scryfall && scryfall < catalog && catalog < basicLands && basicLands < collectionCommands && collectionCommands < viewPreferences && viewPreferences < imageCache && imageCache < selectors && selectors < renderScheduler && renderScheduler < app);
+  assert.ok(migrations >= 0 && migrations < core && core < priceHistory && priceHistory < changeLog && changeLog < health && health < storage && storage < workspace && workspace < workspaceSession && workspaceSession < persistence && persistence < scryfall && scryfall < catalog && catalog < basicLands && basicLands < collectionCommands && collectionCommands < viewPreferences && viewPreferences < imageCache && imageCache < selectors && selectors < renderScheduler && renderScheduler < app);
 });
 
 test("card image failures use one delegated listener", () => {
