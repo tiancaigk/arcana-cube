@@ -105,8 +105,9 @@
       return { oracleId, printings };
     }
 
-    async function lookupPrintingBatch(rows, signal) {
+    async function lookupPrintingBatchDetailed(rows, signal) {
       const results = new Map();
+      const notFound = [];
       const source = Array.isArray(rows) ? rows : [];
       for (let start = 0; start < source.length; start += 75) {
         const chunk = source.slice(start, start + 75);
@@ -117,8 +118,13 @@
           signal
         });
         (payload.data || []).forEach((card) => results.set(printingKey(card.set, card.collector_number), card));
+        notFound.push(...(payload.not_found || []));
       }
-      return results;
+      return { cardsByPrinting: results, notFound };
+    }
+
+    async function lookupPrintingBatch(rows, signal) {
+      return (await lookupPrintingBatchDetailed(rows, signal)).cardsByPrinting;
     }
 
     async function lookupCardNameBatch(names, signal) {
@@ -144,7 +150,7 @@
       printingCache.clear();
     }
 
-    return { lookupNamed, searchByName, lookupPrinting, lookupById, resolvePrintingIdentity, lookupAllPrintings, lookupPrintingBatch, lookupCardNameBatch, clearPrintingCache };
+    return { lookupNamed, searchByName, lookupPrinting, lookupById, resolvePrintingIdentity, lookupAllPrintings, lookupPrintingBatch, lookupPrintingBatchDetailed, lookupCardNameBatch, clearPrintingCache };
   }
 
   return { createCatalog, normalizeCollectorNumber, printingKey };

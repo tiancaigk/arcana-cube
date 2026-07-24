@@ -76,6 +76,22 @@ test("catalog batches collection requests in groups of 75", async () => {
   assert.equal(result.get(printingKey("TST", "001")).collector_number, "1");
 });
 
+test("catalog preserves collection not-found identifiers", async () => {
+  const client = createCatalog({
+    requestJson: async () => ({
+      data: [{ id: "found", set: "lea", collector_number: "1" }],
+      not_found: [{ set: "lea", collector_number: "2" }]
+    }),
+    core
+  });
+  const result = await client.lookupPrintingBatchDetailed([
+    { setCode: "LEA", collectorNumber: "1" },
+    { setCode: "LEA", collectorNumber: "2" }
+  ]);
+  assert.equal(result.cardsByPrinting.get(printingKey("lea", "1")).id, "found");
+  assert.deepEqual(result.notFound, [{ set: "lea", collector_number: "2" }]);
+});
+
 test("catalog name batches index front and printed names", async () => {
   const catalog = createCatalog({
     core,

@@ -20,6 +20,17 @@ test("recordDailySnapshot stores one replaceable snapshot per date", () => {
   assert.equal(second.snapshots["2026-07-02"].totalUsd, 6);
 });
 
+test("daily snapshots preserve price refresh quality metadata", () => {
+  const history = recordDailySnapshot(emptyPriceHistory("cube-a"), [], {
+    date: "2026-07-24",
+    now: new Date("2026-07-24T08:00:00Z"),
+    refresh: { checked: 12, updated: 10, missing: 2 }
+  });
+  assert.equal(history.cubeId, "cube-a");
+  assert.deepEqual(history.snapshots["2026-07-24"].refresh, { checked: 12, updated: 10, missing: 2 });
+  assert.deepEqual(normalizePriceHistory(history).snapshots["2026-07-24"].refresh, { checked: 12, updated: 10, missing: 2 });
+});
+
 test("hasDailySnapshot distinguishes recorded and missing calendar days", () => {
   const history = recordDailySnapshot(emptyPriceHistory(), [], { date: "2026-07-22" });
   assert.equal(hasDailySnapshot(history, "2026-07-22"), true);

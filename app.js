@@ -27,6 +27,7 @@
   const { createPersistenceCoordinator } = window.CubePersistence;
   const { requestJson: scryfallRequest } = window.ScryfallClient;
   const { createCatalog, printingKey } = window.CubeCatalog;
+  const { applyPriceUpdates } = window.CubePriceMaintenance;
   const { BASIC_LAND_LABELS, BASIC_LAND_ORDER, classifyBasicLandBatch, groupBasicLands, parseCollectorNumberRange } = window.CubeBasicLands;
   const { createCollectionCommandExecutor } = window.CubeCollectionCommands;
   const { createViewPreferenceStore } = window.CubeViewPreferences;
@@ -1186,7 +1187,7 @@
 
   function recordCurrentPriceHistory(options = {}) {
     if (options.onlyIfMissing && hasDailySnapshot(state.priceHistory)) return false;
-    state.priceHistory = recordDailySnapshot(state.priceHistory, getValuedCards());
+    state.priceHistory = recordDailySnapshot(state.priceHistory, getValuedCards(), { refresh: options.refresh });
     return true;
   }
 
@@ -1536,7 +1537,7 @@
     if (state.refreshingPrices) return;
     const targets = getValuedCards().filter((card) => force || needsPriceRefresh(card));
     if (!targets.length) {
-      const recorded = recordCurrentPriceHistory({ onlyIfMissing: !force });
+      const recorded = recordCurrentPriceHistory({ onlyIfMissing: !force, refresh: force ? { checked: 0, updated: 0, missing: 0 } : null });
       if (force) {
         recordChange("prices.recorded", "记录价格历史：无需刷新", { meta: { checked: 0 } }, { persist: false });
         saveState(["priceHistory", "changeLog"]);
@@ -1550,24 +1551,17 @@
     }
     state.refreshingPrices = true;
     renderScheduler.request("stats");
-    let updated = false;
+    let refreshResult = null;
     let failed = false;
     try {
       const uniqueTargets = [...new Map(targets.map((card) => [printingKey(card.set, card.collectorNumber), { setCode: card.set, collectorNumber: card.collectorNumber }])).values()];
-      const cardsByPrinting = await catalog.lookupPrintingBatch(uniqueTargets);
-      targets.forEach((target) => {
-        const printing = cardsByPrinting.get(printingKey(target.set, target.collectorNumber));
-        if (!printing) return;
-        const location = findCardLocation(target.id);
-        if (!location) return;
-        const current = location.cards[location.index];
-        const samePrinting = current.scryfallId
-          ? current.scryfallId === target.scryfallId
-          : current.set === target.set && current.collectorNumber === target.collectorNumber;
-        if (samePrinting && (force || needsPriceRefresh(current))) {
-          location.cards[location.index] = replacePrinting(current, printing);
-          updated = true;
-        }
+      const batch = await catalog.lookupPrintingBatchDetailed(uniqueTargets);
+      refreshResult = applyPriceUpdates(targets, batch.cardsByPrinting, {
+        printingKey,
+        findCardLocation,
+        replacePrinting,
+        needsPriceRefresh,
+        force
       });
     } catch (error) {
       // Price refresh is best-effort and should not block local use.
@@ -1580,8 +1574,9 @@
       renderScheduler.request("stats");
       return;
     }
-    const recorded = updated || force ? recordCurrentPriceHistory() : false;
-    if (force) recordChange("prices.refreshed", `更新价格：检查 ${targets.length} 张牌`, { meta: { checked: targets.length, updated } }, { persist: false });
+    const updated = refreshResult && refreshResult.updated > 0;
+    const recorded = updated || force ? recordCurrentPriceHistory({ refresh: refreshResult }) : false;
+    if (force) recordChange("prices.refreshed", `更新价格：检查 ${targets.length} 张牌`, { meta: refreshResult }, { persist: false });
     if (updated || recorded || force) {
       state.data.cards = sortCards(state.data.cards);
       saveState([
@@ -1590,7 +1585,11 @@
         ...(force ? ["changeLog"] : [])
       ]);
       renderScheduler.request("stats", "cards", "basics");
-      if (force) toast("价格已更新", `已检查 ${targets.length} 张牌，并保存今天的价格历史`);
+      if (force && refreshResult.missing) {
+        toast("价格部分更新", `更新 ${refreshResult.updated} 张，Scryfall 未匹配 ${refreshResult.missing} 张；今天的快照已标记本次刷新结果`, true);
+      } else if (force) {
+        toast("价格已更新", `已检查 ${targets.length} 张牌，更新 ${refreshResult.updated} 张，并保存今天的价格历史`);
+      }
       return;
     }
     renderScheduler.request("stats");

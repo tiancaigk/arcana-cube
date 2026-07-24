@@ -72,13 +72,19 @@
     const computedTotal = normalizeUsd(Object.values(cards).reduce((sum, value) => sum + value, 0)) || 0;
     const pricedCount = Number.isFinite(Number(source.pricedCount)) ? Number(source.pricedCount) : Object.keys(cards).length;
     const cardCount = Number.isFinite(Number(source.cardCount)) ? Number(source.cardCount) : pricedCount;
+    const refresh = source.refresh && typeof source.refresh === "object" ? {
+      checked: Math.max(0, Number(source.refresh.checked) || 0),
+      updated: Math.max(0, Number(source.refresh.updated) || 0),
+      missing: Math.max(0, Number(source.refresh.missing) || 0)
+    } : null;
     return {
       date,
       totalUsd: totalUsd === null ? computedTotal : totalUsd,
       cardCount,
       pricedCount,
       missingCount: Math.max(0, Number.isFinite(Number(source.missingCount)) ? Number(source.missingCount) : cardCount - pricedCount),
-      cards
+      cards,
+      ...(refresh ? { refresh } : {})
     };
   }
 
@@ -127,7 +133,12 @@
       cardCount: (cards || []).length,
       pricedCount,
       missingCount: Math.max(0, (cards || []).length - pricedCount),
-      cards: snapshotCards
+      cards: snapshotCards,
+      ...(options.refresh ? { refresh: {
+        checked: Math.max(0, Number(options.refresh.checked) || 0),
+        updated: Math.max(0, Number(options.refresh.updated) || 0),
+        missing: Math.max(0, Number(options.refresh.missing) || 0)
+      } } : {})
     };
     next.updatedAt = (options.now instanceof Date ? options.now : new Date()).toISOString();
     return next;

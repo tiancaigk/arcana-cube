@@ -20,6 +20,7 @@ test("application shell loads dependencies before app.js", () => {
   const persistence = html.indexOf('src="persistence.js"');
   const scryfall = html.indexOf('src="scryfall.js"');
   const catalog = html.indexOf('src="catalog.js"');
+  const priceMaintenance = html.indexOf('src="priceMaintenance.js"');
   const basicLands = html.indexOf('src="basicLands.js"');
   const collectionCommands = html.indexOf('src="collectionCommands.js"');
   const viewPreferences = html.indexOf('src="viewPreferences.js"');
@@ -27,7 +28,7 @@ test("application shell loads dependencies before app.js", () => {
   const selectors = html.indexOf('src="selectors.js"');
   const renderScheduler = html.indexOf('src="renderScheduler.js"');
   const app = html.indexOf('src="app.js"');
-  assert.ok(migrations >= 0 && migrations < core && core < priceHistory && priceHistory < changeLog && changeLog < health && health < storage && storage < workspace && workspace < workspaceSession && workspaceSession < persistence && persistence < scryfall && scryfall < catalog && catalog < basicLands && basicLands < collectionCommands && collectionCommands < viewPreferences && viewPreferences < imageCache && imageCache < selectors && selectors < renderScheduler && renderScheduler < app);
+  assert.ok(migrations >= 0 && migrations < core && core < priceHistory && priceHistory < changeLog && changeLog < health && health < storage && storage < workspace && workspace < workspaceSession && workspaceSession < persistence && persistence < scryfall && scryfall < catalog && catalog < priceMaintenance && priceMaintenance < basicLands && basicLands < collectionCommands && collectionCommands < viewPreferences && viewPreferences < imageCache && imageCache < selectors && selectors < renderScheduler && renderScheduler < app);
 });
 
 test("card image failures use one delegated listener", () => {
@@ -139,7 +140,7 @@ test("basic lands support partial-success collector number range additions", () 
 test("basic lands contribute to value and export but not draft analytics", () => {
   assert.match(appSource, /function getValuedCards\(\)/);
   assert.match(appSource, /return \[\.\.\.state\.data\.cards, \.\.\.state\.data\.basicLands\]/);
-  assert.match(appSource, /recordDailySnapshot\(state\.priceHistory, getValuedCards\(\)\)/);
+  assert.match(appSource, /recordDailySnapshot\(state\.priceHistory, getValuedCards\(\),/);
   assert.match(appSource, /dailyPriceChanges\(state\.priceHistory, getValuedCards\(\), today\)/);
   assert.match(appSource, /book_append_sheet\(workbook, basicLandWorksheet, "基本地"\)/);
   assert.match(appSource, /selectors\.selectStats\(state\.data\.cards/);
@@ -148,8 +149,10 @@ test("basic lands contribute to value and export but not draft analytics", () =>
 
 test("automatic price maintenance waits for folder restore and records daily history", () => {
   assert.match(appSource, /const PRICE_MAINTENANCE_INTERVAL_MS\s*=\s*60 \* 60 \* 1000/);
-  assert.match(appSource, /recordCurrentPriceHistory\(\{ onlyIfMissing: !force \}\)/);
+  assert.match(appSource, /recordCurrentPriceHistory\(\{ onlyIfMissing: !force,/);
   assert.match(appSource, /await restoreDirectoryMode\(\);[\s\S]*try\s*\{[\s\S]*await refreshStalePrices\(\);[\s\S]*finally\s*\{[\s\S]*schedulePriceMaintenance\(\);/);
+  assert.match(appSource, /lookupPrintingBatchDetailed/);
+  assert.match(appSource, /价格部分更新/);
 });
 
 test("key interactive regions expose accessible state", () => {
