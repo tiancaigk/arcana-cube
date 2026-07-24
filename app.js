@@ -2268,7 +2268,10 @@
   }
 
   function downloadJsonBackup() {
-    const payload = JSON.stringify(buildBackup(state.data), null, 2);
+    const payload = JSON.stringify(buildBackup(state.data, {
+      priceHistory: state.priceHistory,
+      changeLog: state.changeLog
+    }), null, 2);
     const blob = new Blob([payload], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const anchor = document.createElement("a");
@@ -2276,22 +2279,20 @@
     anchor.download = `${state.data.meta.name.replace(/[\\/:*?"<>|]/g, "-") || "Cube备份"}.json`;
     anchor.click();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
-    toast("备份完成", "完整 JSON 备份已生成");
+    toast("备份完成", "牌表、价格历史与改动记录已备份；本地卡图仍保留在 Cube 文件夹");
   }
 
   async function restoreJsonBackup(file) {
     if (!file) return;
     try {
       const restored = parseBackup(await file.text());
-      if (!window.confirm(`恢复“${restored.meta.name}”将覆盖当前 Cube，是否继续？`)) return;
-      state.data = {
-        meta: { ...restored.meta },
-        notes: typeof restored.notes === "string" ? restored.notes : "",
-        cards: normalizeStoredCards(restored.cards),
-        basicLands: normalizeStoredCards(restored.basicLands || [])
-      };
-      recordChange("backup.restored", `恢复 JSON 备份：${state.data.cards.length} 张牌`, { meta: { count: state.data.cards.length, name: restored.meta.name } }, { persist: false });
-      saveState(["cube", "changeLog"]);
+      const resolved = resolveLoadedWorkspace(restored.cubeData, restored.priceHistoryData, restored.changeLogData);
+      if (!window.confirm(`恢复“${resolved.cubeData.meta.name}”将覆盖当前 Cube、价格历史和改动记录，是否继续？`)) return;
+      applyCubeData(resolved.cubeData);
+      applyPriceHistoryData(resolved.priceHistoryData);
+      applyChangeLogData(resolved.changeLogData);
+      recordChange("backup.restored", `恢复 JSON 备份：${state.data.cards.length} 张牌`, { meta: { count: state.data.cards.length, name: resolved.cubeData.meta.name } }, { persist: false });
+      saveState(["cube", "priceHistory", "changeLog"]);
       clearFilters();
       renderAll();
       toast("恢复完成", `已恢复 ${state.data.cards.length} 张牌`);

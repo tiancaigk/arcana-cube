@@ -492,29 +492,38 @@
     ];
   }
 
-  function buildBackup(data, exportedAt = new Date().toISOString()) {
+  function buildBackup(data, options = {}) {
+    const normalizedOptions = typeof options === "string" ? { exportedAt: options } : options;
     return {
       format: "arcana-cube-backup",
-      version: 2,
+      version: 3,
       dataVersion: CURRENT_DATA_VERSION,
-      exportedAt,
-      data
+      exportedAt: normalizedOptions.exportedAt || new Date().toISOString(),
+      cube: data,
+      priceHistory: normalizedOptions.priceHistory || null,
+      changeLog: normalizedOptions.changeLog || null
     };
   }
 
   function parseBackup(source) {
     const payload = typeof source === "string" ? JSON.parse(source) : source;
-    const wrapped = payload && payload.data && payload.format === "arcana-cube-backup";
-    const sourceData = wrapped ? payload.data : payload;
+    const wrapped = payload && payload.format === "arcana-cube-backup";
+    const fullBackup = wrapped && Number(payload.version) >= 3 && payload.cube;
+    const sourceData = fullBackup ? payload.cube : wrapped && payload.data ? payload.data : payload;
     if (!sourceData || typeof sourceData !== "object" || !sourceData.meta || typeof sourceData.meta.name !== "string" || !Array.isArray(sourceData.cards)) {
       throw new Error("不是有效的 Arcana Cube 备份文件");
     }
     const data = migrateCubeData(sourceData, wrapped ? payload.dataVersion ?? 0 : 0);
     return {
-      meta: data.meta,
-      notes: typeof data.notes === "string" ? data.notes : "",
-      cards: data.cards,
-      basicLands: data.basicLands
+      version: wrapped ? Number(payload.version) || 1 : 0,
+      cubeData: {
+        meta: data.meta,
+        notes: typeof data.notes === "string" ? data.notes : "",
+        cards: data.cards,
+        basicLands: data.basicLands
+      },
+      priceHistoryData: fullBackup && payload.priceHistory && typeof payload.priceHistory === "object" ? payload.priceHistory : null,
+      changeLogData: fullBackup && payload.changeLog && typeof payload.changeLog === "object" ? payload.changeLog : null
     };
   }
 

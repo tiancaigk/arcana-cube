@@ -492,15 +492,26 @@ test("buildExcelRows exports a re-importable table with finish and price", () =>
 });
 
 test("JSON backups preserve the complete Cube and accept legacy exports", () => {
-  const data = { meta: { name: "Test Cube", description: "Desc" }, notes: "Notes", cards: [{ id: "1", name: "Black Vise", finish: "nonfoil" }], basicLands: [{ id: "2", name: "Plains", finish: "foil" }] };
-  const backup = buildBackup(data, "2026-06-22T00:00:00.000Z");
-  assert.equal(backup.version, 2);
+  const data = { meta: { id: "cube-test", name: "Test Cube", description: "Desc" }, notes: "Notes", cards: [{ id: "1", name: "Black Vise", finish: "nonfoil" }], basicLands: [{ id: "2", name: "Plains", finish: "foil" }] };
+  const priceHistory = { cubeId: "cube-test", snapshots: { "2026-06-22": { totalUsd: 25 } } };
+  const changeLog = { cubeId: "cube-test", entries: [{ id: "log-1" }] };
+  const backup = buildBackup(data, { exportedAt: "2026-06-22T00:00:00.000Z", priceHistory, changeLog });
+  assert.equal(backup.version, 3);
   assert.equal(backup.dataVersion, CURRENT_DATA_VERSION);
-  assert.deepEqual(parseBackup(JSON.stringify(backup)), data);
+  assert.deepEqual(parseBackup(JSON.stringify(backup)), {
+    version: 3,
+    cubeData: data,
+    priceHistoryData: priceHistory,
+    changeLogData: changeLog
+  });
   const migratedLegacy = parseBackup(JSON.stringify({ ...data, format: "arcana-cube-v1" }));
-  assert.equal(migratedLegacy.cards[0].name, "Black Vise");
-  assert.equal(migratedLegacy.cards[0].JapanPrint, false);
-  assert.equal(migratedLegacy.cards[0].localThumbnail, "");
-  assert.deepEqual(migratedLegacy.basicLands, [{ id: "2", name: "Plains", finish: "foil", localizedNames: {}, prices: {}, localImage: "", localThumbnail: "", remoteImage: "", image: "", localBackImage: "", localBackThumbnail: "", remoteBackImage: "", backImage: "", JapanPrint: false }]);
+  assert.equal(migratedLegacy.cubeData.cards[0].name, "Black Vise");
+  assert.equal(migratedLegacy.cubeData.cards[0].JapanPrint, false);
+  assert.equal(migratedLegacy.cubeData.cards[0].localThumbnail, "");
+  assert.equal(migratedLegacy.priceHistoryData, null);
+  assert.equal(migratedLegacy.changeLogData, null);
+  const versionTwo = parseBackup(JSON.stringify({ format: "arcana-cube-backup", version: 2, dataVersion: CURRENT_DATA_VERSION, data }));
+  assert.deepEqual(versionTwo.cubeData, data);
+  assert.equal(versionTwo.priceHistoryData, null);
   assert.throws(() => parseBackup('{"not":"a cube"}'), /有效/);
 });
