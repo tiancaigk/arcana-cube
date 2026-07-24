@@ -39,9 +39,12 @@ flowchart LR
 | `health.js` | 只读分析文件夹缺图、孤立文件和数据完整性 | 修复或删除文件 |
 | `storage.js` | 浏览器 Cube 镜像、工作区包装、目录句柄存储 | 业务域调度 |
 | `workspace.js` | File System Access 权限、三个 JSON 文件和图片文件 IO | 下载和状态管理 |
+| `workspaceSession.js` | 绑定 Cube 身份并整体解析三个工作区数据域 | 文件 IO 和界面确认 |
 | `persistence.js` | 脏域快照、延迟合并、浏览器/文件夹写入协调 | 数据格式解释 |
 | `scryfall.js` | 通用 JSON 请求、重试、取消和 HTTP 错误 | 卡牌查询策略 |
 | `catalog.js` | 名称、印刷版本、Oracle 分页和批量查询 | UI 和本地文件 |
+| `priceMaintenance.js` | 把批量查询结果安全应用到当前牌张并汇总刷新结果 | 发起网络请求和显示反馈 |
+| `chart.js` | 按真实日期计算价格曲线横轴坐标 | DOM 和价格数据存储 |
 | `imageCache.js` | 原图下载、精确命名、缩略图补全和进度 | Canvas 实现和目录选择 |
 | `selectors.js` | 按修订号缓存筛选、分组、统计、分析和价格视图 | 修改状态 |
 | `renderScheduler.js` | 合并渲染请求并按固定顺序执行区域刷新 | 决定业务失效范围 |
@@ -59,7 +62,9 @@ flowchart LR
 
 状态变更完成后调用 `saveState(domain)` 或 `saveState(domains)`，只标记真正变化的域。协调器立即保存普通浏览器镜像；文件夹模式把同一域的连续快照合并，并按 `cube`、`priceHistory`、`changeLog` 顺序串行写入。笔记输入使用短延迟合并，`blur` 会刷新待写内容，`pagehide` 至少同步保存浏览器镜像。
 
-文件夹写入失败时，该域保持 dirty，不能把“已写入文件夹”当作成功。重新载入、断开和显式写入文件夹前必须先 `flush()`。不要绕过 `persistence.js` 直接为普通业务变更写 JSON 文件。
+文件夹写入失败时，该域保持 dirty，不能把“已写入文件夹”当作成功。断开和显式写入文件夹前必须先 `flush()`；“从文件夹重载”只允许在没有 dirty 域时执行，并且不能先写后读。不要绕过 `persistence.js` 直接为普通业务变更写 JSON 文件。
+
+三个文件共享同一个 `cubeId`。`workspaceSession.js` 会为旧辅助文件补上主牌表的身份，缺失辅助文件使用空数据；身份不一致时停止载入，禁止把不同 Cube 的价格历史或改动记录拼接在一起。
 
 名称语言和基本地分组属于非关键视图偏好，由 `viewPreferences.js` 单独写入 `localStorage`。它们不进入 `cube-data.json`；无效旧值或浏览器拒绝存储时使用默认值，不得影响 Cube 数据加载和保存。
 
@@ -128,7 +133,8 @@ npm run serve -- --host 0.0.0.0 --port 4173
 ```sh
 npm run check
 npm test
+npm run test:browser
 git diff --check
 ```
 
-单元测试使用 `testFixtures.js` 生成确定性的 600 张牌和 180 天价格历史，覆盖大规模筛选、统计、价格索引、文件写入合并与渲染调度。涉及浏览器交互时，还应通过 `npm run serve` 在 `http://127.0.0.1:4173/` 验证相关流程；涉及文件夹模式时使用测试目录，不要对真实 Cube 数据做破坏性操作。
+单元测试使用 `testFixtures.js` 生成确定性的 600 张牌和 180 天价格历史，覆盖大规模筛选、统计、价格索引、文件写入合并与渲染调度。`npm run test:browser` 会启动隔离的本地服务和临时 Chrome 配置，实际验证页面加载、弹窗、牌表筛选和组合分析筛选；涉及文件夹模式时仍应使用测试目录，不要对真实 Cube 数据做破坏性操作。

@@ -100,6 +100,7 @@ async function main() {
     client.on("Runtime.exceptionThrown", (event) => runtimeErrors.push(event.exceptionDetails && event.exceptionDetails.text || "Runtime exception"));
     await client.send("Runtime.enable");
     await client.send("Page.enable");
+    await client.send("Browser.setDownloadBehavior", { behavior: "deny" });
     await client.send("Page.navigate", { url: `http://127.0.0.1:${appPort}/` });
 
     async function evaluate(expression, awaitPromise = true) {
@@ -141,6 +142,16 @@ async function main() {
       return document.querySelector('#manaCurveScope').textContent;
     })()`);
     if (!analyticsScope.includes("白") || !analyticsScope.includes("生物")) throw new Error("分析组合筛选没有更新法力曲线");
+    const sheetJsSource = await evaluate(`(async () => {
+      document.querySelector('#exportBtn').click();
+      const started = Date.now();
+      while (!window.XLSX && Date.now() - started < 5000) {
+        await new Promise((resolve) => setTimeout(resolve, 50));
+      }
+      const script = [...document.scripts].find((item) => item.src.endsWith('/vendor/xlsx.full.min.js'));
+      return window.XLSX && script ? script.src : '';
+    })()`);
+    if (!sheetJsSource.startsWith(`http://127.0.0.1:${appPort}/vendor/`)) throw new Error("Excel 组件没有从本地 vendor 目录加载");
     if (runtimeErrors.length) throw new Error(`页面运行时错误：${runtimeErrors.join("; ")}`);
     process.stdout.write(`Browser smoke test passed: ${initialCount} cards, ${whiteCount} white cards.\n`);
   } finally {
