@@ -62,3 +62,52 @@ test("handle store degrades gracefully when indexedDB is unavailable", async () 
   assert.equal(await store.save("cube", { ok: true }), false);
   assert.equal(await store.clear("cube"), false);
 });
+
+test("handle store waits for the IndexedDB transaction to commit", async () => {
+  let committed = false;
+  const indexedDB = {
+    open() {
+      const request = {};
+      const db = {
+        objectStoreNames: { contains: () => true },
+        transaction() {
+          const transaction = {
+            error: null,
+            abort() {},
+            objectStore() {
+              return {
+                put() {
+                  const putRequest = {};
+                  queueMicrotask(() => {
+                    putRequest.result = "cube";
+                    putRequest.onsuccess();
+                  });
+                  setTimeout(() => {
+                    committed = true;
+                    transaction.oncomplete();
+                  }, 20);
+                  return putRequest;
+                }
+              };
+            }
+          };
+          return transaction;
+        }
+      };
+      queueMicrotask(() => {
+        request.result = db;
+        request.onsuccess();
+      });
+      return request;
+    }
+  };
+  const store = createHandleStore(indexedDB);
+  let resolved = false;
+  const saving = store.save("cube", { kind: "directory" }).then(() => { resolved = true; });
+  await new Promise((resolve) => setTimeout(resolve, 5));
+  assert.equal(resolved, false);
+  assert.equal(committed, false);
+  await saving;
+  assert.equal(committed, true);
+  assert.equal(resolved, true);
+});

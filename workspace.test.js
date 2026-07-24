@@ -16,7 +16,8 @@ class MemoryFileHandle {
   async createWritable() {
     return {
       write: async (value) => { this.value = value instanceof Blob ? value : new Blob([value]); },
-      close: async () => {}
+      close: async () => {},
+      abort: async () => {}
     };
   }
 }
@@ -118,6 +119,24 @@ test("workspace service rejects paths outside the configured image directory", a
   const workspace = createService();
   const directory = new MemoryDirectoryHandle();
   await assert.rejects(() => workspace.writeFile(directory, "../cube-data.json", new Blob([])), /图片路径/);
+});
+
+test("workspace service aborts a writable stream after a failed write", async () => {
+  const workspace = createService();
+  let aborted = false;
+  const directory = new MemoryDirectoryHandle();
+  directory.entriesByName.set("cube-data.json", {
+    kind: "file",
+    async createWritable() {
+      return {
+        async write() { throw new Error("disk full"); },
+        async close() {},
+        async abort() { aborted = true; }
+      };
+    }
+  });
+  await assert.rejects(() => workspace.writeCube(directory, { cards: [] }), /disk full/);
+  assert.equal(aborted, true);
 });
 
 module.exports = { MemoryDirectoryHandle };

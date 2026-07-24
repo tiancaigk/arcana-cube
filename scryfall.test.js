@@ -35,3 +35,22 @@ test("requestJson honors caller cancellation", async () => {
   controller.abort(new DOMException("Stopped", "AbortError"));
   await assert.rejects(requestJson("https://example.test", { fetchImpl: async () => response(200, {}), signal: controller.signal, minIntervalMs: 0 }), /Stopped/);
 });
+
+test("requestJson cancels retry backoff immediately", async () => {
+  const controller = new AbortController();
+  let attempts = 0;
+  const pending = requestJson("https://example.test", {
+    signal: controller.signal,
+    minIntervalMs: 0,
+    retries: 2,
+    retryDelayMs: 5000,
+    fetchImpl: async () => {
+      attempts += 1;
+      return response(429, {});
+    }
+  });
+  await new Promise((resolve) => setTimeout(resolve, 10));
+  controller.abort(new DOMException("Stopped", "AbortError"));
+  await assert.rejects(pending, /Stopped/);
+  assert.equal(attempts, 1);
+});

@@ -47,9 +47,24 @@
 
     async function writeJson(directoryHandle, fileName, wrap, data) {
       const fileHandle = await directoryHandle.getFileHandle(fileName, { create: true });
+      await writeWritable(fileHandle, JSON.stringify(wrap(data), null, 2));
+    }
+
+    async function writeWritable(fileHandle, value) {
       const writable = await fileHandle.createWritable();
-      await writable.write(JSON.stringify(wrap(data), null, 2));
-      await writable.close();
+      try {
+        await writable.write(value);
+        await writable.close();
+      } catch (error) {
+        if (typeof writable.abort === "function") {
+          try {
+            await writable.abort();
+          } catch (abortError) {
+            // Preserve the original write failure.
+          }
+        }
+        throw error;
+      }
     }
 
     function readCube(directoryHandle) {
@@ -122,9 +137,7 @@
       const parts = imagePathParts(relativePath);
       const directory = await directoryForPath(directoryHandle, parts, true);
       const fileHandle = await directory.getFileHandle(parts.name, { create: true });
-      const writable = await fileHandle.createWritable();
-      await writable.write(value);
-      await writable.close();
+      await writeWritable(fileHandle, value);
     }
 
     async function listImageFiles(directoryHandle) {

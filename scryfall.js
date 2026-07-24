@@ -6,14 +6,31 @@
   let queue = Promise.resolve();
   let lastRequestAt = 0;
 
-  function wait(ms) {
-    return new Promise((resolve) => setTimeout(resolve, ms));
+  function abortReason(signal) {
+    return signal && signal.reason || new DOMException("Aborted", "AbortError");
   }
 
-  function schedule(minIntervalMs) {
+  function wait(ms, signal) {
+    if (signal && signal.aborted) return Promise.reject(abortReason(signal));
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        if (signal) signal.removeEventListener("abort", onAbort);
+        resolve();
+      }, ms);
+      const onAbort = () => {
+        clearTimeout(timer);
+        signal.removeEventListener("abort", onAbort);
+        reject(abortReason(signal));
+      };
+      if (signal) signal.addEventListener("abort", onAbort, { once: true });
+    });
+  }
+
+  function schedule(minIntervalMs, signal) {
     const turn = queue.then(async () => {
       const remaining = minIntervalMs - (Date.now() - lastRequestAt);
-      if (remaining > 0) await wait(remaining);
+      if (remaining > 0) await wait(remaining, signal);
+      if (signal && signal.aborted) throw abortReason(signal);
       lastRequestAt = Date.now();
     });
     queue = turn.catch(() => {});
@@ -39,8 +56,8 @@
     if (!fetchImpl) throw new Error("当前环境不支持网络请求");
 
     for (let attempt = 0; attempt <= retries; attempt += 1) {
-      if (signal && signal.aborted) throw signal.reason || new DOMException("Aborted", "AbortError");
-      await schedule(minIntervalMs);
+      if (signal && signal.aborted) throw abortReason(signal);
+      await schedule(minIntervalMs, signal);
       const controller = new AbortController();
       const abortFromCaller = () => controller.abort(signal.reason);
       if (signal) signal.addEventListener("abort", abortFromCaller, { once: true });
@@ -57,7 +74,7 @@
         const error = new Error(payload.details || payload.error || `Scryfall 请求失败 (${response.status})`);
         error.status = response.status;
         if (attempt < retries && (response.status === 429 || response.status >= 500)) {
-          await wait(retryDelay(response, attempt, retryDelayMs));
+          await wait(retryDelay(response, attempt, retryDelayMs), signal);
           continue;
         }
         throw error;
@@ -65,7 +82,7 @@
         if (signal && signal.aborted) throw signal.reason || error;
         const retryable = error.name === "TimeoutError" || error.name === "AbortError" || error instanceof TypeError;
         if (attempt < retries && retryable) {
-          await wait(retryDelay(response, attempt, retryDelayMs));
+          await wait(retryDelay(response, attempt, retryDelayMs), signal);
           continue;
         }
         throw error;

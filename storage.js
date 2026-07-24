@@ -109,10 +109,41 @@
       return new Promise((resolve, reject) => {
         const transaction = db.transaction(storeName, mode);
         const store = transaction.objectStore(storeName);
+        let taskComplete = false;
+        let transactionComplete = false;
+        let result;
+        let settled = false;
+        const finish = () => {
+          if (!settled && taskComplete && transactionComplete) {
+            settled = true;
+            resolve(result);
+          }
+        };
+        const fail = (error) => {
+          if (settled) return;
+          settled = true;
+          reject(error);
+        };
         Promise.resolve()
           .then(() => task(store))
-          .then(resolve, reject);
-        transaction.onerror = () => reject(transaction.error || new Error("IndexedDB 事务失败"));
+          .then((value) => {
+            result = value;
+            taskComplete = true;
+            finish();
+          }, (error) => {
+            try {
+              transaction.abort();
+            } catch (abortError) {
+              // The transaction may already be inactive.
+            }
+            fail(error);
+          });
+        transaction.oncomplete = () => {
+          transactionComplete = true;
+          finish();
+        };
+        transaction.onerror = () => fail(transaction.error || new Error("IndexedDB 事务失败"));
+        transaction.onabort = () => fail(transaction.error || new Error("IndexedDB 事务已中止"));
       });
     }
 
