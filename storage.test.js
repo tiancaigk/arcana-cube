@@ -1,7 +1,7 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const { CURRENT_DATA_VERSION } = require("./migrations.js");
-const { WORKSPACE_FORMAT, createHandleStore, createSerialWriteQueue, createStorage, isCubeData, parseWorkspaceData, wrapWorkspaceData } = require("./storage.js");
+const { WORKSPACE_FORMAT, WORKSPACE_UPGRADE_FLAG, createHandleStore, createSerialWriteQueue, createStorage, isCubeData, parseWorkspaceData, wrapWorkspaceData } = require("./storage.js");
 
 function memoryStorage(initial = null) {
   let value = initial;
@@ -37,6 +37,8 @@ test("workspace file helpers wrap and parse Cube data", () => {
   assert.equal(migratedLegacy.cards[0].id, "1");
   assert.equal(migratedLegacy.cards[0].JapanPrint, false);
   assert.equal(migratedLegacy.cards[0].localThumbnail, "");
+  assert.equal(migratedLegacy[WORKSPACE_UPGRADE_FLAG], true);
+  assert.equal(parseWorkspaceData(JSON.stringify(wrapped))[WORKSPACE_UPGRADE_FLAG], false);
   assert.throws(() => parseWorkspaceData(JSON.stringify({ ...wrapped, dataVersion: CURRENT_DATA_VERSION + 1 })), /较新版本/);
   assert.throws(() => parseWorkspaceData(JSON.stringify({ nope: true })), /无效/);
 });

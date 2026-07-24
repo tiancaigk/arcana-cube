@@ -372,6 +372,7 @@
   function resolveLoadedWorkspace(cubeData, priceHistoryData, changeLogData) {
     return resolveWorkspaceDomains({
       cubeData,
+      cubeNeedsWrite: cubeData && cubeData[window.CubeStorage.WORKSPACE_UPGRADE_FLAG] === true,
       priceHistoryData,
       changeLogData,
       emptyPriceHistory,
@@ -379,7 +380,8 @@
     });
   }
 
-  async function persistWorkspaceUpgrades(directoryHandle, resolved) {
+  async function persistWorkspaceUpgrades(directoryHandle, resolved, options = {}) {
+    if (resolved.needsWrite.cube && options.includeCube !== false) await writeCubeDataFile(directoryHandle, resolved.cubeData);
     if (resolved.needsWrite.priceHistory) await writePriceHistoryFile(directoryHandle, resolved.priceHistoryData);
     if (resolved.needsWrite.changeLog) await writeChangeLogFile(directoryHandle, resolved.changeLogData);
   }
@@ -682,7 +684,7 @@
       applyCubeData(resolved.cubeData);
       applyPriceHistoryData(resolved.priceHistoryData);
       applyChangeLogData(resolved.changeLogData);
-      await persistWorkspaceUpgrades(directoryHandle, resolved);
+      await persistWorkspaceUpgrades(directoryHandle, resolved, { includeCube: false });
       localMirrorSave();
       savePriceHistoryLocal();
       saveChangeLogLocal();

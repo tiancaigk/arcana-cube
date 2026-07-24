@@ -42,6 +42,7 @@
       priceHistoryData: priceHistory.data,
       changeLogData: changeLog.data,
       needsWrite: {
+        cube: options.cubeNeedsWrite === true,
         priceHistory: priceHistory.needsWrite,
         changeLog: changeLog.needsWrite
       }

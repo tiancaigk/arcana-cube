@@ -10,7 +10,7 @@ test("workspace domains inherit one Cube identity without reusing unrelated brow
   const resolved = resolveWorkspaceDomains({ cubeData: cube, priceHistoryData: null, changeLogData: null, emptyPriceHistory, emptyChangeLog });
   assert.equal(resolved.priceHistoryData.cubeId, "cube-a");
   assert.equal(resolved.changeLogData.cubeId, "cube-a");
-  assert.deepEqual(resolved.needsWrite, { priceHistory: true, changeLog: true });
+  assert.deepEqual(resolved.needsWrite, { cube: false, priceHistory: true, changeLog: true });
 });
 
 test("legacy auxiliary domains are attached to the loaded Cube", () => {
@@ -23,7 +23,7 @@ test("legacy auxiliary domains are attached to the loaded Cube", () => {
   });
   assert.equal(resolved.priceHistoryData.cubeId, "cube-a");
   assert.equal(resolved.changeLogData.cubeId, "cube-a");
-  assert.deepEqual(resolved.needsWrite, { priceHistory: true, changeLog: true });
+  assert.deepEqual(resolved.needsWrite, { cube: false, priceHistory: true, changeLog: true });
 });
 
 test("workspace loading rejects auxiliary data from another Cube", () => {

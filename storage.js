@@ -7,6 +7,7 @@
   const WORKSPACE_FORMAT = "arcana-cube-workspace";
   const WORKSPACE_VERSION = 1;
   const LOCAL_FORMAT = "arcana-cube-local";
+  const WORKSPACE_UPGRADE_FLAG = "__arcanaWorkspaceUpgrade";
   const { CURRENT_DATA_VERSION, migrateCubeData } = migrations;
 
   function clone(value) {
@@ -65,8 +66,20 @@
 
   function parseWorkspaceData(text) {
     const payload = JSON.parse(text);
-    if (isCubeData(payload)) return migrateCubeData(payload, 0);
-    if (payload && payload.format === WORKSPACE_FORMAT && isCubeData(payload.data)) return migrateCubeData(payload.data, payload.dataVersion ?? 0);
+    let data;
+    let needsUpgrade = false;
+    if (isCubeData(payload)) {
+      data = migrateCubeData(payload, 0);
+      needsUpgrade = true;
+    } else if (payload && payload.format === WORKSPACE_FORMAT && isCubeData(payload.data)) {
+      const dataVersion = payload.dataVersion ?? 0;
+      data = migrateCubeData(payload.data, dataVersion);
+      needsUpgrade = dataVersion < CURRENT_DATA_VERSION;
+    }
+    if (data) {
+      Object.defineProperty(data, WORKSPACE_UPGRADE_FLAG, { value: needsUpgrade, enumerable: false });
+      return data;
+    }
     throw new Error("Cube 文件格式无效");
   }
 
@@ -161,5 +174,5 @@
     };
   }
 
-  return { WORKSPACE_FORMAT, WORKSPACE_VERSION, CURRENT_DATA_VERSION, createStorage, createSerialWriteQueue, createHandleStore, isCubeData, parseWorkspaceData, wrapWorkspaceData };
+  return { WORKSPACE_FORMAT, WORKSPACE_VERSION, WORKSPACE_UPGRADE_FLAG, CURRENT_DATA_VERSION, createStorage, createSerialWriteQueue, createHandleStore, isCubeData, parseWorkspaceData, wrapWorkspaceData };
 });
