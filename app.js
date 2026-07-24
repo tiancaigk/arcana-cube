@@ -632,9 +632,12 @@
   async function reloadFromDirectory() {
     if (!state.storage.directoryHandle) return;
     const directoryHandle = state.storage.directoryHandle;
+    if (persistence.hasDirty()) {
+      toast("暂时无法重载", "仍有网页更改正在写入文件夹，请等待保存完成后再重试", true);
+      return;
+    }
     if (!window.confirm(`从 ${state.storage.directoryName}/${CUBE_FILE_NAME} 重新载入会覆盖当前 Cube，是否继续？`)) return;
     try {
-      if (!await flushDirectoryWrites(directoryHandle)) return;
       if (!await requestDirectoryPermission(directoryHandle, "readwrite")) {
         toast("无法读取文件夹", "请重新授权这个 Cube 文件夹", true);
         return;

@@ -88,6 +88,14 @@ test("remembered Cube folders reconnect without reopening the picker", () => {
   assert.match(appSource, /state\.storage\.mode !== "directory" && !state\.storage\.rememberedDirectoryHandle/);
 });
 
+test("folder reload never flushes browser data over the file being loaded", () => {
+  const start = appSource.indexOf("async function reloadFromDirectory()");
+  const end = appSource.indexOf("async function connectCubeFolder()", start);
+  const reloadSource = appSource.slice(start, end);
+  assert.match(reloadSource, /persistence\.hasDirty\(\)/);
+  assert.doesNotMatch(reloadSource, /flushDirectoryWrites/);
+});
+
 test("basic lands use a dedicated five-group collection view", () => {
   assert.match(html, /data-view="basicLands"/);
   assert.match(html, /id="basicLandsView"/);
