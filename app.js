@@ -330,10 +330,11 @@
     return Boolean(
       data
       && data.meta
-      && data.meta.id === defaultState.meta.id
+      && data.meta.name === defaultState.meta.name
       && Array.isArray(data.cards)
       && data.cards.length === seedCards.length
       && data.cards.every((card) => seedIds.has(card.id))
+      && (!Array.isArray(data.basicLands) || data.basicLands.length === 0)
     );
   }
 

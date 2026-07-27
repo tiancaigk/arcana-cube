@@ -102,6 +102,9 @@ test("folder reload never flushes browser data over the file being loaded", () =
 test("published Cube data replaces only the untouched starter list", () => {
   assert.match(appSource, /async function loadPublishedCubeData\(\)/);
   assert.match(appSource, /if \(!isStarterCube\(state\.data\)\) return false;/);
+  assert.match(appSource, /data\.meta\.name === defaultState\.meta\.name/);
+  assert.match(appSource, /data\.cards\.every\(\(card\) => seedIds\.has\(card\.id\)\)/);
+  assert.doesNotMatch(appSource, /data\.meta\.id === defaultState\.meta\.id/);
   assert.match(appSource, /fetch\(CUBE_FILE_NAME, \{ cache: "no-cache" \}\)/);
   assert.match(appSource, /window\.CubeStorage\.parseWorkspaceData/);
   assert.match(appSource, /image: images\.remoteImage \|\| ""/);
