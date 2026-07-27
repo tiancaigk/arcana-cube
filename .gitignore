@@ -9,7 +9,7 @@ outputs/
 /images/
 
 # Local Cube runtime data
-/cube-data.json
+# cube-data.json is intentionally tracked as the public starter list.
 /price-history.json
 /change-log.json
 /product-design-audit/

@@ -325,6 +325,59 @@
     return cubeStorage.load(defaultState);
   }
 
+  function isStarterCube(data) {
+    const seedIds = new Set(seedCards.map((card) => card.id));
+    return Boolean(
+      data
+      && data.meta
+      && data.meta.id === defaultState.meta.id
+      && Array.isArray(data.cards)
+      && data.cards.length === seedCards.length
+      && data.cards.every((card) => seedIds.has(card.id))
+    );
+  }
+
+  function publishedCardForCurrentPage(card) {
+    if (isLocalHttpPage()) return card;
+    const images = normalizeImageFields(card);
+    return {
+      ...card,
+      image: images.remoteImage || "",
+      localImage: "",
+      localThumbnail: "",
+      backImage: images.remoteBackImage || "",
+      localBackImage: "",
+      localBackThumbnail: ""
+    };
+  }
+
+  async function loadPublishedCubeData() {
+    if (!isStarterCube(state.data)) return false;
+    try {
+      const response = await fetch(CUBE_FILE_NAME, { cache: "no-cache" });
+      if (!response.ok) return false;
+      const published = window.CubeStorage.parseWorkspaceData(await response.text());
+      const publishedForPage = {
+        ...published,
+        cards: (published.cards || []).map(publishedCardForCurrentPage),
+        basicLands: (published.basicLands || []).map(publishedCardForCurrentPage)
+      };
+      const resolved = resolveWorkspaceDomains({
+        cubeData: publishedForPage,
+        priceHistoryData: null,
+        changeLogData: null,
+        emptyPriceHistory,
+        emptyChangeLog
+      });
+      applyCubeData(resolved.cubeData);
+      applyPriceHistoryData(resolved.priceHistoryData);
+      applyChangeLogData(resolved.changeLogData);
+      return true;
+    } catch (error) {
+      return false;
+    }
+  }
+
   function loadPriceHistoryState() {
     try {
       const saved = JSON.parse(localStorage.getItem(PRICE_HISTORY_STORAGE_KEY));
@@ -2591,6 +2644,7 @@
 
   async function initialize() {
     bindEvents();
+    await loadPublishedCubeData();
     renderAll();
     renderStorageStatus();
     await restoreDirectoryMode();

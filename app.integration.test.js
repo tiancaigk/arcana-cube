@@ -99,6 +99,16 @@ test("folder reload never flushes browser data over the file being loaded", () =
   assert.doesNotMatch(reloadSource, /flushDirectoryWrites/);
 });
 
+test("published Cube data replaces only the untouched starter list", () => {
+  assert.match(appSource, /async function loadPublishedCubeData\(\)/);
+  assert.match(appSource, /if \(!isStarterCube\(state\.data\)\) return false;/);
+  assert.match(appSource, /fetch\(CUBE_FILE_NAME, \{ cache: "no-cache" \}\)/);
+  assert.match(appSource, /window\.CubeStorage\.parseWorkspaceData/);
+  assert.match(appSource, /image: images\.remoteImage \|\| ""/);
+  assert.match(appSource, /localImage: ""/);
+  assert.match(appSource, /await loadPublishedCubeData\(\);[\s\S]*renderAll\(\);/);
+});
+
 test("basic lands use a dedicated five-group collection view", () => {
   assert.match(html, /data-view="basicLands"/);
   assert.match(html, /id="basicLandsView"/);
