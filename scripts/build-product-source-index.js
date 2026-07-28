@@ -2,7 +2,7 @@
 
 const fs = require("node:fs/promises");
 const path = require("node:path");
-const { collapseProducts } = require("../productSources.js");
+const { collapseProducts, isPaperProduct } = require("../productSources.js");
 
 const rootDir = path.resolve(__dirname, "..");
 const cubeFile = path.join(rootDir, "cube-data.json");
@@ -148,6 +148,7 @@ function resolveProducts(sourceUuids, printing, productMap, deckCardsByProduct, 
       unresolvedProducts.add(uuid);
       return [];
     }
+    if (!isPaperProduct(product)) return [];
     if (!isDirectProductSource(product, printing, sourceProductUuids, deckCardsByProduct)) return [];
     return [product];
   });

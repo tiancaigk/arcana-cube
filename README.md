@@ -72,7 +72,7 @@ Cube/
 
 ## 产品来源
 
-卡牌大图右侧的“获取方式”来自 [MTGJSON](https://mtgjson.com/)；应用使用 Scryfall ID 匹配当前具体印刷版本，并分别解析 Foil、Non-Foil 与 Etched 的 `sourceProducts`。预组显示为“固定收录”，补充包显示为“随机可能开出”。单包、盒和箱等共享同一卡池的产品会合并显示。
+卡牌大图右侧的“获取方式”来自 [MTGJSON](https://mtgjson.com/)；应用使用 Scryfall ID 匹配当前具体印刷版本，并分别解析 Foil、Non-Foil 与 Etched 的 `sourceProducts`。预组显示为“固定收录”，补充包显示为“随机可能开出”。单包、盒和箱等共享同一卡池的产品会合并显示，MTGO 等非实体发行会被排除。
 
 当前牌表发生版本增删后，可重新生成精简索引：
 

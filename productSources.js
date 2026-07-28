@@ -23,6 +23,15 @@
     return key === "nonfoil" ? "Non-Foil" : "Foil";
   }
 
+  function isPaperProduct(product) {
+    const category = String(product && product.category || "").toLocaleLowerCase();
+    const subtype = String(product && product.subtype || "").toLocaleLowerCase();
+    const name = String(product && product.name || "");
+    if (["digital", "digital_only", "online"].includes(category)) return false;
+    if (["digital", "digital_only", "mtgo"].includes(subtype)) return false;
+    return !/\b(?:MTGO|Magic Online)\s+Redemption\b/i.test(name);
+  }
+
   function productType(product) {
     const category = String(product && product.category || "").toLocaleLowerCase();
     const subtype = String(product && product.subtype || "").toLocaleLowerCase();
@@ -78,7 +87,7 @@
   }
 
   function collapseProducts(products) {
-    const source = (products || []).filter((product) => product && product.uuid && product.name);
+    const source = (products || []).filter((product) => product && product.uuid && product.name && isPaperProduct(product));
     const deckSubtypes = new Set(source.filter((product) => product.category === "deck").map((product) => product.subtype || ""));
     const filtered = source.filter((product) => !(product.category === "subset" && deckSubtypes.has(product.subtype || "")));
     const groups = new Map();
@@ -183,6 +192,7 @@
     availabilityLabel,
     collapseProducts,
     createProductSourceCatalog,
+    isPaperProduct,
     productType,
     productTypeLabel,
     selectProductSources,

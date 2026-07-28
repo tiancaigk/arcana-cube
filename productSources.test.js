@@ -3,6 +3,7 @@ const assert = require("node:assert/strict");
 const {
   collapseProducts,
   createProductSourceCatalog,
+  isPaperProduct,
   productType,
   selectProductSources,
   validateIndex
@@ -16,6 +17,12 @@ function product(uuid, name, category, subtype) {
 test("product types distinguish collector boosters and fixed preconstructed decks", () => {
   assert.equal(productType(product("collector", "Collector Booster Pack", "booster_pack", "collector")), "collector");
   assert.equal(productType(product("deck", "Timeless Wisdom", "deck", "commander")), "precon");
+});
+
+test("paper product filtering removes online redemptions without rejecting physical branded products", () => {
+  assert.equal(isPaperProduct(product("mtgo", "Kaladesh MTGO Redemption Foil", "box_set", "")), false);
+  assert.equal(isPaperProduct(product("arena", "2021 Arena Starter Kit", "multiple_decks", "two_player_starter")), true);
+  assert.equal(isPaperProduct(product("sld", "Secret Lair x Hatsune Miku Digital Sensation", "box_set", "secret_lair")), true);
 });
 
 test("collector pack, box, and case collapse to the most useful pack entry", () => {
