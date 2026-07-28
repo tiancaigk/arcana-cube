@@ -27,6 +27,7 @@
   const { createPersistenceCoordinator } = window.CubePersistence;
   const { requestJson: scryfallRequest } = window.ScryfallClient;
   const { createCatalog, printingKey } = window.CubeCatalog;
+  const { createProductSourceCatalog } = window.CubeProductSources;
   const { applyPriceUpdates } = window.CubePriceMaintenance;
   const { datePositions } = window.CubeChart;
   const { BASIC_LAND_LABELS, BASIC_LAND_ORDER, classifyBasicLandBatch, groupBasicLands, parseCollectorNumberRange } = window.CubeBasicLands;
@@ -57,6 +58,10 @@
     emptyChangeLog
   });
   const catalog = createCatalog({ requestJson: scryfallRequest, core: window.CubeCore });
+  const productSourceCatalog = createProductSourceCatalog({
+    fetchImpl: (...args) => fetch(...args),
+    indexUrl: "product-source-index.json"
+  });
   const selectors = createCubeSelectors(window.CubeCore, window.CubePriceHistory);
   const imageCache = createImageCache({
     workspace,
@@ -162,6 +167,12 @@
     previewCardId: null,
     previewController: null,
     previewMetadataAttempts: new Set(),
+    previewProductSources: {
+      cardId: null,
+      status: "idle",
+      result: null,
+      error: ""
+    },
     refreshingPrices: false,
     imageCaching: false,
     folderSync: {
@@ -1418,6 +1429,97 @@
     </div>`).join("");
   }
 
+  function productSourceHintLabel(value) {
+    const key = String(value || "").toLocaleLowerCase();
+    return ({
+      collector: "聚珍补充包",
+      play: "常规补充包",
+      set: "系列补充包",
+      draft: "轮抽补充包",
+      default: "补充包",
+      buyabox: "Buy-a-Box",
+      prerelease: "售前",
+      boosterfun: "特殊画框",
+      starterdeck: "入门预组"
+    })[key] || value;
+  }
+
+  function renderProductSourcePanel(card) {
+    const preview = state.previewProductSources;
+    const isCurrent = preview.cardId === card.id;
+    let body;
+    if (!isCurrent || preview.status === "loading") {
+      body = `<div class="product-source-status loading"><span></span><p>正在查询当前版本的产品来源…</p></div>`;
+    } else if (preview.status === "error") {
+      body = `<div class="product-source-status"><p>${escapeHtml(preview.error || "产品来源暂时无法加载")}</p></div>`;
+    } else {
+      const result = preview.result || {};
+      const products = result.products || [];
+      const entry = result.entry || {};
+      if (products.length) {
+        body = `<div class="product-source-list">${products.map((product) => `
+          <article class="product-source-row" data-product-type="${escapeHtml(product.type)}">
+            <span class="product-source-type">${escapeHtml(product.typeLabel)}</span>
+            <div>
+              <strong>${escapeHtml(product.name)}</strong>
+              <small>${escapeHtml(product.availability)} · ${escapeHtml((product.finishLabels || []).join(" / "))}</small>
+            </div>
+          </article>`).join("")}</div>`;
+      } else {
+        const hints = [...new Set([...(entry.boosterTypes || []), ...(entry.promoTypes || [])])]
+          .map(productSourceHintLabel)
+          .filter(Boolean);
+        body = `<div class="product-source-status"><p>MTGJSON 尚未收录这个版本与表面工艺的具体产品来源。</p>
+          ${hints.length ? `<div class="product-source-hints">${hints.map((hint) => `<span>${escapeHtml(hint)}</span>`).join("")}</div>` : ""}
+        </div>`;
+      }
+    }
+    const source = isCurrent && preview.result && preview.result.source;
+    return `<section class="card-product-sources" data-product-sources-card="${escapeHtml(card.id)}">
+      <div class="product-source-heading">
+        <span>获取方式</span>
+        <a href="https://mtgjson.com/" target="_blank" rel="noreferrer">MTGJSON${source && source.date ? ` · ${escapeHtml(source.date)}` : ""}</a>
+      </div>
+      ${body}
+    </section>`;
+  }
+
+  function updateProductSourcePanel(cardId) {
+    const card = cardByIdAny(cardId);
+    const escapedCardId = window.CSS && typeof window.CSS.escape === "function"
+      ? window.CSS.escape(cardId)
+      : String(cardId).replace(/["\\]/g, "\\$&");
+    const current = elements.imagePreview.querySelector(`[data-product-sources-card="${escapedCardId}"]`);
+    if (!card || !current) return;
+    const template = document.createElement("template");
+    template.innerHTML = renderProductSourcePanel(card).trim();
+    current.replaceWith(template.content.firstElementChild);
+  }
+
+  async function enrichPreviewProductSources(cardId) {
+    const card = cardByIdAny(cardId);
+    if (!card || !card.scryfallId) {
+      state.previewProductSources = { cardId, status: "ready", result: { entry: null, products: [], source: null }, error: "" };
+      updateProductSourcePanel(cardId);
+      return;
+    }
+    try {
+      const result = await productSourceCatalog.lookup(card);
+      if (state.previewCardId !== cardId || !elements.imagePreviewDialog.open) return;
+      state.previewProductSources = { cardId, status: "ready", result, error: "" };
+      updateProductSourcePanel(cardId);
+    } catch (error) {
+      if (state.previewCardId !== cardId || !elements.imagePreviewDialog.open) return;
+      state.previewProductSources = {
+        cardId,
+        status: "error",
+        result: null,
+        error: error.message || "产品来源暂时无法加载"
+      };
+      updateProductSourcePanel(cardId);
+    }
+  }
+
   function renderImagePreview(card) {
     const displayName = cardDisplayName(card);
     const finish = normalizeFinish(card.finish);
@@ -1458,6 +1560,7 @@
           <div><dt>法术力值</dt><dd>${escapeHtml(String(Number(card.cmc) || 0))}</dd></div>
           <div><dt>当前价格</dt><dd>${escapeHtml(formatUsd(cardPrice(card)))} · ${finish === "foil" ? "Foil" : "Non-Foil"}</dd></div>
         </dl>
+        ${renderProductSourcePanel(card)}
         ${renderPriceHistoryPanel({
           title: `${displayName} · ${finish === "foil" ? "Foil" : "Non-Foil"}`,
           subtitle: `${card.set}${card.collectorNumber ? ` · ${card.collectorNumber}` : ""}`,
@@ -1492,15 +1595,18 @@
     if (state.previewController) state.previewController.abort();
     state.previewController = new AbortController();
     state.previewCardId = cardId;
+    state.previewProductSources = { cardId, status: "loading", result: null, error: "" };
     renderImagePreview(card);
     elements.imagePreviewDialog.showModal();
     void enrichPreviewMetadata(cardId);
+    void enrichPreviewProductSources(cardId);
   }
 
   function clearImagePreview() {
     if (state.previewController) state.previewController.abort();
     state.previewController = null;
     state.previewCardId = null;
+    state.previewProductSources = { cardId: null, status: "idle", result: null, error: "" };
     elements.imagePreview.innerHTML = "";
   }
 

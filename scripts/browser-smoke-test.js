@@ -117,6 +117,33 @@ async function main() {
     const initialCount = await evaluate("document.querySelectorAll('#cardGrid .card-item').length");
     if (!initialCount) throw new Error("牌表没有渲染卡牌");
 
+    const productSourceState = await evaluate(`(async () => {
+      document.querySelector('#cardGrid [data-preview-image]').click();
+      const started = Date.now();
+      while (document.querySelector('.product-source-status.loading') && Date.now() - started < 5000) {
+        await new Promise((resolve) => setTimeout(resolve, 50));
+      }
+      const dialog = document.querySelector('#imagePreviewDialog');
+      const panel = document.querySelector('.card-product-sources');
+      const result = {
+        opened: dialog.open,
+        hasPanel: Boolean(panel),
+        rowCount: document.querySelectorAll('.product-source-row').length,
+        status: document.querySelector('.product-source-status')?.textContent.trim() || '',
+        source: document.querySelector('.product-source-heading a')?.textContent.trim() || ''
+      };
+      document.querySelector('[data-close-image-preview]').click();
+      result.closed = !dialog.open;
+      return result;
+    })()`);
+    if (!productSourceState.opened || !productSourceState.hasPanel || !productSourceState.closed) {
+      throw new Error("卡牌详情或产品来源面板开关失败");
+    }
+    if (!productSourceState.rowCount && !productSourceState.status.includes("尚未收录")) {
+      throw new Error(`产品来源没有完成加载：${productSourceState.status || "无内容"}`);
+    }
+    if (!productSourceState.source.startsWith("MTGJSON")) throw new Error("产品来源没有标明数据出处");
+
     const dialogState = await evaluate(`(async () => {
       document.querySelector('#addCardBtn').click();
       await new Promise((resolve) => requestAnimationFrame(resolve));
@@ -153,7 +180,7 @@ async function main() {
     })()`);
     if (!sheetJsSource.startsWith(`http://127.0.0.1:${appPort}/vendor/`)) throw new Error("Excel 组件没有从本地 vendor 目录加载");
     if (runtimeErrors.length) throw new Error(`页面运行时错误：${runtimeErrors.join("; ")}`);
-    process.stdout.write(`Browser smoke test passed: ${initialCount} cards, ${whiteCount} white cards.\n`);
+    process.stdout.write(`Browser smoke test passed: ${initialCount} cards, ${whiteCount} white cards, ${productSourceState.rowCount} product sources on previewed card.\n`);
   } finally {
     if (client) client.close();
     chrome.kill("SIGTERM");

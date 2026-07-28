@@ -6,6 +6,7 @@ const path = require("node:path");
 const html = fs.readFileSync(path.join(__dirname, "index.html"), "utf8");
 const appSource = fs.readFileSync(path.join(__dirname, "app.js"), "utf8");
 const basicLandsSource = fs.readFileSync(path.join(__dirname, "basicLands.js"), "utf8");
+const productSourcesSource = fs.readFileSync(path.join(__dirname, "productSources.js"), "utf8");
 const styleSource = fs.readFileSync(path.join(__dirname, "styles.css"), "utf8");
 
 test("application shell loads dependencies before app.js", () => {
@@ -20,6 +21,7 @@ test("application shell loads dependencies before app.js", () => {
   const persistence = html.indexOf('src="persistence.js"');
   const scryfall = html.indexOf('src="scryfall.js"');
   const catalog = html.indexOf('src="catalog.js"');
+  const productSources = html.indexOf('src="productSources.js"');
   const priceMaintenance = html.indexOf('src="priceMaintenance.js"');
   const chart = html.indexOf('src="chart.js"');
   const basicLands = html.indexOf('src="basicLands.js"');
@@ -29,7 +31,7 @@ test("application shell loads dependencies before app.js", () => {
   const selectors = html.indexOf('src="selectors.js"');
   const renderScheduler = html.indexOf('src="renderScheduler.js"');
   const app = html.indexOf('src="app.js"');
-  assert.ok(migrations >= 0 && migrations < core && core < priceHistory && priceHistory < changeLog && changeLog < health && health < storage && storage < workspace && workspace < workspaceSession && workspaceSession < persistence && persistence < scryfall && scryfall < catalog && catalog < priceMaintenance && priceMaintenance < chart && chart < basicLands && basicLands < collectionCommands && collectionCommands < viewPreferences && viewPreferences < imageCache && imageCache < selectors && selectors < renderScheduler && renderScheduler < app);
+  assert.ok(migrations >= 0 && migrations < core && core < priceHistory && priceHistory < changeLog && changeLog < health && health < storage && storage < workspace && workspace < workspaceSession && workspaceSession < persistence && persistence < scryfall && scryfall < catalog && catalog < productSources && productSources < priceMaintenance && priceMaintenance < chart && chart < basicLands && basicLands < collectionCommands && collectionCommands < viewPreferences && viewPreferences < imageCache && imageCache < selectors && selectors < renderScheduler && renderScheduler < app);
 });
 
 test("card image failures use one delegated listener", () => {
@@ -78,6 +80,12 @@ test("image preview renders and enriches a read-only card archive", () => {
   assert.match(appSource, /aria-label="关闭卡图预览"/);
   assert.match(appSource, /closest\("\[data-close-image-preview\]"\)/);
   assert.match(styleSource, /\.card-archive-close\s*\{[^}]*position:\s*absolute/s);
+  assert.match(appSource, /createProductSourceCatalog/);
+  assert.match(appSource, /class="card-product-sources"/);
+  assert.match(productSourcesSource, /固定收录/);
+  assert.match(productSourcesSource, /随机可能开出/);
+  assert.match(appSource, /void enrichPreviewProductSources\(cardId\)/);
+  assert.match(styleSource, /\.product-source-row\[data-product-type="collector"\]/);
 });
 
 test("remembered Cube folders reconnect without reopening the picker", () => {

@@ -11,6 +11,7 @@
 - 导出可重新导入的 Excel，并生成包含牌表、价格历史与改动记录的完整 JSON 数据备份
 - 按正面颜色与类别统计，查看颜色法力曲线、平均法力值和总价
 - 记录逐卡与总价的每日历史、价格涨跌和 Cube 改动
+- 在卡牌大图档案中显示当前印刷版本与表面工艺对应的补充包、预组和其他产品来源
 - 文件夹模式保存完整数据与高清卡图，可随整个目录迁移
 - 只读文件夹健康检查，发现缺图、孤立图片、重复引用和不完整记录
 - Excel 组件随项目保存在本地，断网时仍可导入与导出已有数据
@@ -69,6 +70,18 @@ Cube/
 - `examples/price-history.example.json`
 - `examples/change-log.example.json`
 
+## 产品来源
+
+卡牌大图右侧的“获取方式”来自 [MTGJSON](https://mtgjson.com/)；应用使用 Scryfall ID 匹配当前具体印刷版本，并分别解析 Foil、Non-Foil 与 Etched 的 `sourceProducts`。预组显示为“固定收录”，补充包显示为“随机可能开出”。单包、盒和箱等共享同一卡池的产品会合并显示。
+
+当前牌表发生版本增删后，可重新生成精简索引：
+
+```sh
+npm run build:product-sources
+```
+
+构建器只在维护时下载相关系列数据并写入 `product-source-index.json`；浏览器日常打开详情只读取这份精简索引。MTGJSON 内容按其 [MIT License](https://mtgjson.com/license/) 使用。
+
 ## 开发结构
 
 `app.js` 是浏览器组合入口，负责状态变更、DOM 事件和用户反馈；可测试的业务能力拆分在独立 UMD 模块中：
@@ -77,6 +90,7 @@ Cube/
 - `basicLands.js`：五种基本地的编号解析、分组和批量判定
 - `collectionCommands.js`、`viewPreferences.js`：收藏变更副作用和非关键视图偏好
 - `scryfall.js`、`catalog.js`：Scryfall 请求与卡牌目录查询
+- `productSources.js`、`product-source-index.json`：MTGJSON 产品来源查询与精简索引
 - `storage.js`、`workspace.js`、`persistence.js`：浏览器镜像、文件夹读写和按域保存
 - `imageCache.js`：高清原图与 WebP 缩略图缓存
 - `priceHistory.js`、`changeLog.js`、`health.js`：历史记录和工作区检查
