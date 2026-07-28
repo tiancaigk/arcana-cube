@@ -12,8 +12,11 @@ test("macOS launchers resolve the project directory and manage one local server"
   assert.match(startSource, /PROJECT_DIR="\$\{0:A:h\}"/);
   assert.match(startSource, /node scripts\/local-server\.js/);
   assert.match(startSource, /local-server-\$\{PORT\}\.pid/);
+  assert.match(startSource, /local-server-active-port/);
+  assert.match(startSource, /PORT_SEARCH_LIMIT=20/);
   assert.match(startSource, /open -a "Google Chrome"/);
   assert.match(stopSource, /scripts\/local-server\.js/);
+  assert.match(stopSource, /working_dir/);
   assert.match(stopSource, /kill "\$\{pid\}"/);
 });
 
