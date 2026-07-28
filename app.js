@@ -18,6 +18,7 @@
   const IMAGE_CACHE_CHECKPOINT = 100;
   const PRICE_MAINTENANCE_INTERVAL_MS = 60 * 60 * 1000;
   const SHEETJS_URL = "vendor/xlsx.full.min.js";
+  const PRODUCT_SOURCE_INDEX_SCRIPT_URL = "product-source-index.js";
   const { buildBackup, buildExcelRows, buildLocalizedNameSearchUrl, buildLocalImageFileName, chooseValidFinish, computeStats, filterCards, filterPrintings, sortCards, getAvailableFinishes, getBasicLandKind, getCardBucket, getCardImage, getFrontColors, getFrontDisplayName, getFrontTypeLine, getOracleId, getPreferredLocalizedName, getPriceNumber, getUsdPrice, isPaperPrinting, isSupportedBasicLand, mergeArchiveMetadata, needsPriceRefresh, normalizeCardName, normalizeFinish, normalizeLocalizedNames, normalizeScryfallCard, parseBackup, parseDecklist, parseExcelRows, prepareTextImportRows, replacePrinting } = window.CubeCore;
   const { cardSeries, dailyPriceChanges, dateKey, emptyPriceHistory, hasDailySnapshot, normalizePriceHistory, parsePriceHistoryData, priceTrend, recordDailySnapshot, totalSeries, wrapPriceHistoryData } = window.CubePriceHistory;
   const { appendChange, emptyChangeLog, latestEntries, normalizeChangeLog, parseChangeLogData, wrapChangeLogData } = window.CubeChangeLog;
@@ -58,9 +59,12 @@
     emptyChangeLog
   });
   const catalog = createCatalog({ requestJson: scryfallRequest, core: window.CubeCore });
+  let productSourceIndexLoader;
   const productSourceCatalog = createProductSourceCatalog({
     fetchImpl: (...args) => fetch(...args),
-    indexUrl: "product-source-index.json"
+    indexUrl: "product-source-index.json",
+    loadFallback: loadProductSourceIndexScript,
+    preferFallback: window.location.protocol === "file:"
   });
   const selectors = createCubeSelectors(window.CubeCore, window.CubePriceHistory);
   const imageCache = createImageCache({
@@ -2208,6 +2212,32 @@
     sheetJsLoader = loader;
     loader.catch(() => {
       if (sheetJsLoader === loader) sheetJsLoader = null;
+    });
+    return loader;
+  }
+
+  function loadProductSourceIndexScript() {
+    if (window.CubeProductSourceIndex) return Promise.resolve(window.CubeProductSourceIndex);
+    if (productSourceIndexLoader) return productSourceIndexLoader;
+    const loader = new Promise((resolve, reject) => {
+      const script = document.createElement("script");
+      script.src = PRODUCT_SOURCE_INDEX_SCRIPT_URL;
+      script.onload = () => {
+        if (window.CubeProductSourceIndex) resolve(window.CubeProductSourceIndex);
+        else {
+          script.remove();
+          reject(new Error("本地产品来源索引格式无效"));
+        }
+      };
+      script.onerror = () => {
+        script.remove();
+        reject(new Error("本地产品来源索引加载失败"));
+      };
+      document.head.append(script);
+    });
+    productSourceIndexLoader = loader;
+    loader.catch(() => {
+      if (productSourceIndexLoader === loader) productSourceIndexLoader = null;
     });
     return loader;
   }

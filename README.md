@@ -80,7 +80,7 @@ Cube/
 npm run build:product-sources
 ```
 
-构建器只在维护时下载相关系列数据并写入 `product-source-index.json`；浏览器日常打开详情只读取这份精简索引。MTGJSON 内容按其 [MIT License](https://mtgjson.com/license/) 使用。
+构建器只在维护时下载相关系列数据并写入 `product-source-index.json` 与 `product-source-index.js`；通过服务器访问时读取 JSON，直接双击打开 `index.html` 时自动延迟加载同内容的 JS 索引。MTGJSON 内容按其 [MIT License](https://mtgjson.com/license/) 使用。
 
 ## 开发结构
 
@@ -90,7 +90,7 @@ npm run build:product-sources
 - `basicLands.js`：五种基本地的编号解析、分组和批量判定
 - `collectionCommands.js`、`viewPreferences.js`：收藏变更副作用和非关键视图偏好
 - `scryfall.js`、`catalog.js`：Scryfall 请求与卡牌目录查询
-- `productSources.js`、`product-source-index.json`：MTGJSON 产品来源查询与精简索引
+- `productSources.js`、`product-source-index.json`、`product-source-index.js`：MTGJSON 产品来源查询，以及服务器与本地直开模式的精简索引
 - `storage.js`、`workspace.js`、`persistence.js`：浏览器镜像、文件夹读写和按域保存
 - `imageCache.js`：高清原图与 WebP 缩略图缓存
 - `priceHistory.js`、`changeLog.js`、`health.js`：历史记录和工作区检查

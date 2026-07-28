@@ -148,18 +148,36 @@
   function createProductSourceCatalog(options = {}) {
     const fetchImpl = options.fetchImpl || (typeof fetch === "function" ? fetch : null);
     const indexUrl = options.indexUrl || "product-source-index.json";
-    if (!fetchImpl) throw new Error("当前环境不支持产品来源查询");
+    const loadFallback = typeof options.loadFallback === "function" ? options.loadFallback : null;
+    const preferFallback = Boolean(options.preferFallback);
+    if (!fetchImpl && !loadFallback) throw new Error("当前环境不支持产品来源查询");
     let indexPromise;
+
+    async function validatePayload(payload) {
+      if (!validateIndex(payload)) throw new Error("产品来源索引格式无效");
+      return payload;
+    }
+
+    async function fetchIndex() {
+      if (!fetchImpl) throw new Error("当前环境不支持产品来源网络查询");
+      const response = await fetchImpl(indexUrl, { cache: "no-cache", headers: { Accept: "application/json" } });
+      if (!response.ok) throw new Error(`产品来源索引加载失败 (${response.status})`);
+      return validatePayload(await response.json());
+    }
+
+    async function loadFallbackIndex() {
+      if (!loadFallback) throw new Error("产品来源本地索引不可用");
+      return validatePayload(await loadFallback());
+    }
 
     function loadIndex() {
       if (!indexPromise) {
-        indexPromise = fetchImpl(indexUrl, { cache: "no-cache", headers: { Accept: "application/json" } })
-          .then(async (response) => {
-            if (!response.ok) throw new Error(`产品来源索引加载失败 (${response.status})`);
-            const payload = await response.json();
-            if (!validateIndex(payload)) throw new Error("产品来源索引格式无效");
-            return payload;
-          })
+        indexPromise = (preferFallback && loadFallback
+          ? loadFallbackIndex()
+          : fetchIndex().catch((error) => {
+            if (!loadFallback) throw error;
+            return loadFallbackIndex();
+          }))
           .catch((error) => {
             indexPromise = null;
             throw error;

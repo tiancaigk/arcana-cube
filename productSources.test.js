@@ -8,7 +8,7 @@ const {
   selectProductSources,
   validateIndex
 } = require("./productSources.js");
-const { buildDeckCardMap, isDirectProductSource } = require("./scripts/build-product-source-index.js");
+const { buildDeckCardMap, buildIndexScript, isDirectProductSource } = require("./scripts/build-product-source-index.js");
 
 function product(uuid, name, category, subtype) {
   return { uuid, name, category, subtype, releaseDate: "" };
@@ -134,4 +134,42 @@ test("catalog caches and validates the generated index", async () => {
   assert.equal(first.products[0].type, "collector");
   assert.equal(second.products[0].uuid, "pack");
   assert.equal(validateIndex(payload), true);
+});
+
+test("catalog prefers a local script index for direct file pages", async () => {
+  let fetches = 0;
+  let fallbacks = 0;
+  const payload = {
+    format: "arcana-cube-product-sources",
+    version: 1,
+    products: {},
+    cards: {}
+  };
+  const catalog = createProductSourceCatalog({
+    fetchImpl: async () => {
+      fetches += 1;
+      throw new Error("Failed to fetch");
+    },
+    preferFallback: true,
+    loadFallback: async () => {
+      fallbacks += 1;
+      return payload;
+    }
+  });
+  await catalog.loadIndex();
+  assert.equal(fetches, 0);
+  assert.equal(fallbacks, 1);
+});
+
+test("generated script indexes expose the same payload without fetch", () => {
+  const vm = require("node:vm");
+  const payload = {
+    format: "arcana-cube-product-sources",
+    version: 1,
+    products: {},
+    cards: { "line-separator": { note: "\u2028" } }
+  };
+  const context = {};
+  vm.runInNewContext(buildIndexScript(payload), context);
+  assert.equal(context.CubeProductSourceIndex.cards["line-separator"].note, "\u2028");
 });

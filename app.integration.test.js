@@ -84,6 +84,8 @@ test("image preview renders and enriches a read-only card archive", () => {
   assert.match(appSource, /class="card-product-sources"/);
   assert.match(productSourcesSource, /固定收录/);
   assert.match(productSourcesSource, /随机可能开出/);
+  assert.match(appSource, /preferFallback:\s*window\.location\.protocol === "file:"/);
+  assert.match(appSource, /function loadProductSourceIndexScript\(\)/);
   assert.match(appSource, /void enrichPreviewProductSources\(cardId\)/);
   assert.match(styleSource, /\.product-source-row\[data-product-type="collector"\]/);
 });

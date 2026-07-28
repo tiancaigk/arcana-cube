@@ -4,6 +4,7 @@ const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 const { spawn } = require("node:child_process");
+const { pathToFileURL } = require("node:url");
 const { createLocalServer } = require("./local-server.js");
 
 const chromePath = process.env.CHROME_PATH || "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
@@ -179,8 +180,79 @@ async function main() {
       return window.XLSX && script ? script.src : '';
     })()`);
     if (!sheetJsSource.startsWith(`http://127.0.0.1:${appPort}/vendor/`)) throw new Error("Excel 组件没有从本地 vendor 目录加载");
+
+    const workspacePayload = JSON.parse(fs.readFileSync(path.join(__dirname, "..", "cube-data.json"), "utf8"));
+    const publishedCube = workspacePayload.data || workspacePayload;
+    const sourceCard = (publishedCube.cards || []).find((card) => card.scryfallId && (card.remoteImage || card.image));
+    if (!sourceCard) throw new Error("没有可用于本地文件测试的卡牌");
+    const fileCube = {
+      meta: { id: "browser-file-smoke", name: "本地文件测试", description: "" },
+      notes: "",
+      cards: [{
+        ...sourceCard,
+        image: sourceCard.remoteImage || sourceCard.image,
+        localImage: "",
+        localThumbnail: "",
+        backImage: sourceCard.remoteBackImage || sourceCard.backImage || "",
+        localBackImage: "",
+        localBackThumbnail: ""
+      }],
+      basicLands: []
+    };
+    const fileUrl = pathToFileURL(path.join(__dirname, "..", "index.html")).href;
+    await client.send("Page.navigate", { url: fileUrl });
+    const fileReadyStarted = Date.now();
+    while (Date.now() - fileReadyStarted < 10000) {
+      if (await evaluate("document.readyState === 'complete'")) break;
+      await delay(100);
+    }
+    await evaluate(`(() => {
+      localStorage.setItem(${JSON.stringify("arcana-cube-v1")}, ${JSON.stringify(JSON.stringify(fileCube))});
+      localStorage.removeItem("arcana-cube-price-history-v1");
+      localStorage.removeItem("arcana-cube-change-log-v1");
+    })()`);
+    await client.send("Page.reload", { ignoreCache: true });
+    const fileCardStarted = Date.now();
+    while (Date.now() - fileCardStarted < 10000) {
+      if (await evaluate("document.readyState === 'complete' && document.querySelectorAll('#cardGrid .card-item').length === 1")) break;
+      await delay(100);
+    }
+    const filePageState = await evaluate(`({
+      readyState: document.readyState,
+      cardCount: document.querySelectorAll('#cardGrid .card-item').length,
+      previewButtonCount: document.querySelectorAll('#cardGrid [data-preview-image]').length,
+      cardGridText: document.querySelector('#cardGrid')?.textContent.trim().slice(0, 200) || '',
+      appScriptLoaded: Boolean(window.CubeProductSources && window.CubeCore),
+      savedCubeName: (() => {
+        try {
+          const saved = JSON.parse(localStorage.getItem('arcana-cube-v1'));
+          return saved?.data?.meta?.name || saved?.meta?.name || '';
+        } catch (error) {
+          return '';
+        }
+      })()
+    })`);
+    if (filePageState.previewButtonCount !== 1) {
+      throw new Error(`本地文件牌表没有正确恢复：${JSON.stringify({ ...filePageState, runtimeErrors })}`);
+    }
+    const fileProductSourceState = await evaluate(`(async () => {
+      document.querySelector('#cardGrid [data-preview-image]').click();
+      const started = Date.now();
+      while (document.querySelector('.product-source-status.loading') && Date.now() - started < 5000) {
+        await new Promise((resolve) => setTimeout(resolve, 50));
+      }
+      return {
+        rowCount: document.querySelectorAll('.product-source-row').length,
+        status: document.querySelector('.product-source-status')?.textContent.trim() || '',
+        scriptSource: [...document.scripts].find((item) => item.src.endsWith('/product-source-index.js'))?.src || ''
+      };
+    })()`);
+    if (!fileProductSourceState.rowCount && !fileProductSourceState.status.includes("尚未收录")) {
+      throw new Error(`本地文件产品来源加载失败：${fileProductSourceState.status || "无内容"}`);
+    }
+    if (!fileProductSourceState.scriptSource.startsWith("file:")) throw new Error("本地文件模式没有使用同目录产品来源索引");
     if (runtimeErrors.length) throw new Error(`页面运行时错误：${runtimeErrors.join("; ")}`);
-    process.stdout.write(`Browser smoke test passed: ${initialCount} cards, ${whiteCount} white cards, ${productSourceState.rowCount} product sources on previewed card.\n`);
+    process.stdout.write(`Browser smoke test passed: ${initialCount} cards, ${whiteCount} white cards, ${productSourceState.rowCount} HTTP product sources, ${fileProductSourceState.rowCount} file product sources.\n`);
   } finally {
     if (client) client.close();
     chrome.kill("SIGTERM");

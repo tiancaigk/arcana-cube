@@ -7,6 +7,7 @@ const { collapseProducts, isPaperProduct } = require("../productSources.js");
 const rootDir = path.resolve(__dirname, "..");
 const cubeFile = path.join(rootDir, "cube-data.json");
 const outputFile = path.join(rootDir, "product-source-index.json");
+const scriptOutputFile = path.join(rootDir, "product-source-index.js");
 const cacheRoot = path.join(rootDir, ".cache", "mtgjson");
 const apiRoot = "https://mtgjson.com/api/v5";
 const headers = {
@@ -38,6 +39,13 @@ function compactProduct(product) {
     subtype: product.subtype == null ? "" : String(product.subtype),
     releaseDate: String(product.releaseDate || "")
   };
+}
+
+function buildIndexScript(index) {
+  const serialized = JSON.stringify(index)
+    .replace(/\u2028/g, "\\u2028")
+    .replace(/\u2029/g, "\\u2029");
+  return `(function (root) { root.CubeProductSourceIndex = ${serialized}; })(typeof globalThis !== "undefined" ? globalThis : this);\n`;
 }
 
 async function fetchJson(url, attempts = 3) {
@@ -242,9 +250,12 @@ async function main() {
     cards
   };
   const temporaryFile = `${outputFile}.tmp`;
+  const temporaryScriptFile = `${scriptOutputFile}.tmp`;
   await fs.writeFile(temporaryFile, `${JSON.stringify(index)}\n`);
+  await fs.writeFile(temporaryScriptFile, buildIndexScript(index));
   await fs.rename(temporaryFile, outputFile);
-  process.stdout.write(`Wrote ${path.basename(outputFile)}: ${index.stats.indexedCards}/${index.stats.requestedCards} cards indexed.\n`);
+  await fs.rename(temporaryScriptFile, scriptOutputFile);
+  process.stdout.write(`Wrote ${path.basename(outputFile)} and ${path.basename(scriptOutputFile)}: ${index.stats.indexedCards}/${index.stats.requestedCards} cards indexed.\n`);
   if (missingCards.length) process.stdout.write(`Missing cards (${missingCards.length}): ${missingCards.slice(0, 12).join("; ")}${missingCards.length > 12 ? "; ..." : ""}\n`);
   if (unresolvedProducts.size) process.stdout.write(`Unresolved sealed product IDs: ${unresolvedProducts.size}\n`);
 }
@@ -256,4 +267,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { buildDeckCardMap, isDirectProductSource };
+module.exports = { buildDeckCardMap, buildIndexScript, isDirectProductSource };
