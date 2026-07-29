@@ -201,8 +201,12 @@ test("automatic price maintenance waits for folder restore and records daily his
   assert.match(appSource, /价格部分更新/);
 });
 
-test("price history can replace the latest 90 days from the MTGJSON compact index", () => {
+test("price history replaces 90 days and requests missing printing history locally", () => {
   assert.match(appSource, /function syncMtgjsonPriceHistory\(\)/);
+  assert.match(appSource, /function loadMissingMtgjsonHistory\(index, cards\)/);
+  assert.match(appSource, /!hasMtgjsonHistoricalEntry\(index, card\)/);
+  assert.match(appSource, /fetch\(endpoint,[\s\S]*scryfallIds: missingIds/);
+  assert.match(appSource, /mergeMtgjsonPriceIndexes\(index, payload\)/);
   assert.match(appSource, /syncPriceHistoryWindow\(/);
   assert.match(appSource, /mtgjsonPriceSeries\(index, card, finish\)/);
   assert.match(appSource, /windowDays: 90/);

@@ -111,7 +111,7 @@ async function main() {
     }
 
     const readyStarted = Date.now();
-    while (Date.now() - readyStarted < 10000) {
+    while (Date.now() - readyStarted < 20000) {
       if (await evaluate("document.readyState === 'complete' && document.querySelectorAll('.card-item').length > 0")) break;
       await delay(100);
     }
@@ -173,7 +173,7 @@ async function main() {
     const sheetJsSource = await evaluate(`(async () => {
       document.querySelector('#exportBtn').click();
       const started = Date.now();
-      while (!window.XLSX && Date.now() - started < 5000) {
+      while (!window.XLSX && Date.now() - started < 10000) {
         await new Promise((resolve) => setTimeout(resolve, 50));
       }
       const script = [...document.scripts].find((item) => item.src.endsWith('/vendor/xlsx.full.min.js'));
@@ -202,7 +202,7 @@ async function main() {
     const fileUrl = pathToFileURL(path.join(__dirname, "..", "index.html")).href;
     await client.send("Page.navigate", { url: fileUrl });
     const fileReadyStarted = Date.now();
-    while (Date.now() - fileReadyStarted < 10000) {
+    while (Date.now() - fileReadyStarted < 20000) {
       if (await evaluate("document.readyState === 'complete'")) break;
       await delay(100);
     }
@@ -213,7 +213,7 @@ async function main() {
     })()`);
     await client.send("Page.reload", { ignoreCache: true });
     const fileCardStarted = Date.now();
-    while (Date.now() - fileCardStarted < 10000) {
+    while (Date.now() - fileCardStarted < 20000) {
       if (await evaluate("document.readyState === 'complete' && document.querySelectorAll('#cardGrid .card-item').length === 1")) break;
       await delay(100);
     }

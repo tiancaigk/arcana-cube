@@ -108,6 +108,12 @@
     return scryfallId ? index.cards[scryfallId] || index.printingPrices && index.printingPrices[scryfallId] || null : null;
   }
 
+  function hasHistoricalEntry(index, card) {
+    if (!validateIndex(index)) return false;
+    const scryfallId = String(card && card.scryfallId || "").trim();
+    return Boolean(scryfallId && Object.prototype.hasOwnProperty.call(index.cards, scryfallId));
+  }
+
   function printingEntry(index, printing) {
     if (!validateIndex(index)) return null;
     const scryfallId = String(printing && (printing.scryfallId || printing.id) || "").trim();
@@ -169,6 +175,31 @@
       cardkingdom: "Card Kingdom",
       cardmarket: "Cardmarket"
     })[provider] || String(provider || "");
+  }
+
+  function mergePriceIndexes(baseIndex, supplementalIndex) {
+    if (!validateIndex(baseIndex)) throw new Error("MTGJSON 基础价格索引格式无效");
+    if (!validateIndex(supplementalIndex)) throw new Error("MTGJSON 补充价格索引格式无效");
+    const dates = [
+      baseIndex.source && baseIndex.source.historyFrom,
+      supplementalIndex.source && supplementalIndex.source.historyFrom
+    ].filter(Boolean).sort();
+    const endDates = [
+      baseIndex.source && (baseIndex.source.historyTo || baseIndex.source.date),
+      supplementalIndex.source && (supplementalIndex.source.historyTo || supplementalIndex.source.date)
+    ].filter(Boolean).sort();
+    return {
+      ...baseIndex,
+      source: {
+        ...(baseIndex.source || {}),
+        ...(dates.length ? { historyFrom: dates[0] } : {}),
+        ...(endDates.length ? { historyTo: endDates[endDates.length - 1] } : {})
+      },
+      cards: {
+        ...baseIndex.cards,
+        ...supplementalIndex.cards
+      }
+    };
   }
 
   function buildIndexScript(index) {
@@ -244,7 +275,9 @@
     cardEntry,
     createMtgjsonPriceCatalog,
     exchangeRateForDate,
+    hasHistoricalEntry,
     lookupPrice,
+    mergePriceIndexes,
     mergeSeries,
     normalizeSeries,
     priceSeries,

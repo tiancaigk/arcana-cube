@@ -31,7 +31,7 @@
   const { createMtgchClient } = window.MtgchClient;
   const { createCatalog, printingKey } = window.CubeCatalog;
   const { createProductSourceCatalog } = window.CubeProductSources;
-  const { createMtgjsonPriceCatalog, lookupPrice: lookupMtgjsonPrice, lookupPrintingPrice: lookupMtgjsonPrintingPrice, priceSeries: mtgjsonPriceSeries, providerLabel } = window.CubeMtgjsonPrices;
+  const { createMtgjsonPriceCatalog, hasHistoricalEntry: hasMtgjsonHistoricalEntry, lookupPrice: lookupMtgjsonPrice, lookupPrintingPrice: lookupMtgjsonPrintingPrice, mergePriceIndexes: mergeMtgjsonPriceIndexes, priceSeries: mtgjsonPriceSeries, providerLabel } = window.CubeMtgjsonPrices;
   const { applyIndexedPricesToCard, applyIndexedPriceUpdates } = window.CubePriceMaintenance;
   const { datePositions } = window.CubeChart;
   const { BASIC_LAND_LABELS, BASIC_LAND_ORDER, classifyBasicLandBatch, groupBasicLands, parseCollectorNumberRange } = window.CubeBasicLands;
@@ -1285,16 +1285,52 @@
     if (!elements.priceHistoryDialog.open) elements.priceHistoryDialog.showModal();
   }
 
+  function mtgjsonHistoryEndpoint() {
+    if (isLocalHttpPage()) return "/mtgjson-price-history";
+    if (location.protocol === "file:") return "http://127.0.0.1:4173/mtgjson-price-history";
+    return "";
+  }
+
+  async function loadMissingMtgjsonHistory(index, cards) {
+    const missingIds = [...new Set(cards
+      .filter((card) => card.scryfallId && !hasMtgjsonHistoricalEntry(index, card))
+      .map((card) => card.scryfallId))];
+    if (!missingIds.length) return { index, requested: 0, resolved: 0 };
+    const endpoint = mtgjsonHistoryEndpoint();
+    if (!endpoint) throw new Error(`有 ${missingIds.length} 个新版本需要本地补全，请通过 Cube 本地服务器打开项目后重试`);
+    let response;
+    try {
+      response = await fetch(endpoint, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ scryfallIds: missingIds })
+      });
+    } catch (_error) {
+      throw new Error(`有 ${missingIds.length} 个新版本需要本地补全，请先运行“启动 Cube.command”`);
+    }
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(payload.error || "MTGJSON 新版本历史补全失败");
+    const merged = mergeMtgjsonPriceIndexes(index, payload);
+    return {
+      index: merged,
+      requested: missingIds.length,
+      resolved: Object.keys(payload.cards || {}).length
+    };
+  }
+
   async function syncMtgjsonPriceHistory() {
     if (state.syncingPriceHistory) return;
     state.syncingPriceHistory = true;
     openTotalPriceHistory();
     try {
-      const index = await mtgjsonPriceCatalog.loadIndex();
+      const bundledIndex = await mtgjsonPriceCatalog.loadIndex();
+      const cards = getValuedCards();
+      const supplemental = await loadMissingMtgjsonHistory(bundledIndex, cards);
+      const index = supplemental.index;
       state.priceIndexSource = index.source || null;
       const result = syncPriceHistoryWindow(
         state.priceHistory,
-        getValuedCards(),
+        cards,
         (card, finish) => mtgjsonPriceSeries(index, card, finish),
         {
           origin: "mtgjson",
@@ -1323,7 +1359,10 @@
       }, { persist: false });
       saveState(["priceHistory", "changeLog"]);
       renderScheduler.request("stats", "cards", "basics");
-      toast("最近 90 天已同步", `覆盖 ${result.replacedSnapshots} 个日期，新建 ${result.createdSnapshots} 个日期，共 ${result.pricePoints} 个价格点${providerSummary ? ` · ${providerSummary}` : ""}`);
+      const supplementalText = supplemental.requested
+        ? ` · 按需补全 ${supplemental.resolved}/${supplemental.requested} 个新版本`
+        : "";
+      toast("最近 90 天已同步", `覆盖 ${result.replacedSnapshots} 个日期，新建 ${result.createdSnapshots} 个日期，共 ${result.pricePoints} 个价格点${providerSummary ? ` · ${providerSummary}` : ""}${supplementalText}`);
     } catch (error) {
       toast("历史同步失败", error.message || "无法读取 MTGJSON 价格历史", true);
     } finally {

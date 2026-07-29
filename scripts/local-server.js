@@ -5,6 +5,7 @@ const http = require("node:http");
 const path = require("node:path");
 const { Readable } = require("node:stream");
 const { URL } = require("node:url");
+const { createMtgjsonHistoryService } = require("./mtgjson-history-service.js");
 
 const rootDir = path.resolve(__dirname, "..");
 
@@ -37,6 +38,93 @@ function readServerOptions(argv = process.argv.slice(2), env = process.env) {
 function send(res, status, headers = {}, body = "") {
   res.writeHead(status, headers);
   res.end(body);
+}
+
+function historyCorsHeaders(req) {
+  const origin = String(req.headers.origin || "");
+  if (!origin) return {};
+  const host = String(req.headers.host || "").toLowerCase();
+  let isSameOrigin = false;
+  try {
+    const parsedOrigin = new URL(origin);
+    isSameOrigin = parsedOrigin.protocol === "http:" && parsedOrigin.host.toLowerCase() === host;
+  } catch (_error) {
+    // Keep malformed origins outside the allowlist.
+  }
+  if (origin === "null" || isSameOrigin || /^https?:\/\/(?:localhost|127\.0\.0\.1|\[::1\])(?::\d+)?$/i.test(origin)) {
+    return { "Access-Control-Allow-Origin": origin, "Vary": "Origin" };
+  }
+  return null;
+}
+
+function readJsonBody(req, maxBytes = 128 * 1024) {
+  return new Promise((resolve, reject) => {
+    const chunks = [];
+    let size = 0;
+    let settled = false;
+    req.on("data", (chunk) => {
+      if (settled) return;
+      size += chunk.length;
+      if (size > maxBytes) {
+        settled = true;
+        reject(new Error("请求内容过大"));
+        req.destroy();
+        return;
+      }
+      chunks.push(chunk);
+    });
+    req.on("end", () => {
+      if (settled) return;
+      try {
+        settled = true;
+        resolve(JSON.parse(Buffer.concat(chunks).toString("utf8") || "{}"));
+      } catch (_error) {
+        settled = true;
+        reject(new Error("请求 JSON 格式无效"));
+      }
+    });
+    req.on("error", (error) => {
+      if (settled) return;
+      settled = true;
+      reject(error);
+    });
+  });
+}
+
+async function serveMtgjsonHistory(req, res, historyService) {
+  const cors = historyCorsHeaders(req);
+  if (!cors) {
+    send(res, 403, { "Content-Type": "application/json; charset=utf-8" }, JSON.stringify({ error: "Origin not allowed" }));
+    return;
+  }
+  if (req.method === "OPTIONS") {
+    send(res, 204, {
+      ...cors,
+      "Access-Control-Allow-Headers": "Content-Type",
+      "Access-Control-Allow-Methods": "POST, OPTIONS",
+      "Access-Control-Max-Age": "600"
+    });
+    return;
+  }
+  if (req.method !== "POST") {
+    send(res, 405, { ...cors, "Allow": "POST, OPTIONS", "Content-Type": "application/json; charset=utf-8" }, JSON.stringify({ error: "Method Not Allowed" }));
+    return;
+  }
+  try {
+    const payload = await readJsonBody(req);
+    const result = await historyService.getHistory(payload.scryfallIds);
+    send(res, 200, {
+      ...cors,
+      "Cache-Control": "no-store",
+      "Content-Type": "application/json; charset=utf-8"
+    }, JSON.stringify(result));
+  } catch (error) {
+    send(res, 400, {
+      ...cors,
+      "Cache-Control": "no-store",
+      "Content-Type": "application/json; charset=utf-8"
+    }, JSON.stringify({ error: error.message || "MTGJSON 历史补全失败" }));
+  }
 }
 
 function getStaticFilePath(pathname) {
@@ -128,6 +216,7 @@ function serveStatic(req, res, requestUrl) {
 function createLocalServer(options = {}) {
   const host = options.host || "127.0.0.1";
   const port = options.port || 4173;
+  const historyService = options.historyService || createMtgjsonHistoryService({ rootDir });
   return http.createServer(async (req, res) => {
     try {
       const requestUrl = new URL(req.url || "/", `http://${req.headers.host || `${host}:${port}`}`);
@@ -137,6 +226,10 @@ function createLocalServer(options = {}) {
           return;
         }
         await proxyImage(req, res, requestUrl);
+        return;
+      }
+      if (requestUrl.pathname === "/mtgjson-price-history") {
+        await serveMtgjsonHistory(req, res, historyService);
         return;
       }
       serveStatic(req, res, requestUrl);
@@ -156,4 +249,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { createLocalServer, readServerOptions };
+module.exports = { createLocalServer, historyCorsHeaders, readJsonBody, readServerOptions, serveMtgjsonHistory };

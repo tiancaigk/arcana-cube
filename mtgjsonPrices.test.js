@@ -4,8 +4,10 @@ const {
   buildIndexScript,
   buildPriceSeries,
   createMtgjsonPriceCatalog,
+  hasHistoricalEntry,
   lookupPrice,
   lookupPrintingPrice,
+  mergePriceIndexes,
   mergeSeries,
   priceSeries,
   validateIndex
@@ -134,6 +136,29 @@ test("selectable printing lookup uses the lightweight MTGJSON version index", ()
   });
   assert.equal(lookupPrintingPrice(index, { id: "alternative" }, "nonfoil"), null);
   assert.equal(lookupPrice(index, { scryfallId: "alternative" }, "foil").usd, 8.75);
+  assert.equal(hasHistoricalEntry(index, { scryfallId: "alternative" }), false);
+  assert.equal(hasHistoricalEntry(index, { scryfallId: "printing" }), true);
+});
+
+test("supplemental history replaces latest-only printing fallbacks", () => {
+  const base = sampleIndex();
+  const supplemental = {
+    format: base.format,
+    version: base.version,
+    providers: base.providers,
+    source: { date: "2026-07-28", historyFrom: "2026-04-29", historyTo: "2026-07-28" },
+    cards: {
+      alternative: {
+        uuid: "mtgjson-alternative",
+        foil: [["2026-04-29", 20.31, 1], ["2026-07-28", 17.37, 1]],
+        nonfoil: []
+      }
+    }
+  };
+  const merged = mergePriceIndexes(base, supplemental);
+  assert.equal(hasHistoricalEntry(merged, { scryfallId: "alternative" }), true);
+  assert.deepEqual(priceSeries(merged, { scryfallId: "alternative" }, "foil").map((point) => point.usd), [20.31, 17.37]);
+  assert.equal(merged.source.historyFrom, "2026-04-29");
 });
 
 test("series merging replaces the same date and ignores malformed points", () => {
