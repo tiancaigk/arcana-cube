@@ -266,5 +266,5 @@ test("key interactive regions expose accessible state", () => {
   assert.match(appSource, /class="price-change-thumbnail"/);
   assert.match(styleSource, /\.price-change-tabs/);
   assert.match(styleSource, /\.price-change-ranking/);
-  assert.match(styleSource, /\.price-change-thumbnail-wrap\s*\{[^}]*width:\s*18px;[^}]*height:\s*25px;/s);
+  assert.match(styleSource, /\.price-change-thumbnail-wrap\s*\{[^}]*width:\s*27px;[^}]*height:\s*37\.5px;/s);
 });

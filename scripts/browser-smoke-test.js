@@ -179,7 +179,7 @@ async function main() {
         title: document.querySelector('#priceHistoryContent .price-history-head strong')?.textContent.trim() || '',
         rowCount: rows.length,
         thumbnailCount: thumbnails.length,
-        thumbnailSize: thumbnails[0] ? [thumbnails[0].clientWidth, thumbnails[0].clientHeight] : []
+        thumbnailSize: thumbnails[0] ? [getComputedStyle(thumbnails[0]).width, getComputedStyle(thumbnails[0]).height] : []
       };
       dialog.querySelector('[data-close-dialog]').click();
       result.closed = !dialog.open;
@@ -191,7 +191,7 @@ async function main() {
       || priceChangeTabs.rankingLabels.join("|") !== "涨跌幅|涨跌金额"
       || priceChangeTabs.activeRanking !== "absolute"
       || priceChangeTabs.thumbnailCount !== priceChangeTabs.rowCount
-      || (priceChangeTabs.rowCount && priceChangeTabs.thumbnailSize.join("x") !== "18x25")) {
+      || (priceChangeTabs.rowCount && priceChangeTabs.thumbnailSize.join("x") !== "27pxx37.5px")) {
       throw new Error(`价格变动时间标签切换失败：${JSON.stringify(priceChangeTabs)}`);
     }
 
