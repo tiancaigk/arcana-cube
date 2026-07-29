@@ -36,7 +36,7 @@ flowchart LR
 | `basicLands.js` | 五种基本地的编号区间解析、分组排序和批量添加判定 | DOM、网络请求和状态写入 |
 | `collectionCommands.js` | 一次收藏变更的日志、保存、渲染和反馈副作用顺序 | 业务校验和数据变更 |
 | `viewPreferences.js` | 枚举型视图偏好的规范化读写与存储异常降级 | Cube 业务数据 |
-| `priceHistory.js` | 每日快照、趋势、逐卡价格索引和非覆盖式历史补齐 | 网络请求 |
+| `priceHistory.js` | 每日快照、趋势、逐卡价格索引和最近 90 天 MTGJSON 覆盖同步 | 网络请求 |
 | `changeLog.js` | 改动记录规范化、限长、文件包装 | 触发业务操作 |
 | `health.js` | 只读分析文件夹缺图、孤立文件和数据完整性 | 修复或删除文件 |
 | `storage.js` | 浏览器 Cube 镜像、工作区包装、目录句柄存储 | 业务域调度 |

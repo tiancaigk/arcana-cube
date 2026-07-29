@@ -196,12 +196,13 @@ test("automatic price maintenance waits for folder restore and records daily his
   assert.match(appSource, /价格部分更新/);
 });
 
-test("price history can be safely backfilled from the MTGJSON compact index", () => {
-  assert.match(appSource, /function backfillMtgjsonPriceHistory\(\)/);
-  assert.match(appSource, /backfillPriceHistory\(/);
+test("price history can replace the latest 90 days from the MTGJSON compact index", () => {
+  assert.match(appSource, /function syncMtgjsonPriceHistory\(\)/);
+  assert.match(appSource, /syncPriceHistoryWindow\(/);
   assert.match(appSource, /mtgjsonPriceSeries\(index, card, finish\)/);
-  assert.match(appSource, /已有记录不会被覆盖/);
-  assert.match(appSource, /data-backfill-price-history/);
+  assert.match(appSource, /windowDays: 90/);
+  assert.match(appSource, /最近 90 天覆盖，之前记录保留/);
+  assert.match(appSource, /data-sync-price-history/);
   assert.match(styleSource, /\.price-history-tools/);
 });
 

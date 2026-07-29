@@ -21,7 +21,7 @@
   const PRODUCT_SOURCE_INDEX_SCRIPT_URL = "product-source-index.js";
   const MTGJSON_PRICE_INDEX_SCRIPT_URL = "mtgjson-price-index.js";
   const { buildBackup, buildExcelRows, buildLocalizedNameSearchUrl, buildLocalImageFileName, chooseValidFinish, computeStats, filterCards, filterPrintings, sortCards, getAvailableFinishes, getBasicLandKind, getCardBucket, getCardDisplayName, getCardImage, getFrontColors, getFrontDisplayName, getFrontTypeLine, getOracleId, getPreferredLocalizedName, getPriceNumber, getUsdPrice, isPaperPrinting, isSplitCard, isSupportedBasicLand, mergeArchiveMetadata, needsPriceRefresh, normalizeCardName, normalizeFinish, normalizeLocalizedNames, normalizeScryfallCard, parseBackup, parseDecklist, parseExcelRows, prepareTextImportRows, replacePrinting } = window.CubeCore;
-  const { backfillPriceHistory, cardSeries, dailyPriceChanges, dateKey, emptyPriceHistory, hasDailySnapshot, normalizePriceHistory, parsePriceHistoryData, priceTrend, recordDailySnapshot, totalSeries, wrapPriceHistoryData } = window.CubePriceHistory;
+  const { cardSeries, dailyPriceChanges, dateKey, emptyPriceHistory, hasDailySnapshot, normalizePriceHistory, parsePriceHistoryData, priceTrend, recordDailySnapshot, syncPriceHistoryWindow, totalSeries, wrapPriceHistoryData } = window.CubePriceHistory;
   const { appendChange, emptyChangeLog, latestEntries, normalizeChangeLog, parseChangeLogData, wrapChangeLogData } = window.CubeChangeLog;
   const { analyzeWorkspaceHealth } = window.CubeHealth;
   const { createWorkspaceService } = window.CubeWorkspace;
@@ -189,7 +189,7 @@
       error: ""
     },
     refreshingPrices: false,
-    backfillingPriceHistory: false,
+    syncingPriceHistory: false,
     priceIndexSource: null,
     imageCaching: false,
     folderSync: {
@@ -1178,8 +1178,8 @@
       ? `${formatHistoryDate(source.historyFrom)} 至 ${formatHistoryDate(source.historyTo || source.date)}`
       : "首次使用时加载精简历史索引";
     const tools = `<div class="price-history-tools">
-      <div><strong>MTGJSON 历史补齐</strong><small>${escapeHtml(historyRange)} · 已有记录不会被覆盖</small></div>
-      <button type="button" class="text-button" data-backfill-price-history ${state.backfillingPriceHistory ? "disabled" : ""}>${state.backfillingPriceHistory ? "正在补齐…" : "补齐历史"}</button>
+      <div><strong>MTGJSON 历史同步</strong><small>${escapeHtml(historyRange)} · 最近 90 天覆盖，之前记录保留</small></div>
+      <button type="button" class="text-button" data-sync-price-history ${state.syncingPriceHistory ? "disabled" : ""}>${state.syncingPriceHistory ? "正在同步…" : "同步近 90 天"}</button>
     </div>`;
     elements.priceHistoryContent.innerHTML = tools + renderPriceHistoryPanel({
       title: "Cube 总价",
@@ -1190,43 +1190,49 @@
     if (!elements.priceHistoryDialog.open) elements.priceHistoryDialog.showModal();
   }
 
-  async function backfillMtgjsonPriceHistory() {
-    if (state.backfillingPriceHistory) return;
-    state.backfillingPriceHistory = true;
+  async function syncMtgjsonPriceHistory() {
+    if (state.syncingPriceHistory) return;
+    state.syncingPriceHistory = true;
     openTotalPriceHistory();
     try {
       const index = await mtgjsonPriceCatalog.loadIndex();
       state.priceIndexSource = index.source || null;
-      const result = backfillPriceHistory(
+      const result = syncPriceHistoryWindow(
         state.priceHistory,
         getValuedCards(),
         (card, finish) => mtgjsonPriceSeries(index, card, finish),
-        { origin: "mtgjson" }
+        {
+          origin: "mtgjson",
+          windowDays: 90,
+          endDate: index.source && (index.source.historyTo || index.source.date)
+        }
       );
-      if (!result.addedPoints) {
-        toast("历史已经完整", "MTGJSON 索引中没有新的历史价格可以补入");
+      if (!result.syncedSnapshots) {
+        toast("没有可同步的数据", "MTGJSON 索引最近 90 天没有可用价格");
         return;
       }
       state.priceHistory = result.history;
       const providerSummary = Object.entries(result.providers)
         .map(([provider, count]) => `${providerLabel(provider)} ${count}`)
         .join(" · ");
-      recordChange("prices.history_backfilled", `补齐 MTGJSON 价格历史：新增 ${result.addedPoints} 个单卡价格点`, {
+      recordChange("prices.history_synced", `同步 MTGJSON 最近 90 天价格：覆盖 ${result.replacedSnapshots} 个日期`, {
         meta: {
-          addedPoints: result.addedPoints,
+          windowDays: result.windowDays,
+          pricePoints: result.pricePoints,
           createdSnapshots: result.createdSnapshots,
-          updatedSnapshots: result.updatedSnapshots,
+          replacedSnapshots: result.replacedSnapshots,
+          removedLocalPoints: result.removedLocalPoints,
           firstDate: result.firstDate,
           lastDate: result.lastDate
         }
       }, { persist: false });
       saveState(["priceHistory", "changeLog"]);
       renderScheduler.request("stats", "cards", "basics");
-      toast("价格历史已补齐", `新增 ${result.createdSnapshots} 个日期、${result.addedPoints} 个价格点${providerSummary ? ` · ${providerSummary}` : ""}`);
+      toast("最近 90 天已同步", `覆盖 ${result.replacedSnapshots} 个日期，新建 ${result.createdSnapshots} 个日期，共 ${result.pricePoints} 个价格点${providerSummary ? ` · ${providerSummary}` : ""}`);
     } catch (error) {
-      toast("历史补齐失败", error.message || "无法读取 MTGJSON 价格历史", true);
+      toast("历史同步失败", error.message || "无法读取 MTGJSON 价格历史", true);
     } finally {
-      state.backfillingPriceHistory = false;
+      state.syncingPriceHistory = false;
       openTotalPriceHistory();
     }
   }
@@ -2729,7 +2735,7 @@
       if (button) refreshStalePrices(true);
     });
     elements.priceHistoryContent.addEventListener("click", (event) => {
-      if (event.target.closest("[data-backfill-price-history]")) backfillMtgjsonPriceHistory();
+      if (event.target.closest("[data-sync-price-history]")) syncMtgjsonPriceHistory();
     });
     $("#addCardBtn").addEventListener("click", () => openAddCardDialog("draft"));
     elements.addBasicLandBtn.addEventListener("click", () => openAddCardDialog("basic"));

@@ -1,6 +1,6 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { backfillPriceHistory, buildPriceTrendIndex, cardPriceKey, cardSeries, dailyPriceChanges, dateKey, emptyPriceHistory, hasDailySnapshot, normalizePriceHistory, parsePriceHistoryData, priceTrend, recordDailySnapshot, totalSeries, wrapPriceHistoryData } = require("./priceHistory.js");
+const { buildPriceTrendIndex, cardPriceKey, cardSeries, dailyPriceChanges, dateKey, emptyPriceHistory, hasDailySnapshot, normalizePriceHistory, parsePriceHistoryData, priceTrend, recordDailySnapshot, syncPriceHistoryWindow, totalSeries, wrapPriceHistoryData } = require("./priceHistory.js");
 const { buildCards, buildPriceHistory } = require("./testFixtures.js");
 
 test("dateKey formats local calendar dates", () => {
@@ -133,32 +133,51 @@ test("price trend index matches per-card series across long history", () => {
   assert.deepEqual(index.totalTrend, priceTrend(totalSeries(history)));
 });
 
-test("MTGJSON backfill adds missing points without overwriting local snapshots", () => {
+test("MTGJSON sync replaces source dates in the latest 90-day window", () => {
   const card = {
     scryfallId: "printing",
     finish: "foil",
     priceSources: { foil: { origin: "mtgjson", provider: "tcgplayer" } },
     prices: { usdFoil: "4.00" }
   };
-  const existing = recordDailySnapshot(emptyPriceHistory(), [card], { date: "2026-07-02" });
-  const result = backfillPriceHistory(existing, [card], () => [
-    { date: "2026-07-01", usd: 3.5, provider: "manapool" },
-    { date: "2026-07-02", usd: 99, provider: "cardkingdom" }
-  ], { now: new Date("2026-07-03T00:00:00Z") });
-  assert.equal(result.addedPoints, 1);
-  assert.equal(result.skippedExisting, 1);
+  const existing = normalizePriceHistory({
+    snapshots: {
+      "2026-05-01": { cards: { "printing|foil": 1 }, totalUsd: 1 },
+      "2026-05-02": { cards: { "printing|foil": 4, "old-card|foil": 100 }, totalUsd: 104 },
+      "2026-06-01": { cards: { "printing|foil": 6 }, totalUsd: 6 }
+    }
+  });
+  const result = syncPriceHistoryWindow(existing, [card], () => [
+    { date: "2026-05-01", usd: 2, provider: "tcgplayer" },
+    { date: "2026-05-02", usd: 9, provider: "manapool" },
+    { date: "2026-07-30", usd: 11, provider: "cardmarket" }
+  ], {
+    endDate: "2026-07-30",
+    windowDays: 90,
+    now: new Date("2026-07-30T12:00:00Z")
+  });
+  assert.equal(result.cutoffDate, "2026-05-02");
+  assert.equal(result.syncedSnapshots, 2);
+  assert.equal(result.pricePoints, 2);
+  assert.equal(result.replacedSnapshots, 1);
   assert.equal(result.createdSnapshots, 1);
-  assert.equal(result.updatedSnapshots, 0);
+  assert.equal(result.removedLocalPoints, 1);
   assert.deepEqual(cardSeries(result.history, card), [
-    { date: "2026-07-01", usd: 3.5 },
-    { date: "2026-07-02", usd: 4 }
+    { date: "2026-05-01", usd: 1 },
+    { date: "2026-05-02", usd: 9 },
+    { date: "2026-06-01", usd: 6 },
+    { date: "2026-07-30", usd: 11 }
   ]);
-  assert.deepEqual(result.history.snapshots["2026-07-01"].backfill, {
+  assert.deepEqual(result.history.snapshots["2026-05-01"], existing.snapshots["2026-05-01"]);
+  assert.deepEqual(result.history.snapshots["2026-06-01"], existing.snapshots["2026-06-01"]);
+  assert.deepEqual(result.history.snapshots["2026-05-02"].cards, { "printing|foil": 9 });
+  assert.equal(result.history.snapshots["2026-05-02"].totalUsd, 9);
+  assert.deepEqual(result.history.snapshots["2026-05-02"].sync, {
     origin: "mtgjson",
-    added: 1,
+    mode: "replace",
+    windowDays: 90,
     providers: { manapool: 1 }
   });
-  assert.equal(result.history.snapshots["2026-07-02"].sourceSummary["mtgjson:tcgplayer"], 1);
 });
 
 test("price history normalization preserves refresh fallback and compact source summaries", () => {
@@ -167,7 +186,8 @@ test("price history normalization preserves refresh fallback and compact source 
       "2026-07-01": {
         cards: { "card|foil": 2 },
         refresh: { checked: 2, updated: 1, missing: 1, fallback: 1 },
-        sourceSummary: { "mtgjson:tcgplayer": 1, ignored: 0 }
+        sourceSummary: { "mtgjson:tcgplayer": 1, ignored: 0 },
+        sync: { origin: "mtgjson", mode: "replace", windowDays: 90, providers: { tcgplayer: 1 } }
       }
     }
   });
@@ -178,4 +198,10 @@ test("price history normalization preserves refresh fallback and compact source 
     fallback: 1
   });
   assert.deepEqual(history.snapshots["2026-07-01"].sourceSummary, { "mtgjson:tcgplayer": 1 });
+  assert.deepEqual(history.snapshots["2026-07-01"].sync, {
+    origin: "mtgjson",
+    mode: "replace",
+    windowDays: 90,
+    providers: { tcgplayer: 1 }
+  });
 });

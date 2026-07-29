@@ -1,9 +1,9 @@
 {
   "format": "arcana-cube-price-history",
-  "version": 2,
+  "version": 3,
   "savedAt": "2026-01-01T00:00:00.000Z",
   "data": {
-    "version": 2,
+    "version": 3,
     "currency": "USD",
     "updatedAt": "",
     "snapshots": {}

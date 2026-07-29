@@ -95,7 +95,7 @@ npm run build:product-sources
 
 前三档缺失时才会使用 Cardmarket。汇率通过 [Frankfurter](https://frankfurter.dev/) 取得 ECB 的 EUR/USD 历史参考汇率；周末和节假日采用此前最近一个工作日的汇率。换算后的价格点同时保存汇率数值和汇率日期，便于追溯。Scryfall 继续负责卡牌资料、版本和图片，不参与价格兜底。
 
-每次刷新会保存价格来源、提供商和数据日期；每日快照保留紧凑的来源统计。总价历史弹窗中的“补齐历史”只增加缺失价格点，不覆盖已有本地快照。
+每次刷新会保存价格来源、提供商和数据日期；每日快照保留紧凑的来源统计。总价历史弹窗中的“同步近 90 天”会用 MTGJSON 逐卡数据重建最近 90 个自然日内有源数据的每日快照和总价；更早的记录以及窗口内 MTGJSON 完全缺少的日期保持不变。
 
 网页不会下载超过 1 GB 的 MTGJSON 完整价格 JSON。维护脚本把当前牌表所需数据压缩为 `mtgjson-price-index.json` 与供本地直开使用的 `mtgjson-price-index.js`：
 
