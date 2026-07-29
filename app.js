@@ -1433,8 +1433,9 @@
       const primaryValue = selectedRanking === "absolute" ? delta : percent;
       const secondaryValue = selectedRanking === "absolute" ? percent : delta;
       const finish = normalizeFinish(card.finish) === "foil" ? "Foil" : "Non-Foil";
+      const thumbnail = getCardImage(card);
       return `<article class="price-change-row ${change.direction}">
-        <div><strong>${escapeHtml(displayName)}</strong><small>${escapeHtml(card.set || "—")}${card.collectorNumber ? ` · ${escapeHtml(card.collectorNumber)}` : ""} · ${finish}</small></div>
+        <div class="price-change-card"><span class="price-change-thumbnail-wrap">${thumbnail ? `<img class="price-change-thumbnail" src="${escapeHtml(thumbnail)}" alt="" loading="lazy" />` : ""}</span><span class="price-change-copy"><strong>${escapeHtml(displayName)}</strong><small>${escapeHtml(card.set || "—")}${card.collectorNumber ? ` · ${escapeHtml(card.collectorNumber)}` : ""} · ${finish}</small></span></div>
         <span>${change.direction === "up" ? "▲" : "▼"} ${escapeHtml(primaryValue)}</span>
         <small>${escapeHtml(formatUsd(change.previousUsd))} → ${escapeHtml(formatUsd(change.latestUsd))} · ${escapeHtml(secondaryValue)}</small>
       </article>`;
@@ -2969,6 +2970,9 @@
         openPriceChanges(period, rankingButton.dataset.priceChangeRanking);
       }
     });
+    elements.priceHistoryContent.addEventListener("error", (event) => {
+      if (event.target.classList && event.target.classList.contains("price-change-thumbnail")) event.target.classList.add("hidden");
+    }, true);
     $("#addCardBtn").addEventListener("click", () => openAddCardDialog("draft"));
     elements.addBasicLandBtn.addEventListener("click", () => openAddCardDialog("basic"));
     $$('[data-basic-land-grouping]').forEach((button) => button.addEventListener("click", () => setBasicLandGrouping(button.dataset.basicLandGrouping)));

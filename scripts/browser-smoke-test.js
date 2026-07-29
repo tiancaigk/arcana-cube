@@ -168,13 +168,18 @@ async function main() {
       const rankingButtons = [...document.querySelectorAll('[data-price-change-ranking]')];
       const rankingLabels = rankingButtons.map((button) => button.textContent.trim());
       rankingButtons.find((button) => button.dataset.priceChangeRanking === 'absolute')?.click();
+      const rows = [...document.querySelectorAll('.price-change-row')];
+      const thumbnails = [...document.querySelectorAll('.price-change-thumbnail-wrap')];
       const result = {
         opened: dialog.open,
         labels,
         active: document.querySelector('[data-price-change-period].active')?.dataset.priceChangePeriod || '',
         rankingLabels,
         activeRanking: document.querySelector('[data-price-change-ranking].active')?.dataset.priceChangeRanking || '',
-        title: document.querySelector('#priceHistoryContent .price-history-head strong')?.textContent.trim() || ''
+        title: document.querySelector('#priceHistoryContent .price-history-head strong')?.textContent.trim() || '',
+        rowCount: rows.length,
+        thumbnailCount: thumbnails.length,
+        thumbnailSize: thumbnails[0] ? [thumbnails[0].clientWidth, thumbnails[0].clientHeight] : []
       };
       dialog.querySelector('[data-close-dialog]').click();
       result.closed = !dialog.open;
@@ -184,7 +189,9 @@ async function main() {
       || priceChangeTabs.labels.join("|") !== "今日价格变动|本周价格变动|本月价格变动|历史价格变动"
       || priceChangeTabs.active !== "history" || priceChangeTabs.title !== "历史价格变动"
       || priceChangeTabs.rankingLabels.join("|") !== "涨跌幅|涨跌金额"
-      || priceChangeTabs.activeRanking !== "absolute") {
+      || priceChangeTabs.activeRanking !== "absolute"
+      || priceChangeTabs.thumbnailCount !== priceChangeTabs.rowCount
+      || (priceChangeTabs.rowCount && priceChangeTabs.thumbnailSize.join("x") !== "18x25")) {
       throw new Error(`价格变动时间标签切换失败：${JSON.stringify(priceChangeTabs)}`);
     }
 
