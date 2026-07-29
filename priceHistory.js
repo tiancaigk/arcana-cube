@@ -389,11 +389,17 @@
     };
   }
 
-  function topPriceMovers(changes, direction, limit = 20) {
+  function topPriceMovers(changes, direction, limit = 20, ranking = "percent") {
     const maximum = Math.max(0, Math.floor(Number(limit) || 0));
+    const selectedRanking = ranking === "absolute" ? "absolute" : "percent";
     return (changes || [])
       .filter((change) => change && change.direction === direction)
       .sort((a, b) => {
+        if (selectedRanking === "absolute") {
+          return Math.abs(b.delta) - Math.abs(a.delta)
+            || Math.abs(b.percent || 0) - Math.abs(a.percent || 0)
+            || String(a.card && a.card.name || "").localeCompare(String(b.card && b.card.name || ""));
+        }
         const percentA = a.percent === null ? -1 : Math.abs(a.percent);
         const percentB = b.percent === null ? -1 : Math.abs(b.percent);
         return percentB - percentA

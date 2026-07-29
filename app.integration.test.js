@@ -259,8 +259,10 @@ test("key interactive regions expose accessible state", () => {
   assert.match(styleSource, /\.type-row\.active\s*\{[^}]*outline:\s*1px solid var\(--bucket-color/);
   assert.match(appSource, /data-show-today-price-changes/);
   assert.match(appSource, /data-price-change-period=/);
+  assert.match(appSource, /data-price-change-ranking=/);
   assert.match(appSource, /priceChangesForPeriod\(state\.priceHistory, getValuedCards\(\), selectedPeriod, today\)/);
-  assert.match(appSource, /topPriceMovers\(result\.changes, "up", 20\)/);
-  assert.match(appSource, /topPriceMovers\(result\.changes, "down", 20\)/);
+  assert.match(appSource, /topPriceMovers\(result\.changes, "up", 20, selectedRanking\)/);
+  assert.match(appSource, /topPriceMovers\(result\.changes, "down", 20, selectedRanking\)/);
   assert.match(styleSource, /\.price-change-tabs/);
+  assert.match(styleSource, /\.price-change-ranking/);
 });

@@ -1406,7 +1406,7 @@
     }
   }
 
-  function openPriceChanges(period = "today") {
+  function openPriceChanges(period = "today", ranking = "percent") {
     const today = dateKey();
     const periodLabels = {
       today: "今日价格变动",
@@ -1414,36 +1414,46 @@
       month: "本月价格变动",
       history: "历史价格变动"
     };
+    const rankingLabels = {
+      percent: "涨跌幅",
+      absolute: "涨跌金额"
+    };
     const selectedPeriod = Object.prototype.hasOwnProperty.call(periodLabels, period) ? period : "today";
+    const selectedRanking = Object.prototype.hasOwnProperty.call(rankingLabels, ranking) ? ranking : "percent";
     const result = priceChangesForPeriod(state.priceHistory, getValuedCards(), selectedPeriod, today);
     const allIncreases = result.changes.filter((change) => change.direction === "up");
     const allDecreases = result.changes.filter((change) => change.direction === "down");
-    const increases = topPriceMovers(result.changes, "up", 20);
-    const decreases = topPriceMovers(result.changes, "down", 20);
+    const increases = topPriceMovers(result.changes, "up", 20, selectedRanking);
+    const decreases = topPriceMovers(result.changes, "down", 20, selectedRanking);
     const renderChanges = (items) => items.map((change) => {
       const card = change.card || {};
       const displayName = cardDisplayName(card);
-      const percent = change.percent === null ? formatUsd(Math.abs(change.delta)) : `${Math.abs(change.percent).toFixed(2)}%`;
+      const percent = change.percent === null ? "—" : `${Math.abs(change.percent).toFixed(2)}%`;
       const delta = `${change.delta > 0 ? "+" : "−"}${formatUsd(Math.abs(change.delta))}`;
+      const primaryValue = selectedRanking === "absolute" ? delta : percent;
+      const secondaryValue = selectedRanking === "absolute" ? percent : delta;
       const finish = normalizeFinish(card.finish) === "foil" ? "Foil" : "Non-Foil";
       return `<article class="price-change-row ${change.direction}">
         <div><strong>${escapeHtml(displayName)}</strong><small>${escapeHtml(card.set || "—")}${card.collectorNumber ? ` · ${escapeHtml(card.collectorNumber)}` : ""} · ${finish}</small></div>
-        <span>${change.direction === "up" ? "▲" : "▼"} ${escapeHtml(percent)}</span>
-        <small>${escapeHtml(formatUsd(change.previousUsd))} → ${escapeHtml(formatUsd(change.latestUsd))} · ${escapeHtml(delta)}</small>
+        <span>${change.direction === "up" ? "▲" : "▼"} ${escapeHtml(primaryValue)}</span>
+        <small>${escapeHtml(formatUsd(change.previousUsd))} → ${escapeHtml(formatUsd(change.latestUsd))} · ${escapeHtml(secondaryValue)}</small>
       </article>`;
     }).join("");
     const hasRange = result.previousDate && result.latestDate && result.previousDate !== result.latestDate;
+    const groupMetric = selectedRanking === "absolute" ? "金额" : "幅度";
     const body = result.changes.length ? `<div class="price-change-groups">
-      ${increases.length ? `<section class="price-change-group up"><h3>上涨幅度 <small>TOP ${increases.length} · 共 ${allIncreases.length} 张</small></h3><div class="price-change-list">${renderChanges(increases)}</div></section>` : ""}
-      ${decreases.length ? `<section class="price-change-group down"><h3>下跌幅度 <small>TOP ${decreases.length} · 共 ${allDecreases.length} 张</small></h3><div class="price-change-list">${renderChanges(decreases)}</div></section>` : ""}
+      ${increases.length ? `<section class="price-change-group up"><h3>上涨${groupMetric} <small>TOP ${increases.length} · 共 ${allIncreases.length} 张</small></h3><div class="price-change-list">${renderChanges(increases)}</div></section>` : ""}
+      ${decreases.length ? `<section class="price-change-group down"><h3>下跌${groupMetric} <small>TOP ${decreases.length} · 共 ${allDecreases.length} 张</small></h3><div class="price-change-list">${renderChanges(decreases)}</div></section>` : ""}
     </div>` : `<p class="price-change-empty">${hasRange ? "这个时间范围内没有同版本、同工艺的单卡价格变动。" : "这个时间范围还没有至少两个可比较的价格快照。"}</p>`;
     const tabs = Object.entries(periodLabels).map(([key, label]) => `<button type="button" class="${selectedPeriod === key ? "active" : ""}" data-price-change-period="${key}" aria-pressed="${selectedPeriod === key ? "true" : "false"}">${label}</button>`).join("");
+    const rankingButtons = Object.entries(rankingLabels).map(([key, label]) => `<button type="button" class="${selectedRanking === key ? "active" : ""}" data-price-change-ranking="${key}" aria-pressed="${selectedRanking === key ? "true" : "false"}">${label}</button>`).join("");
     const rangeText = hasRange
       ? `${formatHistoryDate(result.previousDate)} → ${formatHistoryDate(result.latestDate)}`
       : formatHistoryDate(result.latestDate || today);
     elements.priceHistoryContent.innerHTML = `<section class="price-history-panel">
       <div class="price-history-head"><div><span>PRICE CHANGES</span><strong>${escapeHtml(periodLabels[selectedPeriod])}</strong></div><small>${escapeHtml(rangeText)}</small></div>
       <div class="price-change-tabs" aria-label="价格变动时间范围">${tabs}</div>
+      <div class="price-change-ranking"><span>排序方式</span><div aria-label="价格变动排序方式">${rankingButtons}</div></div>
       ${body}
     </section>`;
     elements.priceHistoryDialog.showModal();
@@ -2948,7 +2958,16 @@
     elements.priceHistoryContent.addEventListener("click", (event) => {
       if (event.target.closest("[data-sync-price-history]")) syncMtgjsonPriceHistory();
       const periodButton = event.target.closest("[data-price-change-period]");
-      if (periodButton) openPriceChanges(periodButton.dataset.priceChangePeriod);
+      if (periodButton) {
+        const ranking = elements.priceHistoryContent.querySelector("[data-price-change-ranking].active")?.dataset.priceChangeRanking;
+        openPriceChanges(periodButton.dataset.priceChangePeriod, ranking);
+        return;
+      }
+      const rankingButton = event.target.closest("[data-price-change-ranking]");
+      if (rankingButton) {
+        const period = elements.priceHistoryContent.querySelector("[data-price-change-period].active")?.dataset.priceChangePeriod;
+        openPriceChanges(period, rankingButton.dataset.priceChangeRanking);
+      }
     });
     $("#addCardBtn").addEventListener("click", () => openAddCardDialog("draft"));
     elements.addBasicLandBtn.addEventListener("click", () => openAddCardDialog("basic"));

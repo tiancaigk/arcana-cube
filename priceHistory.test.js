@@ -155,6 +155,19 @@ test("top price movers ranks percentage magnitude and limits each direction", ()
   assert.equal(decreases.at(-1).percent, -6);
 });
 
+test("top price movers can rank by absolute dollar change", () => {
+  const changes = [
+    { card: { name: "Large percent" }, direction: "up", delta: 1, percent: 100 },
+    { card: { name: "Large dollars" }, direction: "up", delta: 10, percent: 10 },
+    { card: { name: "Down percent" }, direction: "down", delta: -2, percent: -80 },
+    { card: { name: "Down dollars" }, direction: "down", delta: -12, percent: -8 }
+  ];
+  assert.equal(topPriceMovers(changes, "up", 20, "percent")[0].card.name, "Large percent");
+  assert.equal(topPriceMovers(changes, "up", 20, "absolute")[0].card.name, "Large dollars");
+  assert.equal(topPriceMovers(changes, "down", 20, "percent")[0].card.name, "Down percent");
+  assert.equal(topPriceMovers(changes, "down", 20, "absolute")[0].card.name, "Down dollars");
+});
+
 test("price history files wrap and parse round-trip data", () => {
   const history = recordDailySnapshot(emptyPriceHistory(), [{ scryfallId: "card", finish: "foil", prices: { usdFoil: "1.25" } }], { date: "2026-07-02" });
   const wrapped = wrapPriceHistoryData(history);

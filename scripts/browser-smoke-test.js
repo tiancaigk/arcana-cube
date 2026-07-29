@@ -165,10 +165,15 @@ async function main() {
       const buttons = [...document.querySelectorAll('[data-price-change-period]')];
       const labels = buttons.map((button) => button.textContent.trim());
       buttons.find((button) => button.dataset.priceChangePeriod === 'history')?.click();
+      const rankingButtons = [...document.querySelectorAll('[data-price-change-ranking]')];
+      const rankingLabels = rankingButtons.map((button) => button.textContent.trim());
+      rankingButtons.find((button) => button.dataset.priceChangeRanking === 'absolute')?.click();
       const result = {
         opened: dialog.open,
         labels,
         active: document.querySelector('[data-price-change-period].active')?.dataset.priceChangePeriod || '',
+        rankingLabels,
+        activeRanking: document.querySelector('[data-price-change-ranking].active')?.dataset.priceChangeRanking || '',
         title: document.querySelector('#priceHistoryContent .price-history-head strong')?.textContent.trim() || ''
       };
       dialog.querySelector('[data-close-dialog]').click();
@@ -177,7 +182,9 @@ async function main() {
     })()`);
     if (!priceChangeTabs.opened || !priceChangeTabs.closed
       || priceChangeTabs.labels.join("|") !== "今日价格变动|本周价格变动|本月价格变动|历史价格变动"
-      || priceChangeTabs.active !== "history" || priceChangeTabs.title !== "历史价格变动") {
+      || priceChangeTabs.active !== "history" || priceChangeTabs.title !== "历史价格变动"
+      || priceChangeTabs.rankingLabels.join("|") !== "涨跌幅|涨跌金额"
+      || priceChangeTabs.activeRanking !== "absolute") {
       throw new Error(`价格变动时间标签切换失败：${JSON.stringify(priceChangeTabs)}`);
     }
 
