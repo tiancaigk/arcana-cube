@@ -327,16 +327,11 @@
     };
   }
 
-  function dailyPriceChanges(history, cards, date = dateKey()) {
-    const normalized = normalizePriceHistory(history);
-    const dates = Object.keys(normalized.snapshots).sort();
-    const targetDate = dates.includes(date) ? date : "";
-    if (!targetDate) return [];
-    const targetIndex = dates.indexOf(targetDate);
-    const previousDate = targetIndex > 0 ? dates[targetIndex - 1] : "";
-    if (!previousDate) return [];
+  function compareSnapshotPrices(normalized, cards, previousDate, targetDate) {
+    if (!previousDate || !targetDate || previousDate === targetDate) return [];
     const latest = normalized.snapshots[targetDate];
     const previous = normalized.snapshots[previousDate];
+    if (!latest || !previous) return [];
     return (cards || []).map((card) => {
       const key = cardPriceKey(card, card && card.finish);
       const previousUsd = normalizeUsd(previous.cards && previous.cards[key]);
@@ -356,6 +351,60 @@
         percent: previousUsd ? Math.round(delta / previousUsd * 10000) / 100 : null
       };
     }).filter(Boolean).sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta) || String(a.card && a.card.name || "").localeCompare(String(b.card && b.card.name || "")));
+  }
+
+  function periodStartDate(date, period) {
+    const value = new Date(`${date}T12:00:00Z`);
+    if (Number.isNaN(value.getTime())) return "";
+    if (period === "week") {
+      const mondayOffset = (value.getUTCDay() + 6) % 7;
+      value.setUTCDate(value.getUTCDate() - mondayOffset);
+    } else if (period === "month") {
+      value.setUTCDate(1);
+    }
+    return value.toISOString().slice(0, 10);
+  }
+
+  function priceChangesForPeriod(history, cards, period = "today", date = dateKey()) {
+    const normalized = normalizePriceHistory(history);
+    const selectedPeriod = ["today", "week", "month", "history"].includes(period) ? period : "today";
+    const dates = Object.keys(normalized.snapshots).filter((snapshotDate) => snapshotDate <= date).sort();
+    const targetDate = selectedPeriod === "today" ? (dates.includes(date) ? date : "") : dates[dates.length - 1] || "";
+    if (!targetDate) return { period: selectedPeriod, previousDate: "", latestDate: "", changes: [] };
+    let previousDate = "";
+    if (selectedPeriod === "today") {
+      const targetIndex = dates.indexOf(targetDate);
+      previousDate = targetIndex > 0 ? dates[targetIndex - 1] : "";
+    } else if (selectedPeriod === "history") {
+      previousDate = dates[0] || "";
+    } else {
+      const startDate = periodStartDate(targetDate, selectedPeriod);
+      previousDate = dates.find((snapshotDate) => snapshotDate >= startDate && snapshotDate <= targetDate) || "";
+    }
+    return {
+      period: selectedPeriod,
+      previousDate,
+      latestDate: targetDate,
+      changes: compareSnapshotPrices(normalized, cards, previousDate, targetDate)
+    };
+  }
+
+  function topPriceMovers(changes, direction, limit = 20) {
+    const maximum = Math.max(0, Math.floor(Number(limit) || 0));
+    return (changes || [])
+      .filter((change) => change && change.direction === direction)
+      .sort((a, b) => {
+        const percentA = a.percent === null ? -1 : Math.abs(a.percent);
+        const percentB = b.percent === null ? -1 : Math.abs(b.percent);
+        return percentB - percentA
+          || Math.abs(b.delta) - Math.abs(a.delta)
+          || String(a.card && a.card.name || "").localeCompare(String(b.card && b.card.name || ""));
+      })
+      .slice(0, maximum);
+  }
+
+  function dailyPriceChanges(history, cards, date = dateKey()) {
+    return priceChangesForPeriod(history, cards, "today", date).changes;
   }
 
   function wrapPriceHistoryData(history) {
@@ -385,9 +434,12 @@
     hasDailySnapshot,
     normalizePriceHistory,
     parsePriceHistoryData,
+    periodStartDate,
     priceTrend,
+    priceChangesForPeriod,
     recordDailySnapshot,
     syncPriceHistoryWindow,
+    topPriceMovers,
     totalSeries,
     wrapPriceHistoryData
   };

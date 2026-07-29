@@ -185,7 +185,7 @@ test("basic lands contribute to value and export but not draft analytics", () =>
   assert.match(appSource, /function getValuedCards\(\)/);
   assert.match(appSource, /return \[\.\.\.state\.data\.cards, \.\.\.state\.data\.basicLands\]/);
   assert.match(appSource, /recordDailySnapshot\(state\.priceHistory, getValuedCards\(\),/);
-  assert.match(appSource, /dailyPriceChanges\(state\.priceHistory, getValuedCards\(\), today\)/);
+  assert.match(appSource, /priceChangesForPeriod\(state\.priceHistory, getValuedCards\(\), selectedPeriod, today\)/);
   assert.match(appSource, /book_append_sheet\(workbook, basicLandWorksheet, "基本地"\)/);
   assert.match(appSource, /selectors\.selectStats\(state\.data\.cards/);
   assert.match(appSource, /selectors\.selectAnalytics\(state\.data\.cards/);
@@ -258,4 +258,9 @@ test("key interactive regions expose accessible state", () => {
   assert.match(styleSource, /\.type-row\.active \.type-name\s*\{[^}]*color:\s*var\(--bucket-color/);
   assert.match(styleSource, /\.type-row\.active\s*\{[^}]*outline:\s*1px solid var\(--bucket-color/);
   assert.match(appSource, /data-show-today-price-changes/);
+  assert.match(appSource, /data-price-change-period=/);
+  assert.match(appSource, /priceChangesForPeriod\(state\.priceHistory, getValuedCards\(\), selectedPeriod, today\)/);
+  assert.match(appSource, /topPriceMovers\(result\.changes, "up", 20\)/);
+  assert.match(appSource, /topPriceMovers\(result\.changes, "down", 20\)/);
+  assert.match(styleSource, /\.price-change-tabs/);
 });

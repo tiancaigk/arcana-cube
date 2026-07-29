@@ -159,6 +159,28 @@ async function main() {
     })()`);
     if (!dialogState.opened || !dialogState.closed) throw new Error("添加卡牌弹窗开关失败");
 
+    const priceChangeTabs = await evaluate(`(() => {
+      document.querySelector('[data-show-today-price-changes]').click();
+      const dialog = document.querySelector('#priceHistoryDialog');
+      const buttons = [...document.querySelectorAll('[data-price-change-period]')];
+      const labels = buttons.map((button) => button.textContent.trim());
+      buttons.find((button) => button.dataset.priceChangePeriod === 'history')?.click();
+      const result = {
+        opened: dialog.open,
+        labels,
+        active: document.querySelector('[data-price-change-period].active')?.dataset.priceChangePeriod || '',
+        title: document.querySelector('#priceHistoryContent .price-history-head strong')?.textContent.trim() || ''
+      };
+      dialog.querySelector('[data-close-dialog]').click();
+      result.closed = !dialog.open;
+      return result;
+    })()`);
+    if (!priceChangeTabs.opened || !priceChangeTabs.closed
+      || priceChangeTabs.labels.join("|") !== "今日价格变动|本周价格变动|本月价格变动|历史价格变动"
+      || priceChangeTabs.active !== "history" || priceChangeTabs.title !== "历史价格变动") {
+      throw new Error(`价格变动时间标签切换失败：${JSON.stringify(priceChangeTabs)}`);
+    }
+
     const whiteCount = await evaluate(`(async () => {
       document.querySelector('[data-color="W"]').click();
       await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));

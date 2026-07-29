@@ -1,6 +1,6 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { buildPriceTrendIndex, cardPriceKey, cardSeries, dailyPriceChanges, dateKey, emptyPriceHistory, hasDailySnapshot, normalizePriceHistory, parsePriceHistoryData, priceTrend, recordDailySnapshot, syncPriceHistoryWindow, totalSeries, wrapPriceHistoryData } = require("./priceHistory.js");
+const { buildPriceTrendIndex, cardPriceKey, cardSeries, dailyPriceChanges, dateKey, emptyPriceHistory, hasDailySnapshot, normalizePriceHistory, parsePriceHistoryData, priceChangesForPeriod, priceTrend, recordDailySnapshot, syncPriceHistoryWindow, topPriceMovers, totalSeries, wrapPriceHistoryData } = require("./priceHistory.js");
 const { buildCards, buildPriceHistory } = require("./testFixtures.js");
 
 test("dateKey formats local calendar dates", () => {
@@ -108,6 +108,51 @@ test("dailyPriceChanges compares a target date with the previous snapshot", () =
     { name: "Black Lotus", direction: "down", delta: -4, percent: -4, previousUsd: 100, latestUsd: 96 },
     { name: "Lightning Bolt", direction: "up", delta: 2.5, percent: 25, previousUsd: 10, latestUsd: 12.5 }
   ]);
+});
+
+test("price change periods use calendar week, month, and complete history boundaries", () => {
+  const card = { id: "1", name: "Lightning Bolt", scryfallId: "bolt", finish: "foil" };
+  const key = cardPriceKey(card);
+  const history = normalizePriceHistory({
+    snapshots: {
+      "2026-06-01": { cards: { [key]: 10 } },
+      "2026-07-01": { cards: { [key]: 11 } },
+      "2026-07-27": { cards: { [key]: 12 } },
+      "2026-07-28": { cards: { [key]: 13 } },
+      "2026-07-29": { cards: { [key]: 15 } }
+    }
+  });
+  assert.deepEqual(["today", "week", "month", "history"].map((period) => {
+    const result = priceChangesForPeriod(history, [card], period, "2026-07-29");
+    return [period, result.previousDate, result.latestDate, result.changes[0].delta];
+  }), [
+    ["today", "2026-07-28", "2026-07-29", 2],
+    ["week", "2026-07-27", "2026-07-29", 3],
+    ["month", "2026-07-01", "2026-07-29", 4],
+    ["history", "2026-06-01", "2026-07-29", 5]
+  ]);
+});
+
+test("top price movers ranks percentage magnitude and limits each direction", () => {
+  const changes = Array.from({ length: 25 }, (_, index) => ({
+    card: { name: `Up ${index}` },
+    direction: "up",
+    delta: index + 1,
+    percent: index + 1
+  })).concat(Array.from({ length: 25 }, (_, index) => ({
+    card: { name: `Down ${index}` },
+    direction: "down",
+    delta: -(index + 1),
+    percent: -(index + 1)
+  })));
+  const increases = topPriceMovers(changes, "up", 20);
+  const decreases = topPriceMovers(changes, "down", 20);
+  assert.equal(increases.length, 20);
+  assert.equal(decreases.length, 20);
+  assert.equal(increases[0].percent, 25);
+  assert.equal(increases.at(-1).percent, 6);
+  assert.equal(decreases[0].percent, -25);
+  assert.equal(decreases.at(-1).percent, -6);
 });
 
 test("price history files wrap and parse round-trip data", () => {

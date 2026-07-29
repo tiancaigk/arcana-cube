@@ -420,6 +420,10 @@ select { height: 40px; min-width: 126px; padding: 0 30px 0 12px; border: 1px sol
 @media (prefers-reduced-motion: reduce) { .price-line { animation: none; } }
 .price-change-list { display: grid; gap: 8px; margin-top: 16px; }
 .price-change-groups { display: grid; gap: 20px; }
+.price-change-tabs { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 3px; margin: 2px 0 18px; padding: 3px; border: 1px solid var(--line-soft); border-radius: 9px; background: rgba(10,10,9,.48); }
+.price-change-tabs button { min-width: 0; padding: 8px 7px; border: 0; border-radius: 6px; color: var(--muted-2); background: transparent; font-size: 9px; white-space: nowrap; cursor: pointer; }
+.price-change-tabs button:hover { color: var(--text); background: rgba(255,255,255,.035); }
+.price-change-tabs button.active { color: #17150f; background: var(--accent); font-weight: 600; }
 .price-change-group h3 { margin: 0; color: var(--text); font-size: 11px; font-weight: 600; }
 .price-change-group h3 small { margin-left: 6px; color: var(--muted-2); font: 400 9px/1 "DM Mono", monospace; }
 .price-change-group.up h3 { color: var(--danger); }

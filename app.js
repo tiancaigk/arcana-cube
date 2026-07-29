@@ -21,7 +21,7 @@
   const PRODUCT_SOURCE_INDEX_SCRIPT_URL = "product-source-index.js";
   const MTGJSON_PRICE_INDEX_SCRIPT_URL = "mtgjson-price-index.js";
   const { buildBackup, buildExcelRows, buildLocalizedNameSearchUrl, buildLocalImageFileName, chooseValidFinish, computeStats, filterCards, filterPrintings, sortCards, getAvailableFinishes, getBasicLandKind, getCardBucket, getCardDisplayName, getCardImage, getFrontColors, getFrontDisplayName, getFrontTypeLine, getOracleId, getPreferredLocalizedName, getPriceNumber, getUsdPrice, isPaperPrinting, isSplitCard, isSupportedBasicLand, mergeArchiveMetadata, needsPriceRefresh, normalizeCardName, normalizeFinish, normalizeLocalizedNames, normalizeScryfallCard, parseBackup, parseDecklist, parseExcelRows, prepareTextImportRows, replacePrinting } = window.CubeCore;
-  const { cardSeries, dailyPriceChanges, dateKey, emptyPriceHistory, hasDailySnapshot, normalizePriceHistory, parsePriceHistoryData, priceTrend, recordDailySnapshot, syncPriceHistoryWindow, totalSeries, wrapPriceHistoryData } = window.CubePriceHistory;
+  const { cardSeries, dateKey, emptyPriceHistory, hasDailySnapshot, normalizePriceHistory, parsePriceHistoryData, priceChangesForPeriod, priceTrend, recordDailySnapshot, syncPriceHistoryWindow, topPriceMovers, totalSeries, wrapPriceHistoryData } = window.CubePriceHistory;
   const { appendChange, emptyChangeLog, latestEntries, normalizeChangeLog, parseChangeLogData, wrapChangeLogData } = window.CubeChangeLog;
   const { analyzeWorkspaceHealth } = window.CubeHealth;
   const { createWorkspaceService } = window.CubeWorkspace;
@@ -1406,31 +1406,51 @@
     }
   }
 
-  function openTodayPriceChanges() {
+  function openPriceChanges(period = "today") {
     const today = dateKey();
-    const changes = dailyPriceChanges(state.priceHistory, getValuedCards(), today);
+    const periodLabels = {
+      today: "今日价格变动",
+      week: "本周价格变动",
+      month: "本月价格变动",
+      history: "历史价格变动"
+    };
+    const selectedPeriod = Object.prototype.hasOwnProperty.call(periodLabels, period) ? period : "today";
+    const result = priceChangesForPeriod(state.priceHistory, getValuedCards(), selectedPeriod, today);
+    const allIncreases = result.changes.filter((change) => change.direction === "up");
+    const allDecreases = result.changes.filter((change) => change.direction === "down");
+    const increases = topPriceMovers(result.changes, "up", 20);
+    const decreases = topPriceMovers(result.changes, "down", 20);
     const renderChanges = (items) => items.map((change) => {
       const card = change.card || {};
       const displayName = cardDisplayName(card);
-      const percent = change.percent === null ? "" : ` · ${Math.abs(change.percent).toFixed(2)}%`;
+      const percent = change.percent === null ? formatUsd(Math.abs(change.delta)) : `${Math.abs(change.percent).toFixed(2)}%`;
+      const delta = `${change.delta > 0 ? "+" : "−"}${formatUsd(Math.abs(change.delta))}`;
       const finish = normalizeFinish(card.finish) === "foil" ? "Foil" : "Non-Foil";
       return `<article class="price-change-row ${change.direction}">
         <div><strong>${escapeHtml(displayName)}</strong><small>${escapeHtml(card.set || "—")}${card.collectorNumber ? ` · ${escapeHtml(card.collectorNumber)}` : ""} · ${finish}</small></div>
-        <span>${change.direction === "up" ? "▲" : "▼"} ${escapeHtml(formatUsd(Math.abs(change.delta)))}</span>
-        <small>${escapeHtml(formatUsd(change.previousUsd))} → ${escapeHtml(formatUsd(change.latestUsd))}${escapeHtml(percent)}</small>
+        <span>${change.direction === "up" ? "▲" : "▼"} ${escapeHtml(percent)}</span>
+        <small>${escapeHtml(formatUsd(change.previousUsd))} → ${escapeHtml(formatUsd(change.latestUsd))} · ${escapeHtml(delta)}</small>
       </article>`;
     }).join("");
-    const increases = changes.filter((change) => change.direction === "up");
-    const decreases = changes.filter((change) => change.direction === "down");
-    const body = changes.length ? `<div class="price-change-groups">
-      ${increases.length ? `<section class="price-change-group up"><h3>上涨 <small>${increases.length} 张</small></h3><div class="price-change-list">${renderChanges(increases)}</div></section>` : ""}
-      ${decreases.length ? `<section class="price-change-group down"><h3>下跌 <small>${decreases.length} 张</small></h3><div class="price-change-list">${renderChanges(decreases)}</div></section>` : ""}
-    </div>` : `<p class="price-change-empty">今天还没有可显示的单卡价格变动。点击总价旁边的刷新按钮记录今天的价格后，再回来查看。</p>`;
+    const hasRange = result.previousDate && result.latestDate && result.previousDate !== result.latestDate;
+    const body = result.changes.length ? `<div class="price-change-groups">
+      ${increases.length ? `<section class="price-change-group up"><h3>上涨幅度 <small>TOP ${increases.length} · 共 ${allIncreases.length} 张</small></h3><div class="price-change-list">${renderChanges(increases)}</div></section>` : ""}
+      ${decreases.length ? `<section class="price-change-group down"><h3>下跌幅度 <small>TOP ${decreases.length} · 共 ${allDecreases.length} 张</small></h3><div class="price-change-list">${renderChanges(decreases)}</div></section>` : ""}
+    </div>` : `<p class="price-change-empty">${hasRange ? "这个时间范围内没有同版本、同工艺的单卡价格变动。" : "这个时间范围还没有至少两个可比较的价格快照。"}</p>`;
+    const tabs = Object.entries(periodLabels).map(([key, label]) => `<button type="button" class="${selectedPeriod === key ? "active" : ""}" data-price-change-period="${key}" aria-pressed="${selectedPeriod === key ? "true" : "false"}">${label}</button>`).join("");
+    const rangeText = hasRange
+      ? `${formatHistoryDate(result.previousDate)} → ${formatHistoryDate(result.latestDate)}`
+      : formatHistoryDate(result.latestDate || today);
     elements.priceHistoryContent.innerHTML = `<section class="price-history-panel">
-      <div class="price-history-head"><div><span>PRICE CHANGES</span><strong>今日价格变动</strong></div><small>${escapeHtml(formatHistoryDate(today))}</small></div>
+      <div class="price-history-head"><div><span>PRICE CHANGES</span><strong>${escapeHtml(periodLabels[selectedPeriod])}</strong></div><small>${escapeHtml(rangeText)}</small></div>
+      <div class="price-change-tabs" aria-label="价格变动时间范围">${tabs}</div>
       ${body}
     </section>`;
     elements.priceHistoryDialog.showModal();
+  }
+
+  function openTodayPriceChanges() {
+    openPriceChanges("today");
   }
 
   function formatLogTime(time) {
@@ -2927,6 +2947,8 @@
     });
     elements.priceHistoryContent.addEventListener("click", (event) => {
       if (event.target.closest("[data-sync-price-history]")) syncMtgjsonPriceHistory();
+      const periodButton = event.target.closest("[data-price-change-period]");
+      if (periodButton) openPriceChanges(periodButton.dataset.priceChangePeriod);
     });
     $("#addCardBtn").addEventListener("click", () => openAddCardDialog("draft"));
     elements.addBasicLandBtn.addEventListener("click", () => openAddCardDialog("basic"));
