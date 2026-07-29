@@ -1,6 +1,6 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { applyIndexedPriceUpdates, applyPriceUpdates } = require("./priceMaintenance.js");
+const { applyIndexedPricesToCard, applyIndexedPriceUpdates, applyPriceUpdates } = require("./priceMaintenance.js");
 
 test("price maintenance reports updated, missing, and skipped cards separately", () => {
   const cards = [
@@ -71,4 +71,36 @@ test("MTGJSON price maintenance applies provider fallbacks without clearing miss
   assert.equal(cards[0].priceSources.foil.exchangeRate, 1.1367);
   assert.equal(cards[0].priceSources.foil.exchangeRateDate, "2026-07-28");
   assert.equal(cards[0].priceDataDate, "2026-07-28");
+});
+
+test("version replacement discards Scryfall prices and applies indexed MTGJSON prices", () => {
+  const card = {
+    id: "card",
+    scryfallId: "alternative",
+    set: "SLD",
+    collectorNumber: "1854",
+    finish: "foil",
+    prices: { usd: "19.14", usdFoil: "", usdEtched: "" },
+    priceSources: { nonfoil: { origin: "scryfall", provider: "scryfall" } },
+    priceSource: null
+  };
+  const result = applyIndexedPricesToCard(
+    card,
+    { source: { date: "2026-07-28" } },
+    (_index, _card, finish) => finish === "foil"
+      ? { date: "2026-07-28", usd: 17.37, provider: "manapool", providerIndex: 1 }
+      : null,
+    { clearMissing: true, now: new Date("2026-07-29T00:00:00Z") }
+  );
+  assert.deepEqual(result.prices, { usd: "", usdFoil: "17.37", usdEtched: "" });
+  assert.deepEqual(result.priceSources, {
+    foil: {
+      origin: "mtgjson",
+      provider: "manapool",
+      currency: "USD",
+      date: "2026-07-28"
+    }
+  });
+  assert.equal(result.priceSource.provider, "manapool");
+  assert.equal(result.priceUpdatedAt, "2026-07-29T00:00:00.000Z");
 });

@@ -17,16 +17,24 @@ const {
 } = require("../mtgjsonPrices.js");
 
 const rootDir = path.resolve(__dirname, "..");
-const cubeFile = path.join(rootDir, "cube-data.json");
+const cubeFile = process.env.CUBE_DATA_FILE
+  ? path.resolve(process.env.CUBE_DATA_FILE)
+  : path.join(rootDir, "cube-data.json");
 const outputFile = path.join(rootDir, "mtgjson-price-index.json");
 const scriptOutputFile = path.join(rootDir, "mtgjson-price-index.js");
 const cacheRoot = path.join(rootDir, ".cache", "mtgjson");
 const apiRoot = "https://mtgjson.com/api/v5";
 const exchangeApiRoot = "https://api.frankfurter.dev/v2";
+const scryfallApiRoot = "https://api.scryfall.com";
 const headers = {
   Accept: "application/json",
   "User-Agent": "ArcanaCubePriceIndex/1.0"
 };
+const scryfallHeaders = {
+  Accept: "application/json",
+  "User-Agent": "ArcanaCubePriceIndex/1.0"
+};
+let lastScryfallRequestAt = 0;
 
 function parseCube(payload) {
   if (payload && payload.data && Array.isArray(payload.data.cards)) return payload.data;
@@ -34,11 +42,14 @@ function parseCube(payload) {
   throw new Error("cube-data.json 格式无效");
 }
 
-async function fetchJson(url, attempts = 3) {
+async function fetchJson(url, attempts = 3, requestHeaders = headers) {
   let lastError;
   for (let attempt = 0; attempt < attempts; attempt += 1) {
     try {
-      const response = await fetch(url, { headers });
+      const response = await fetch(url, {
+        headers: requestHeaders,
+        signal: AbortSignal.timeout(60000)
+      });
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       return await response.json();
     } catch (error) {
@@ -47,6 +58,91 @@ async function fetchJson(url, attempts = 3) {
     }
   }
   throw new Error(`${url} 下载失败：${lastError && lastError.message || "未知错误"}`);
+}
+
+async function fetchScryfallJson(url) {
+  const remaining = 110 - (Date.now() - lastScryfallRequestAt);
+  if (remaining > 0) await new Promise((resolve) => setTimeout(resolve, remaining));
+  const payload = await fetchJson(url, 3, scryfallHeaders);
+  lastScryfallRequestAt = Date.now();
+  return payload;
+}
+
+function normalizePrintingCandidate(card) {
+  const scryfallId = String(card && (card.scryfallId || card.id) || "").trim();
+  const oracleId = String(card && (card.oracleId || card.oracle_id) || "").trim();
+  const set = String(card && card.set || "").trim().toUpperCase();
+  const collectorNumber = String(card && (card.collectorNumber || card.collector_number) || "").trim();
+  if (!scryfallId || !oracleId || !set || !collectorNumber) return null;
+  return {
+    scryfallId,
+    oracleId,
+    set,
+    collectorNumber,
+    name: String(card && card.name || "").trim()
+  };
+}
+
+async function fetchOraclePrintings(oracleIds) {
+  const ids = [...new Set(oracleIds)].filter((id) => /^[0-9a-f-]{36}$/i.test(id));
+  const printings = [];
+  for (let start = 0; start < ids.length; start += 20) {
+    const batch = ids.slice(start, start + 20);
+    const query = `(${batch.map((id) => `oracleid:${id}`).join(" or ")}) game:paper`;
+    let url = `${scryfallApiRoot}/cards/search?${new URLSearchParams({
+      q: query,
+      unique: "prints",
+      order: "released",
+      dir: "desc"
+    })}`;
+    while (url) {
+      const page = await fetchScryfallJson(url);
+      printings.push(...(page.data || []).filter((card) => card.digital !== true && Array.isArray(card.games) && card.games.includes("paper")));
+      url = page.has_more ? page.next_page : "";
+    }
+    process.stdout.write(`Loaded selectable printings for ${Math.min(start + batch.length, ids.length)}/${ids.length} Oracle cards.\n`);
+  }
+  return printings;
+}
+
+async function collectPrintingCandidates(cubeCards, existingIndex, cacheDir) {
+  const currentCandidates = cubeCards.map(normalizePrintingCandidate).filter(Boolean);
+  const oracleIds = [...new Set(currentCandidates.map((card) => card.oracleId))].sort();
+  const desiredOracleIds = new Set(oracleIds);
+  const candidates = new Map();
+  Object.values(existingIndex && existingIndex.printingPrices || {}).forEach((entry) => {
+    const candidate = normalizePrintingCandidate(entry);
+    if (candidate && desiredOracleIds.has(candidate.oracleId)) candidates.set(candidate.scryfallId, candidate);
+  });
+  currentCandidates.forEach((candidate) => candidates.set(candidate.scryfallId, candidate));
+
+  const coveredOracleIds = new Set(existingIndex && existingIndex.printingOracleIds || []);
+  let missingOracleIds = oracleIds.filter((oracleId) => !coveredOracleIds.has(oracleId));
+  const catalogCacheFile = path.join(cacheDir, "selectable-printings.json");
+  if (missingOracleIds.length) {
+    try {
+      const cached = JSON.parse(await fsp.readFile(catalogCacheFile, "utf8"));
+      const cachedOracleIds = new Set(cached.oracleIds || []);
+      (cached.candidates || []).map(normalizePrintingCandidate).filter(Boolean).forEach((candidate) => {
+        if (desiredOracleIds.has(candidate.oracleId)) candidates.set(candidate.scryfallId, candidate);
+      });
+      missingOracleIds = missingOracleIds.filter((oracleId) => !cachedOracleIds.has(oracleId));
+    } catch (_error) {
+      // Cache miss.
+    }
+  }
+  if (missingOracleIds.length) {
+    process.stdout.write(`Discovering selectable printings for ${missingOracleIds.length} Oracle cards...\n`);
+    const discovered = await fetchOraclePrintings(missingOracleIds);
+    discovered.map(normalizePrintingCandidate).filter(Boolean).forEach((candidate) => {
+      candidates.set(candidate.scryfallId, candidate);
+    });
+    await fsp.writeFile(catalogCacheFile, JSON.stringify({
+      oracleIds,
+      candidates: [...candidates.values()]
+    }));
+  }
+  return { oracleIds, candidates: [...candidates.values()] };
 }
 
 async function downloadFile(url, destination) {
@@ -123,12 +219,19 @@ async function mapPrintingUuids(cubeCards, existingIndex, cacheDir) {
     cards.push(card);
     missingBySet.set(setCode, cards);
   });
-  for (const [setCode, cards] of missingBySet) {
-    const setPayload = await readCachedSet(setCode, cacheDir);
-    cards.forEach((card) => {
-      const printing = findPrinting(setPayload, card);
-      if (printing && printing.uuid) mappings.set(String(card.scryfallId), String(printing.uuid));
-    });
+  const sets = [...missingBySet.entries()];
+  const concurrency = 16;
+  for (let start = 0; start < sets.length; start += concurrency) {
+    await Promise.all(sets.slice(start, start + concurrency).map(async ([setCode, cards]) => {
+      const setPayload = await readCachedSet(setCode, cacheDir);
+      cards.forEach((card) => {
+        const printing = findPrinting(setPayload, card);
+        if (printing && printing.uuid) mappings.set(String(card.scryfallId), String(printing.uuid));
+      });
+    }));
+    if (sets.length > concurrency) {
+      process.stdout.write(`Mapped versions from ${Math.min(start + concurrency, sets.length)}/${sets.length} sets.\n`);
+    }
   }
   return mappings;
 }
@@ -202,20 +305,46 @@ async function main() {
   const cube = parseCube(JSON.parse(await fsp.readFile(cubeFile, "utf8")));
   const cubeCards = [...(cube.cards || []), ...(cube.basicLands || [])];
   const existingIndex = await readExistingIndex();
-  const setList = await fetchJson(`${apiRoot}/SetList.json`);
-  const sourceVersion = String(setList.meta && setList.meta.version || "unknown");
+  const metadata = await fetchJson(`${apiRoot}/Meta.json`);
+  const sourceVersion = String(metadata.meta && metadata.meta.version || "unknown");
   const cacheDir = path.join(cacheRoot, sourceVersion.replace(/[^a-z0-9._+-]/gi, "_"));
   await fsp.mkdir(cacheDir, { recursive: true });
 
   process.stdout.write(`Mapping ${cubeCards.length} cards to MTGJSON printings...\n`);
-  const mappings = await mapPrintingUuids(cubeCards, existingIndex, cacheDir);
-  const fileName = includeHistory ? "AllPrices.json.gz" : "AllPricesToday.json.gz";
-  const priceFile = path.join(cacheDir, fileName);
-  process.stdout.write(`Reading ${fileName} for ${new Set(mappings.values()).size} printings...\n`);
-  await downloadFile(`${apiRoot}/${fileName}`, priceFile);
-  const priceEntries = await streamSelectedPrices(priceFile, new Set(mappings.values()));
+  const mappings = await mapPrintingUuids(cubeCards, existingIndex ? {
+    cards: { ...(existingIndex.printingPrices || {}), ...(existingIndex.cards || {}) }
+  } : null, cacheDir);
+  const printingCatalog = await collectPrintingCandidates(cubeCards, existingIndex, cacheDir);
+  process.stdout.write(`Mapping ${printingCatalog.candidates.length} selectable versions to MTGJSON printings...\n`);
+  const printingMappings = await mapPrintingUuids(
+    printingCatalog.candidates,
+    existingIndex ? { cards: existingIndex.printingPrices || {} } : null,
+    cacheDir
+  );
+
+  const dailyFileName = "AllPricesToday.json.gz";
+  const dailyFile = path.join(cacheDir, dailyFileName);
+  await downloadFile(`${apiRoot}/${dailyFileName}`, dailyFile);
+  let priceEntries;
+  let printingPriceEntries;
+  if (includeHistory) {
+    const historyFileName = "AllPrices.json.gz";
+    const historyFile = path.join(cacheDir, historyFileName);
+    process.stdout.write(`Reading ${historyFileName} for ${new Set(mappings.values()).size} selected printings...\n`);
+    await downloadFile(`${apiRoot}/${historyFileName}`, historyFile);
+    priceEntries = await streamSelectedPrices(historyFile, new Set(mappings.values()));
+    process.stdout.write(`Reading ${dailyFileName} for ${new Set(printingMappings.values()).size} selectable versions...\n`);
+    printingPriceEntries = await streamSelectedPrices(dailyFile, new Set(printingMappings.values()));
+  } else {
+    const targetUuids = new Set([...mappings.values(), ...printingMappings.values()]);
+    process.stdout.write(`Reading ${dailyFileName} for ${targetUuids.size} selected and selectable printings...\n`);
+    const dailyEntries = await streamSelectedPrices(dailyFile, targetUuids);
+    priceEntries = dailyEntries;
+    printingPriceEntries = dailyEntries;
+  }
   process.stdout.write("Loading ECB EUR/USD rates for Cardmarket fallback prices...\n");
-  const exchange = await fetchEurUsdRates(priceEntries);
+  const exchangeEntries = new Map([...priceEntries, ...printingPriceEntries]);
+  const exchange = await fetchEurUsdRates(exchangeEntries);
 
   const cards = {};
   cubeCards.slice().sort((a, b) => String(a.scryfallId).localeCompare(String(b.scryfallId))).forEach((card) => {
@@ -230,7 +359,23 @@ async function main() {
       nonfoil: mergeSeries(existing.nonfoil, buildPriceSeries(priceEntry, "nonfoil", PROVIDER_ORDER, exchange.rates), PROVIDER_ORDER)
     };
   });
-  const sourceDate = latestDate(cards) || String(setList.meta && setList.meta.date || "");
+
+  const printingPrices = {};
+  printingCatalog.candidates.slice().sort((a, b) => a.scryfallId.localeCompare(b.scryfallId)).forEach((printing) => {
+    const uuid = printingMappings.get(printing.scryfallId);
+    if (!uuid) return;
+    const priceEntry = printingPriceEntries.get(uuid);
+    const existing = existingIndex && existingIndex.printingPrices && existingIndex.printingPrices[printing.scryfallId] || {};
+    const latestFoil = mergeSeries(existing.foil, buildPriceSeries(priceEntry, "foil", PROVIDER_ORDER, exchange.rates), PROVIDER_ORDER).slice(-1);
+    const latestNonfoil = mergeSeries(existing.nonfoil, buildPriceSeries(priceEntry, "nonfoil", PROVIDER_ORDER, exchange.rates), PROVIDER_ORDER).slice(-1);
+    printingPrices[printing.scryfallId] = {
+      ...printing,
+      uuid,
+      foil: latestFoil,
+      nonfoil: latestNonfoil
+    };
+  });
+  const sourceDate = latestDate({ ...cards, ...printingPrices }) || String(metadata.meta && metadata.meta.date || "");
   const allDates = Object.values(cards).flatMap((entry) => [...entry.foil, ...entry.nonfoil].map((point) => point[0])).sort();
   const convertedPoints = Object.values(cards).reduce((total, entry) => total + [...entry.foil, ...entry.nonfoil]
     .filter((point) => PROVIDER_ORDER[point[2]] === "cardmarket").length, 0);
@@ -261,10 +406,16 @@ async function main() {
       requestedCards: cubeCards.length,
       indexedCards: Object.keys(cards).length,
       missingPrintings: cubeCards.length - mappings.size,
-      pricedPrintings: priceEntries.size,
+      pricedPrintings: [...mappings.values()].filter((uuid) => priceEntries.has(uuid)).length,
+      selectableOracleCards: printingCatalog.oracleIds.length,
+      selectablePrintings: printingCatalog.candidates.length,
+      indexedSelectablePrintings: Object.keys(printingPrices).length,
+      pricedSelectablePrintings: [...printingMappings.values()].filter((uuid) => printingPriceEntries.has(uuid)).length,
       convertedPoints
     },
-    cards
+    cards,
+    printingOracleIds: printingCatalog.oracleIds,
+    printingPrices
   };
   const temporaryFile = `${outputFile}.tmp`;
   const temporaryScriptFile = `${scriptOutputFile}.tmp`;
@@ -272,7 +423,7 @@ async function main() {
   await fsp.writeFile(temporaryScriptFile, buildIndexScript(index));
   await fsp.rename(temporaryFile, outputFile);
   await fsp.rename(temporaryScriptFile, scriptOutputFile);
-  process.stdout.write(`Wrote MTGJSON price index: ${index.stats.indexedCards}/${index.stats.requestedCards} cards, ${index.source.historyFrom || "no history"} to ${index.source.historyTo || "no history"}.\n`);
+  process.stdout.write(`Wrote MTGJSON price index: ${index.stats.indexedCards}/${index.stats.requestedCards} selected cards and ${index.stats.indexedSelectablePrintings}/${index.stats.selectablePrintings} selectable versions, ${index.source.historyFrom || "no history"} to ${index.source.historyTo || "no history"}.\n`);
 }
 
 if (require.main === module) {
@@ -284,11 +435,14 @@ if (require.main === module) {
 
 module.exports = {
   cardmarketDateRange,
+  collectPrintingCandidates,
   dateOffset,
   downloadFile,
+  fetchOraclePrintings,
   fetchEurUsdRates,
   findPrinting,
   mapPrintingUuids,
+  normalizePrintingCandidate,
   parseCube,
   streamSelectedPrices
 };

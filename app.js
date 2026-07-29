@@ -31,8 +31,8 @@
   const { createMtgchClient } = window.MtgchClient;
   const { createCatalog, printingKey } = window.CubeCatalog;
   const { createProductSourceCatalog } = window.CubeProductSources;
-  const { createMtgjsonPriceCatalog, lookupPrice: lookupMtgjsonPrice, priceSeries: mtgjsonPriceSeries, providerLabel } = window.CubeMtgjsonPrices;
-  const { applyIndexedPriceUpdates } = window.CubePriceMaintenance;
+  const { createMtgjsonPriceCatalog, lookupPrice: lookupMtgjsonPrice, lookupPrintingPrice: lookupMtgjsonPrintingPrice, priceSeries: mtgjsonPriceSeries, providerLabel } = window.CubeMtgjsonPrices;
+  const { applyIndexedPricesToCard, applyIndexedPriceUpdates } = window.CubePriceMaintenance;
   const { datePositions } = window.CubeChart;
   const { BASIC_LAND_LABELS, BASIC_LAND_ORDER, classifyBasicLandBatch, groupBasicLands, parseCollectorNumberRange } = window.CubeBasicLands;
   const { createCollectionCommandExecutor } = window.CubeCollectionCommands;
@@ -174,6 +174,8 @@
     editingCardId: null,
     printings: [],
     printingFinishFilter: "all",
+    printingPriceIndex: null,
+    printingPriceError: "",
     lookupMode: "name",
     addTarget: "draft",
     nameResults: [],
@@ -1989,10 +1991,20 @@
   }
 
   function printingPriceSummary(printing) {
-    const prices = printing.prices || {};
-    const nonfoil = formatUsd(prices.usd);
-    const foil = formatUsd(prices.usd_foil || prices.usd_etched);
-    return `Non-Foil ${nonfoil} · Foil ${foil}`;
+    const nonfoil = lookupMtgjsonPrintingPrice(state.printingPriceIndex, printing, "nonfoil");
+    const foil = lookupMtgjsonPrintingPrice(state.printingPriceIndex, printing, "foil");
+    return `Non-Foil ${formatUsd(nonfoil && nonfoil.usd)} · Foil ${formatUsd(foil && foil.usd)}`;
+  }
+
+  function printingPriceTitle(printing) {
+    if (state.printingPriceError) return `MTGJSON 价格索引不可用：${state.printingPriceError}`;
+    const nonfoil = lookupMtgjsonPrintingPrice(state.printingPriceIndex, printing, "nonfoil");
+    const foil = lookupMtgjsonPrintingPrice(state.printingPriceIndex, printing, "foil");
+    const parts = [
+      nonfoil && `Non-Foil：${formatUsd(nonfoil.usd)} · ${providerLabel(nonfoil.provider)}`,
+      foil && `Foil：${formatUsd(foil.usd)} · ${providerLabel(foil.provider)}`
+    ].filter(Boolean);
+    return parts.length ? `MTGJSON ${state.printingPriceIndex.source.date || ""} · ${parts.join("；")}` : "MTGJSON 暂无这个实体版本的价格";
   }
 
   function renderPrintingFinishFilter() {
@@ -2019,7 +2031,7 @@
       const current = isCurrentPrinting(card, printing);
       return `<button type="button" class="printing-option${current ? " current" : ""}" data-select-printing="${escapeHtml(printing.id)}" aria-label="选择 ${escapeHtml(printing.set_name)} ${escapeHtml(printing.collector_number)}">
         <span class="printing-thumb">${image ? `<img src="${escapeHtml(image)}" alt="" loading="lazy" />` : ""}</span>
-        <span class="printing-option-info"><strong title="${escapeHtml(printing.set_name)}">${escapeHtml(printing.set_name)}</strong><span>${escapeHtml(printing.set.toUpperCase())} · ${escapeHtml(printing.collector_number)}</span><small>${escapeHtml(printing.released_at || "日期未知")} · ${escapeHtml(printing.lang.toUpperCase())}</small><small class="printing-price">${escapeHtml(printingPriceSummary(printing))}</small></span>
+        <span class="printing-option-info"><strong title="${escapeHtml(printing.set_name)}">${escapeHtml(printing.set_name)}</strong><span>${escapeHtml(printing.set.toUpperCase())} · ${escapeHtml(printing.collector_number)}</span><small>${escapeHtml(printing.released_at || "日期未知")} · ${escapeHtml(printing.lang.toUpperCase())}</small><small class="printing-price" title="${escapeHtml(printingPriceTitle(printing))}">${escapeHtml(printingPriceSummary(printing))}</small></span>
       </button>`;
     }).join("");
   }
@@ -2033,6 +2045,8 @@
     state.editingCardId = cardId;
     state.printings = [];
     state.printingFinishFilter = "all";
+    state.printingPriceIndex = null;
+    state.printingPriceError = "";
     elements.printingSearchInput.value = "";
     elements.printingGrid.innerHTML = "";
     elements.printingGrid.classList.add("hidden");
@@ -2043,13 +2057,22 @@
     renderPrintingFinishFilter();
     elements.printingDialog.showModal();
     try {
-      const { oracleId, printings } = await catalog.lookupAllPrintings(card, state.printingController.signal);
+      const [printingResult, priceResult] = await Promise.all([
+        catalog.lookupAllPrintings(card, state.printingController.signal),
+        mtgjsonPriceCatalog.loadIndex()
+          .then((index) => ({ index, error: "" }))
+          .catch((error) => ({ index: null, error: error.message || "加载失败" }))
+      ]);
       if (requestId !== printingRequestId || state.editingCardId !== cardId || !elements.printingDialog.open) return;
+      const { oracleId, printings } = printingResult;
       if (card.oracleId !== oracleId) {
         card.oracleId = oracleId;
         saveState("cube");
       }
       state.printings = printings;
+      state.printingPriceIndex = priceResult.index;
+      state.printingPriceError = priceResult.error;
+      if (priceResult.index) state.priceIndexSource = priceResult.index.source || null;
       renderPrintings();
     } catch (error) {
       if (requestId !== printingRequestId || state.editingCardId !== cardId || !elements.printingDialog.open) return;
@@ -2063,7 +2086,8 @@
     const printing = state.printings.find((item) => item.id === scryfallId);
     if (!location || !printing) return;
     const current = location.cards[location.index];
-    const next = replacePrinting(current, printing, state.printingFinishFilter === "foil" ? "foil" : current.finish);
+    const replaced = replacePrinting(current, printing, state.printingFinishFilter === "foil" ? "foil" : current.finish);
+    const next = applyIndexedPricesToCard(replaced, state.printingPriceIndex, lookupMtgjsonPrintingPrice, { clearMissing: true });
     location.cards[location.index] = next;
     collectionCommands.execute({
       changed: true,

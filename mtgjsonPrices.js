@@ -105,11 +105,17 @@
   function cardEntry(index, card) {
     if (!validateIndex(index)) return null;
     const scryfallId = String(card && card.scryfallId || "").trim();
-    return scryfallId ? index.cards[scryfallId] || null : null;
+    return scryfallId ? index.cards[scryfallId] || index.printingPrices && index.printingPrices[scryfallId] || null : null;
   }
 
-  function priceSeries(index, card, finish = card && card.finish) {
-    const entry = cardEntry(index, card);
+  function printingEntry(index, printing) {
+    if (!validateIndex(index)) return null;
+    const scryfallId = String(printing && (printing.scryfallId || printing.id) || "").trim();
+    if (!scryfallId) return null;
+    return index.printingPrices && index.printingPrices[scryfallId] || index.cards[scryfallId] || null;
+  }
+
+  function entryPriceSeries(index, entry, finish) {
     if (!entry) return [];
     const providers = index.providers;
     return normalizeSeries(entry[FINISH_KEYS[normalizeFinish(finish)]], providers).map(([date, usd, providerIndex, exchangeRate, exchangeRateDate]) => {
@@ -130,14 +136,30 @@
     });
   }
 
-  function lookupPrice(index, card, finish = card && card.finish, date = index && index.source && index.source.date) {
-    const series = priceSeries(index, card, finish);
+  function priceSeries(index, card, finish = card && card.finish) {
+    const entry = cardEntry(index, card);
+    return entryPriceSeries(index, entry, finish);
+  }
+
+  function printingPriceSeries(index, printing, finish) {
+    return entryPriceSeries(index, printingEntry(index, printing), finish);
+  }
+
+  function latestSeriesPrice(series, date) {
     if (!series.length) return null;
     if (date) {
       const eligible = series.filter((point) => point.date <= date);
       return eligible[eligible.length - 1] || null;
     }
     return series[series.length - 1];
+  }
+
+  function lookupPrice(index, card, finish = card && card.finish, date = index && index.source && index.source.date) {
+    return latestSeriesPrice(priceSeries(index, card, finish), date);
+  }
+
+  function lookupPrintingPrice(index, printing, finish, date = index && index.source && index.source.date) {
+    return latestSeriesPrice(printingPriceSeries(index, printing, finish), date);
   }
 
   function providerLabel(provider) {
@@ -226,7 +248,10 @@
     mergeSeries,
     normalizeSeries,
     priceSeries,
+    printingEntry,
+    printingPriceSeries,
     providerLabel,
+    lookupPrintingPrice,
     validateIndex
   };
 });

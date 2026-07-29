@@ -69,6 +69,11 @@ test("printing selector filters Foil-capable versions and forces Foil on selecti
   assert.match(appSource, /state\.printingFinishFilter === "foil" \? "仅 Foil" : "全部"/);
   assert.match(appSource, /filterPrintings\(state\.printings, elements\.printingSearchInput\.value, state\.printingFinishFilter\)/);
   assert.match(appSource, /replacePrinting\(current, printing, state\.printingFinishFilter === "foil" \? "foil" : current\.finish\)/);
+  assert.match(appSource, /lookupMtgjsonPrintingPrice\(state\.printingPriceIndex, printing, "foil"\)/);
+  assert.match(appSource, /applyIndexedPricesToCard\(replaced, state\.printingPriceIndex, lookupMtgjsonPrintingPrice, \{ clearMissing: true \}\)/);
+  const summaryStart = appSource.indexOf("function printingPriceSummary(printing)");
+  const summaryEnd = appSource.indexOf("function printingPriceTitle(printing)", summaryStart);
+  assert.doesNotMatch(appSource.slice(summaryStart, summaryEnd), /usd_foil|printing\.prices/);
   assert.match(html, /筛选支持 Foil 的实体版本/);
 });
 

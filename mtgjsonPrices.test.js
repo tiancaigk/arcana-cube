@@ -5,6 +5,7 @@ const {
   buildPriceSeries,
   createMtgjsonPriceCatalog,
   lookupPrice,
+  lookupPrintingPrice,
   mergeSeries,
   priceSeries,
   validateIndex
@@ -24,6 +25,17 @@ function sampleIndex() {
           ["2026-07-28", 3.5, 0]
         ],
         nonfoil: [["2026-07-28", 1.25, 2]]
+      }
+    },
+    printingPrices: {
+      alternative: {
+        uuid: "mtgjson-alternative",
+        oracleId: "oracle",
+        set: "TST",
+        collectorNumber: "2",
+        name: "Card",
+        foil: [["2026-07-28", 8.75, 1]],
+        nonfoil: []
       }
     }
   };
@@ -107,6 +119,21 @@ test("current lookup uses the latest available price on or before the index date
   const index = sampleIndex();
   index.source.date = "2026-07-29";
   assert.equal(lookupPrice(index, { scryfallId: "printing" }, "foil").date, "2026-07-28");
+});
+
+test("selectable printing lookup uses the lightweight MTGJSON version index", () => {
+  const index = sampleIndex();
+  const price = lookupPrintingPrice(index, { id: "alternative" }, "foil");
+  assert.deepEqual(price, {
+    date: "2026-07-28",
+    usd: 8.75,
+    provider: "manapool",
+    providerIndex: 1,
+    origin: "mtgjson",
+    currency: "USD"
+  });
+  assert.equal(lookupPrintingPrice(index, { id: "alternative" }, "nonfoil"), null);
+  assert.equal(lookupPrice(index, { scryfallId: "alternative" }, "foil").usd, 8.75);
 });
 
 test("series merging replaces the same date and ignores malformed points", () => {

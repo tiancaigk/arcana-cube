@@ -55,6 +55,33 @@
     } : null;
   }
 
+  function applyIndexedPricesToCard(card, index, lookupPrice, options = {}) {
+    if (typeof lookupPrice !== "function") throw new Error("MTGJSON 价格维护缺少价格查询函数");
+    const foil = lookupPrice(index, card, "foil");
+    const nonfoil = lookupPrice(index, card, "nonfoil");
+    const selectedFinish = card.finish === "nonfoil" ? "nonfoil" : "foil";
+    const selected = selectedFinish === "foil" ? foil : nonfoil;
+    const prices = options.clearMissing ? { usd: "", usdFoil: "", usdEtched: "" } : { ...(card.prices || {}) };
+    const priceSources = options.clearMissing ? {} : { ...(card.priceSources || {}) };
+    if (foil) {
+      prices.usdFoil = foil.usd.toFixed(2);
+      priceSources.foil = priceSource(foil);
+    }
+    if (nonfoil) {
+      prices.usd = nonfoil.usd.toFixed(2);
+      priceSources.nonfoil = priceSource(nonfoil);
+    }
+    const now = options.now instanceof Date ? options.now : new Date();
+    return {
+      ...card,
+      prices,
+      priceSources,
+      priceSource: selected ? priceSource(selected) : (options.clearMissing ? null : card.priceSource || null),
+      priceDataDate: String(index && index.source && index.source.date || ""),
+      priceUpdatedAt: now.toISOString()
+    };
+  }
+
   function applyIndexedPriceUpdates(targets, index, options = {}) {
     const source = Array.isArray(targets) ? targets : [];
     const lookupPrice = options.lookupPrice;
@@ -92,29 +119,12 @@
       }
       if (selected && selected.provider === "cardmarket") result.converted += 1;
       if (!foil && !nonfoil) return;
-      const prices = { ...(current.prices || {}) };
-      const priceSources = { ...(current.priceSources || {}) };
-      if (foil) {
-        prices.usdFoil = foil.usd.toFixed(2);
-        priceSources.foil = priceSource(foil);
-      }
-      if (nonfoil) {
-        prices.usd = nonfoil.usd.toFixed(2);
-        priceSources.nonfoil = priceSource(nonfoil);
-      }
-      location.cards[location.index] = {
-        ...current,
-        prices,
-        priceSources,
-        priceSource: selected ? priceSource(selected) : current.priceSource,
-        priceDataDate: String(index && index.source && index.source.date || ""),
-        priceUpdatedAt: now.toISOString()
-      };
+      location.cards[location.index] = applyIndexedPricesToCard(current, index, lookupPrice, { now });
       result.updated += 1;
       result.updatedIds.push(current.id);
     });
     return result;
   }
 
-  return { applyIndexedPriceUpdates, applyPriceUpdates };
+  return { applyIndexedPricesToCard, applyIndexedPriceUpdates, applyPriceUpdates };
 });
