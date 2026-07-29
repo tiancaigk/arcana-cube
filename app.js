@@ -91,6 +91,7 @@
   });
   let sheetJsLoader;
   let printingRequestId = 0;
+  let priceChartSequence = 0;
 
   const seedCards = [
     ["Swords to Plowshares", "{W}", 1, ["W"], "Instant", "2XM", "uncommon"],
@@ -1134,6 +1135,53 @@
     return new Intl.DateTimeFormat("zh-CN", { month: "numeric", day: "numeric" }).format(parsed);
   }
 
+  function formatChartUsd(value) {
+    const amount = Number(value);
+    if (!Number.isFinite(amount)) return "—";
+    const absolute = Math.abs(amount);
+    if (absolute >= 1000) {
+      return `$${new Intl.NumberFormat("en-US", { notation: "compact", maximumFractionDigits: 1 }).format(amount)}`;
+    }
+    return `$${amount.toFixed(absolute >= 100 ? 0 : absolute >= 10 ? 1 : 2)}`;
+  }
+
+  function monotonePricePath(points) {
+    if (!points.length) return "";
+    if (points.length === 1) return `M${points[0].x.toFixed(2)} ${points[0].y.toFixed(2)}`;
+    const slopes = points.slice(1).map((point, index) => {
+      const previous = points[index];
+      return (point.y - previous.y) / Math.max(0.001, point.x - previous.x);
+    });
+    const tangents = points.map((_point, index) => {
+      if (index === 0) return slopes[0];
+      if (index === points.length - 1) return slopes[slopes.length - 1];
+      const before = slopes[index - 1];
+      const after = slopes[index];
+      if (before * after <= 0) return 0;
+      return 2 / (1 / before + 1 / after);
+    });
+    slopes.forEach((slope, index) => {
+      if (!slope) {
+        tangents[index] = 0;
+        tangents[index + 1] = 0;
+        return;
+      }
+      const beforeRatio = tangents[index] / slope;
+      const afterRatio = tangents[index + 1] / slope;
+      const magnitude = Math.hypot(beforeRatio, afterRatio);
+      if (magnitude <= 3) return;
+      const scale = 3 / magnitude;
+      tangents[index] = scale * beforeRatio * slope;
+      tangents[index + 1] = scale * afterRatio * slope;
+    });
+    return points.slice(1).reduce((path, point, index) => {
+      const previous = points[index];
+      const width = point.x - previous.x;
+      const controlOffset = width / 3;
+      return `${path} C${(previous.x + controlOffset).toFixed(2)} ${(previous.y + tangents[index] * controlOffset).toFixed(2)},${(point.x - controlOffset).toFixed(2)} ${(point.y - tangents[index + 1] * controlOffset).toFixed(2)},${point.x.toFixed(2)} ${point.y.toFixed(2)}`;
+    }, `M${points[0].x.toFixed(2)} ${points[0].y.toFixed(2)}`);
+  }
+
   function renderPriceHistoryPanel({ title, subtitle, points, emptyText }) {
     const series = (points || []).filter((point) => Number.isFinite(Number(point.usd))).sort((a, b) => String(a.date).localeCompare(String(b.date)));
     if (!series.length) {
@@ -1142,32 +1190,77 @@
         <p>${escapeHtml(emptyText || "暂无价格历史。点击“更新价格”后会记录今天的快照。")}</p>
       </section>`;
     }
-    const width = 520;
-    const height = 190;
-    const padX = 34;
-    const padY = 26;
+    const width = 600;
+    const height = 244;
+    const padLeft = 62;
+    const padRight = 18;
+    const padTop = 18;
+    const padBottom = 36;
     const values = series.map((point) => Number(point.usd));
     const rawMin = Math.min(...values);
     const rawMax = Math.max(...values);
-    const min = rawMin === rawMax ? Math.max(0, rawMin - Math.max(1, rawMin * 0.05)) : rawMin;
-    const max = rawMin === rawMax ? rawMax + Math.max(1, rawMax * 0.05) : rawMax;
+    const rawRange = rawMax - rawMin;
+    const chartPadding = rawRange ? rawRange * 0.12 : Math.max(1, rawMax * 0.06);
+    const min = Math.max(0, rawMin - chartPadding);
+    const max = rawMax + chartPadding;
     const range = max - min || 1;
-    const xPositions = datePositions(series, padX, width - padX);
-    const yFor = (value) => height - padY - ((value - min) / range) * (height - padY * 2);
+    const plotBottom = height - padBottom;
+    const plotRight = width - padRight;
+    const xPositions = datePositions(series, padLeft, plotRight);
+    const yFor = (value) => plotBottom - ((value - min) / range) * (plotBottom - padTop);
     const coords = series.map((point, index) => ({ ...point, x: xPositions[index], y: yFor(Number(point.usd)) }));
-    const polyline = coords.map((point) => `${point.x.toFixed(1)},${point.y.toFixed(1)}`).join(" ");
+    const linePath = monotonePricePath(coords);
+    const areaPath = `${linePath} L${coords[coords.length - 1].x.toFixed(2)} ${plotBottom} L${coords[0].x.toFixed(2)} ${plotBottom} Z`;
+    const ticks = Array.from({ length: 5 }, (_value, index) => {
+      const ratio = index / 4;
+      return {
+        value: max - range * ratio,
+        y: padTop + (plotBottom - padTop) * ratio
+      };
+    });
+    const dateLabelIndexes = [...new Set([0, Math.floor((series.length - 1) / 2), series.length - 1])];
+    const pointInterval = Math.max(1, Math.ceil(coords.length / 14));
+    const chartId = `price-chart-${++priceChartSequence}`;
     const first = series[0];
     const latest = series[series.length - 1];
+    const change = Number(latest.usd) - Number(first.usd);
+    const changePercent = Number(first.usd) ? change / Number(first.usd) * 100 : null;
+    const direction = change > 0 ? "up" : change < 0 ? "down" : "flat";
+    const changeText = `${change > 0 ? "+" : ""}${formatUsd(change)}${changePercent === null ? "" : ` · ${changePercent > 0 ? "+" : ""}${changePercent.toFixed(2)}%`}`;
     return `<section class="price-history-panel">
       <div class="price-history-head"><div><span>PRICE HISTORY</span><strong>${escapeHtml(title)}</strong></div><small>${escapeHtml(subtitle || `${series.length} 个每日快照`)}</small></div>
       <svg class="price-chart" viewBox="0 0 ${width} ${height}" role="img" aria-label="${escapeHtml(title)} 价格历史曲线">
-        <path class="price-grid-line" d="M${padX} ${padY}H${width - padX}M${padX} ${height - padY}H${width - padX}"/>
-        <text x="${padX}" y="${padY - 8}" class="price-axis">${escapeHtml(formatUsd(max))}</text>
-        <text x="${padX}" y="${height - 8}" class="price-axis">${escapeHtml(formatUsd(min))}</text>
-        <polyline class="price-line" points="${polyline}"/>
-        ${coords.map((point) => `<circle class="price-point" cx="${point.x.toFixed(1)}" cy="${point.y.toFixed(1)}" r="3.2"><title>${escapeHtml(point.date)} · ${escapeHtml(formatUsd(point.usd))}</title></circle>`).join("")}
+        <defs>
+          <linearGradient id="${chartId}-area" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stop-color="#e8c879" stop-opacity=".30"/>
+            <stop offset="58%" stop-color="#d9b56f" stop-opacity=".10"/>
+            <stop offset="100%" stop-color="#d9b56f" stop-opacity="0"/>
+          </linearGradient>
+          <linearGradient id="${chartId}-line" x1="0" y1="0" x2="1" y2="0">
+            <stop offset="0%" stop-color="#a98951"/>
+            <stop offset="55%" stop-color="#d9b56f"/>
+            <stop offset="100%" stop-color="#f0d78f"/>
+          </linearGradient>
+        </defs>
+        <rect class="price-chart-plot" x="${padLeft}" y="${padTop}" width="${plotRight - padLeft}" height="${plotBottom - padTop}" rx="8"/>
+        ${ticks.map((tick) => `<line class="price-grid-line" x1="${padLeft}" y1="${tick.y.toFixed(1)}" x2="${plotRight}" y2="${tick.y.toFixed(1)}"/><text x="${padLeft - 10}" y="${(tick.y + 3).toFixed(1)}" text-anchor="end" class="price-axis">${escapeHtml(formatChartUsd(tick.value))}</text>`).join("")}
+        ${dateLabelIndexes.map((index) => {
+          const point = coords[index];
+          const anchor = index === 0 ? "start" : index === coords.length - 1 ? "end" : "middle";
+          return `<text x="${point.x.toFixed(1)}" y="${height - 10}" text-anchor="${anchor}" class="price-axis price-date-axis">${escapeHtml(formatHistoryDate(point.date))}</text>`;
+        }).join("")}
+        <path class="price-area" d="${areaPath}" fill="url(#${chartId}-area)"/>
+        <path class="price-line" d="${linePath}" stroke="url(#${chartId}-line)" pathLength="1"/>
+        ${coords.map((point, index) => `<g class="price-point-group${index === coords.length - 1 ? " latest" : ""}">
+          <circle class="price-point${index % pointInterval === 0 || index === coords.length - 1 ? " visible" : ""}" cx="${point.x.toFixed(1)}" cy="${point.y.toFixed(1)}" r="${index === coords.length - 1 ? "4.2" : "2.4"}"/>
+          <circle class="price-point-hit" cx="${point.x.toFixed(1)}" cy="${point.y.toFixed(1)}" r="7"><title>${escapeHtml(point.date)} · ${escapeHtml(formatUsd(point.usd))}</title></circle>
+        </g>`).join("")}
       </svg>
-      <div class="price-history-summary"><span>${escapeHtml(formatHistoryDate(first.date))} ${escapeHtml(formatUsd(first.usd))}</span><strong>${escapeHtml(formatHistoryDate(latest.date))} ${escapeHtml(formatUsd(latest.usd))}</strong></div>
+      <div class="price-history-summary">
+        <div><span>起始</span><strong>${escapeHtml(formatHistoryDate(first.date))} · ${escapeHtml(formatUsd(first.usd))}</strong></div>
+        <div class="price-history-change ${direction}"><span>区间变化</span><strong>${escapeHtml(changeText)}</strong></div>
+        <div class="latest"><span>当前</span><strong>${escapeHtml(formatHistoryDate(latest.date))} · ${escapeHtml(formatUsd(latest.usd))}</strong></div>
+      </div>
     </section>`;
   }
 

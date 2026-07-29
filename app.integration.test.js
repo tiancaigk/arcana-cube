@@ -206,6 +206,17 @@ test("price history can replace the latest 90 days from the MTGJSON compact inde
   assert.match(styleSource, /\.price-history-tools/);
 });
 
+test("price charts use a smooth area treatment with readable axes and range summary", () => {
+  assert.match(appSource, /function monotonePricePath\(points\)/);
+  assert.match(appSource, /class="price-area"/);
+  assert.match(appSource, /Array\.from\(\{ length: 5 \}/);
+  assert.match(appSource, /price-history-change \$\{direction\}/);
+  assert.doesNotMatch(appSource, /<polyline class="price-line"/);
+  assert.match(styleSource, /\.price-chart-plot/);
+  assert.match(styleSource, /@keyframes priceLineReveal/);
+  assert.match(styleSource, /prefers-reduced-motion/);
+});
+
 test("key interactive regions expose accessible state", () => {
   assert.match(html, /id="sidebar"/);
   assert.match(html, /id="resultCount"[^>]+aria-live="polite"/);
