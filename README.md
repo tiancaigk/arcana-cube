@@ -84,6 +84,10 @@ npm run build:product-sources
 
 构建器只在维护时下载相关系列数据并写入 `product-source-index.json` 与 `product-source-index.js`；通过服务器访问时读取 JSON，直接双击打开 `index.html` 时自动延迟加载同内容的 JS 索引。MTGJSON 内容按其 [MIT License](https://mtgjson.com/license/) 使用。
 
+## 中文牌名
+
+中文显示优先使用 Scryfall 的简体中文实体牌名；Scryfall 没有简体中文记录时，通过 [MTGCH](https://mtgch.com/) 补充简体中文名。不会使用繁体中文作为回退。连体牌和双面牌在牌表中只显示正面中文名。
+
 ## 开发结构
 
 `app.js` 是浏览器组合入口，负责状态变更、DOM 事件和用户反馈；可测试的业务能力拆分在独立 UMD 模块中：

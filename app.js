@@ -27,6 +27,7 @@
   const { resolveWorkspaceDomains } = window.CubeWorkspaceSession;
   const { createPersistenceCoordinator } = window.CubePersistence;
   const { requestJson: scryfallRequest } = window.ScryfallClient;
+  const { createMtgchClient } = window.MtgchClient;
   const { createCatalog, printingKey } = window.CubeCatalog;
   const { createProductSourceCatalog } = window.CubeProductSources;
   const { applyPriceUpdates } = window.CubePriceMaintenance;
@@ -59,6 +60,7 @@
     emptyChangeLog
   });
   const catalog = createCatalog({ requestJson: scryfallRequest, core: window.CubeCore });
+  const mtgch = createMtgchClient({ fetchImpl: (...args) => fetch(...args) });
   let productSourceIndexLoader;
   const productSourceCatalog = createProductSourceCatalog({
     fetchImpl: (...args) => fetch(...args),
@@ -975,22 +977,26 @@
     return updated;
   }
 
-  async function lookupLocalizedName(oracleId) {
-    for (const lang of ["zhs", "zht"]) {
-      let url = buildLocalizedNameSearchUrl(oracleId, lang);
-      while (url) {
-        let page;
-        try {
-          page = await scryfallRequest(url);
-        } catch (error) {
-          if (error.status === 404) break;
-          throw error;
-        }
-        const match = (page.data || []).find((printing) => getOracleId(printing) === oracleId && isPaperPrinting(printing) && normalizeLocalizedNames(printing)[lang]);
-        if (match) return { lang, name: normalizeLocalizedNames(match)[lang] };
-        url = page.has_more ? page.next_page : null;
+  async function lookupLocalizedName(card) {
+    const oracleId = getOracleId(card);
+    let scryfallError = null;
+    let url = buildLocalizedNameSearchUrl(oracleId, "zhs");
+    while (url) {
+      let page;
+      try {
+        page = await scryfallRequest(url);
+      } catch (error) {
+        if (error.status !== 404) scryfallError = error;
+        break;
       }
+      const match = (page.data || []).find((printing) => getOracleId(printing) === oracleId && isPaperPrinting(printing) && normalizeLocalizedNames(printing).zhs);
+      if (match) return { lang: "zhs", name: normalizeLocalizedNames(match).zhs, source: "scryfall" };
+      url = page.has_more ? page.next_page : null;
     }
+
+    const mtgchName = await mtgch.lookupSimplifiedChineseName(card);
+    if (mtgchName) return { lang: "zhs", name: mtgchName, source: "mtgch" };
+    if (scryfallError) throw scryfallError;
     return null;
   }
 
@@ -1005,7 +1011,7 @@
         if (!target) break;
         const oracleId = getOracleId(target);
         try {
-          const localized = await lookupLocalizedName(oracleId);
+          const localized = await lookupLocalizedName(target);
           if (!localized) {
             state.nameLocalization.failures.add(oracleId);
             continue;

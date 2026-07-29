@@ -20,6 +20,7 @@ test("application shell loads dependencies before app.js", () => {
   const workspaceSession = html.indexOf('src="workspaceSession.js"');
   const persistence = html.indexOf('src="persistence.js"');
   const scryfall = html.indexOf('src="scryfall.js"');
+  const mtgch = html.indexOf('src="mtgch.js"');
   const catalog = html.indexOf('src="catalog.js"');
   const productSources = html.indexOf('src="productSources.js"');
   const priceMaintenance = html.indexOf('src="priceMaintenance.js"');
@@ -31,7 +32,18 @@ test("application shell loads dependencies before app.js", () => {
   const selectors = html.indexOf('src="selectors.js"');
   const renderScheduler = html.indexOf('src="renderScheduler.js"');
   const app = html.indexOf('src="app.js"');
-  assert.ok(migrations >= 0 && migrations < core && core < priceHistory && priceHistory < changeLog && changeLog < health && health < storage && storage < workspace && workspace < workspaceSession && workspaceSession < persistence && persistence < scryfall && scryfall < catalog && catalog < productSources && productSources < priceMaintenance && priceMaintenance < chart && chart < basicLands && basicLands < collectionCommands && collectionCommands < viewPreferences && viewPreferences < imageCache && imageCache < selectors && selectors < renderScheduler && renderScheduler < app);
+  assert.ok(migrations >= 0 && migrations < core && core < priceHistory && priceHistory < changeLog && changeLog < health && health < storage && storage < workspace && workspace < workspaceSession && workspaceSession < persistence && persistence < scryfall && scryfall < mtgch && mtgch < catalog && catalog < productSources && productSources < priceMaintenance && priceMaintenance < chart && chart < basicLands && basicLands < collectionCommands && collectionCommands < viewPreferences && viewPreferences < imageCache && imageCache < selectors && selectors < renderScheduler && renderScheduler < app);
+});
+
+test("localized names use Scryfall simplified Chinese before the MTGCH fallback", () => {
+  const lookupStart = appSource.indexOf("async function lookupLocalizedName(card)");
+  const lookupEnd = appSource.indexOf("async function refreshMissingLocalizedNames", lookupStart);
+  const lookupSource = appSource.slice(lookupStart, lookupEnd);
+  assert.ok(lookupStart >= 0);
+  assert.match(lookupSource, /buildLocalizedNameSearchUrl\(oracleId, "zhs"\)/);
+  assert.doesNotMatch(lookupSource, /"zht"/);
+  assert.ok(lookupSource.indexOf("scryfallRequest") < lookupSource.indexOf("mtgch.lookupSimplifiedChineseName"));
+  assert.match(lookupSource, /return \{ lang: "zhs", name: mtgchName, source: "mtgch" \}/);
 });
 
 test("card image failures use one delegated listener", () => {
