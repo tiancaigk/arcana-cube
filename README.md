@@ -86,7 +86,7 @@ npm run build:product-sources
 
 ## 中文牌名
 
-中文显示优先使用 Scryfall 的简体中文实体牌名；Scryfall 没有简体中文记录时，通过 [MTGCH](https://mtgch.com/) 补充简体中文名。不会使用繁体中文作为回退。连体牌和双面牌在牌表中只显示正面中文名。
+中文显示优先使用 Scryfall 的简体中文实体牌名；Scryfall 没有简体中文记录时，通过 [MTGCH](https://mtgch.com/) 补充简体中文名。不会使用繁体中文作为回退。连体牌显示两半的完整中文名，双面牌在牌表中只显示正面中文名。
 
 ## 开发结构
 

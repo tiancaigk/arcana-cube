@@ -1,7 +1,7 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const { CURRENT_DATA_VERSION } = require("./migrations.js");
-const { buildBackup, buildCardNameSearchUrl, buildExcelRows, buildLocalizedNameSearchUrl, buildLocalImageFileName, buildPrintingsUrl, chooseValidFinish, computeStats, filterCards, filterOraclePrintings, filterPrintings, getAvailableFinishes, getBasicLandKind, getCardBucket, getCardImage, getColorBucket, getFrontDisplayName, getFrontTypeLine, getLookupName, getOracleId, getPreferredLocalizedName, getPriceNumber, getUsdPrice, isLandCard, isPaperPrinting, isSupportedBasicLand, mergeArchiveMetadata, needsPriceRefresh, normalizeCardName, normalizeFinish, normalizeLocalizedNames, normalizeScryfallCard, parseBackup, parseDecklist, parseExcelRows, prepareTextImportRows, replacePrinting, sortCards } = require("./core.js");
+const { buildBackup, buildCardNameSearchUrl, buildExcelRows, buildLocalizedNameSearchUrl, buildLocalImageFileName, buildPrintingsUrl, chooseValidFinish, computeStats, filterCards, filterOraclePrintings, filterPrintings, getAvailableFinishes, getBasicLandKind, getCardBucket, getCardDisplayName, getCardImage, getColorBucket, getFrontDisplayName, getFrontTypeLine, getLookupName, getOracleId, getPreferredLocalizedName, getPriceNumber, getUsdPrice, isLandCard, isPaperPrinting, isSupportedBasicLand, mergeArchiveMetadata, needsPriceRefresh, normalizeCardName, normalizeFinish, normalizeLocalizedNames, normalizeScryfallCard, parseBackup, parseDecklist, parseExcelRows, prepareTextImportRows, replacePrinting, sortCards } = require("./core.js");
 
 const cards = [
   { name: "Alpha", colors: ["W"], cmc: 1, typeLine: "Creature — Human", set: "TST" },
@@ -358,6 +358,20 @@ test("localized name helpers store Chinese printed card names", () => {
   });
   assert.deepEqual(pathway.localizedNames, { zhs: "树渠通路" });
   assert.equal(getPreferredLocalizedName(pathway), "树渠通路");
+  const fireIce = normalizeScryfallCard({
+    id: "fire-ice-zhs",
+    name: "Fire // Ice",
+    printed_name: "热火 // 寒冰",
+    lang: "zhs",
+    layout: "split",
+    mana_cost: "{1}{R} // {1}{U}",
+    set: "f06",
+    collector_number: "12a",
+    type_line: "Instant // Instant"
+  });
+  assert.deepEqual(fireIce.localizedNames, { zhs: "热火 // 寒冰" });
+  assert.equal(getCardDisplayName(fireIce, getPreferredLocalizedName(fireIce)), "热火 // 寒冰");
+  assert.equal(getCardDisplayName(pathway, "树渠通路 // 潮渠通路"), "树渠通路");
   assert.deepEqual(normalizeLocalizedNames({
     name: "Treasure Map // Treasure Cove",
     lang: "zhs",

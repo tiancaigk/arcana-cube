@@ -19,7 +19,7 @@
   const PRICE_MAINTENANCE_INTERVAL_MS = 60 * 60 * 1000;
   const SHEETJS_URL = "vendor/xlsx.full.min.js";
   const PRODUCT_SOURCE_INDEX_SCRIPT_URL = "product-source-index.js";
-  const { buildBackup, buildExcelRows, buildLocalizedNameSearchUrl, buildLocalImageFileName, chooseValidFinish, computeStats, filterCards, filterPrintings, sortCards, getAvailableFinishes, getBasicLandKind, getCardBucket, getCardImage, getFrontColors, getFrontDisplayName, getFrontTypeLine, getOracleId, getPreferredLocalizedName, getPriceNumber, getUsdPrice, isPaperPrinting, isSupportedBasicLand, mergeArchiveMetadata, needsPriceRefresh, normalizeCardName, normalizeFinish, normalizeLocalizedNames, normalizeScryfallCard, parseBackup, parseDecklist, parseExcelRows, prepareTextImportRows, replacePrinting } = window.CubeCore;
+  const { buildBackup, buildExcelRows, buildLocalizedNameSearchUrl, buildLocalImageFileName, chooseValidFinish, computeStats, filterCards, filterPrintings, sortCards, getAvailableFinishes, getBasicLandKind, getCardBucket, getCardDisplayName, getCardImage, getFrontColors, getFrontDisplayName, getFrontTypeLine, getOracleId, getPreferredLocalizedName, getPriceNumber, getUsdPrice, isPaperPrinting, isSplitCard, isSupportedBasicLand, mergeArchiveMetadata, needsPriceRefresh, normalizeCardName, normalizeFinish, normalizeLocalizedNames, normalizeScryfallCard, parseBackup, parseDecklist, parseExcelRows, prepareTextImportRows, replacePrinting } = window.CubeCore;
   const { cardSeries, dailyPriceChanges, dateKey, emptyPriceHistory, hasDailySnapshot, normalizePriceHistory, parsePriceHistoryData, priceTrend, recordDailySnapshot, totalSeries, wrapPriceHistoryData } = window.CubePriceHistory;
   const { appendChange, emptyChangeLog, latestEntries, normalizeChangeLog, parseChangeLogData, wrapChangeLogData } = window.CubeChangeLog;
   const { analyzeWorkspaceHealth } = window.CubeHealth;
@@ -892,7 +892,7 @@
 
   function cardDisplayName(card) {
     const name = state.nameLanguage === "zh" ? getPreferredLocalizedName(card) || card.name || "" : card.name || "";
-    return getFrontDisplayName(name);
+    return getCardDisplayName(card, name);
   }
 
   function renderNameLanguageToggle() {
@@ -922,7 +922,9 @@
   function missingLocalizedNameCards(cards) {
     const seen = new Set();
     return cards.filter((card) => {
-      if (getPreferredLocalizedName(card)) return false;
+      const localizedName = getPreferredLocalizedName(card);
+      const incompleteSplitName = isSplitCard(card) && String(card.name || "").includes("//") && !localizedName.includes("//");
+      if (localizedName && !incompleteSplitName) return false;
       const oracleId = getOracleId(card);
       if (!oracleId || state.nameLocalization.failures.has(oracleId) || seen.has(oracleId)) return false;
       seen.add(oracleId);
@@ -1538,7 +1540,7 @@
       { src: getCardImage(card, "back", true), alt: `${displayName} 背面` }
     ].filter((item) => item.src);
     const points = cardSeries(state.priceHistory, card, finish);
-    const englishName = getFrontDisplayName(card.name);
+    const englishName = getCardDisplayName(card, card.name);
     const localizedName = getPreferredLocalizedName(card);
     const secondaryName = displayName === englishName ? localizedName : englishName;
     elements.imagePreview.innerHTML = `<div class="card-archive-preview" data-finish="${finish}">

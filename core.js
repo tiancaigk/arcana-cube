@@ -45,9 +45,10 @@
     const rawNames = source.localizedNames || source.localized_names || {};
     const names = {};
     const storeName = (lang, name, englishName = "") => {
+      if (!String(name || "").trim()) return;
       const normalizedLang = String(lang || "").trim().toLocaleLowerCase();
-      const normalizedName = getFrontDisplayName(name);
-      const normalizedEnglishName = getFrontDisplayName(englishName);
+      const normalizedName = getCardDisplayName(source, name);
+      const normalizedEnglishName = getCardDisplayName(source, englishName);
       if ((normalizedLang === "zhs" || normalizedLang === "zht") && normalizedName && normalizedName !== normalizedEnglishName) names[normalizedLang] = normalizedName;
     };
     if (rawNames && typeof rawNames === "object" && !Array.isArray(rawNames)) {
@@ -56,10 +57,15 @@
       });
     }
     const printedLang = String(source.lang || "").trim().toLocaleLowerCase();
-    storeName(printedLang, source.printedName || source.printed_name, source.name);
     const faces = Array.isArray(source.card_faces) ? source.card_faces : (Array.isArray(source.cardFaces) ? source.cardFaces : []);
-    const frontFace = faces[0] || {};
-    storeName(printedLang, frontFace.printedName || frontFace.printed_name, frontFace.name);
+    if (isSplitCard(source)) {
+      const faceNames = faces.map((face) => face.printedName || face.printed_name).filter(Boolean).join(" // ");
+      storeName(printedLang, source.printedName || source.printed_name || faceNames, source.name);
+    } else {
+      storeName(printedLang, source.printedName || source.printed_name, source.name);
+      const frontFace = faces[0] || {};
+      storeName(printedLang, frontFace.printedName || frontFace.printed_name, frontFace.name);
+    }
     return names;
   }
 
@@ -84,6 +90,7 @@
       oracleId: getOracleId(card),
       name: card.name,
       localizedNames: normalizeLocalizedNames(card),
+      layout: card.layout || "",
       manaCost: card.mana_cost || (face && face.mana_cost) || "",
       cmc: Number(card.cmc) || 0,
       colors: card.colors || (face && face.colors) || [],
@@ -130,6 +137,7 @@
       backOracleText: normalized.backOracleText,
       artist: normalized.artist,
       backArtist: normalized.backArtist,
+      layout: normalized.layout || currentCard.layout || "",
       setName: normalized.setName,
       releasedAt: normalized.releasedAt
     };
@@ -418,6 +426,20 @@
     return value.split(/\s*\/\/\s*/, 1)[0].trim() || value;
   }
 
+  function isSplitCard(card) {
+    const layout = String(card && card.layout || "").trim().toLocaleLowerCase();
+    if (layout) return layout === "split" || layout === "aftermath";
+    const name = String(card && card.name || "");
+    const manaCost = String(card && (card.manaCost || card.mana_cost) || "");
+    const typeLine = String(card && (card.typeLine || card.type_line) || "");
+    return name.includes("//") && manaCost.includes("//") && typeLine.includes("//");
+  }
+
+  function getCardDisplayName(card, name = card && card.name) {
+    const value = String(name || "").trim();
+    return isSplitCard(card) ? value : getFrontDisplayName(value);
+  }
+
   function getLookupName(name) {
     return getFrontDisplayName(name);
   }
@@ -527,5 +549,5 @@
     };
   }
 
-  return { COLOR_ORDER, SORT_ORDER, PRICE_TTL_MS, parseDecklist, normalizeFinish, parseFinish, parseJapanPrint, getAvailableFinishes, chooseValidFinish, normalizeLocalizedNames, getPreferredLocalizedName, normalizeScryfallCard, mergeArchiveMetadata, getOracleId, getFrontColors, getFrontTypeLine, getUsdPrice, getPriceNumber, needsPriceRefresh, getColorBucket, getPrimaryType, isLandCard, getBasicLandKind, isSupportedBasicLand, getCardBucket, computeStats, filterCards, sortCards, buildCardNameSearchUrl, buildPrintingsUrl, buildLocalizedNameSearchUrl, buildLocalImageFileName, getCardImage, isPaperPrinting, filterOraclePrintings, filterPrintings, replacePrinting, normalizeCardName, getFrontDisplayName, getLookupName, prepareTextImportRows, parseExcelRows, buildExcelRows, buildBackup, parseBackup };
+  return { COLOR_ORDER, SORT_ORDER, PRICE_TTL_MS, parseDecklist, normalizeFinish, parseFinish, parseJapanPrint, getAvailableFinishes, chooseValidFinish, normalizeLocalizedNames, getPreferredLocalizedName, normalizeScryfallCard, mergeArchiveMetadata, getOracleId, getFrontColors, getFrontTypeLine, getUsdPrice, getPriceNumber, needsPriceRefresh, getColorBucket, getPrimaryType, isLandCard, getBasicLandKind, isSupportedBasicLand, getCardBucket, computeStats, filterCards, sortCards, buildCardNameSearchUrl, buildPrintingsUrl, buildLocalizedNameSearchUrl, buildLocalImageFileName, getCardImage, isPaperPrinting, filterOraclePrintings, filterPrintings, replacePrinting, normalizeCardName, getFrontDisplayName, getCardDisplayName, isSplitCard, getLookupName, prepareTextImportRows, parseExcelRows, buildExcelRows, buildBackup, parseBackup };
 });

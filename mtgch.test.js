@@ -8,16 +8,27 @@ test("MTGCH card URLs preserve exact collector numbers", () => {
   assert.equal(buildCardUrl("pwoe", "126★"), "https://mtgch.com/api/v1/card/PWOE/126%E2%98%85/");
 });
 
-test("MTGCH names prefer the official front-face name for split cards", () => {
+test("MTGCH names preserve complete official names for split cards", () => {
   assert.equal(extractSimplifiedChineseName({
     name: "Fire // Ice",
+    layout: "split",
     atomic_official_name: "热火",
     full_official_name: "热火 // 寒冰"
-  }), "热火");
+  }), "热火 // 寒冰");
   assert.equal(extractSimplifiedChineseName({
     name: "Fire // Ice",
+    layout: "split",
     full_official_name: "热火 // 寒冰"
-  }), "热火");
+  }), "热火 // 寒冰");
+});
+
+test("MTGCH names keep only the front name for transform cards", () => {
+  assert.equal(extractSimplifiedChineseName({
+    name: "Treasure Map // Treasure Cove",
+    layout: "transform",
+    atomic_official_name: "藏宝图",
+    full_official_name: "藏宝图 // 宝藏海湾"
+  }), "藏宝图");
 });
 
 test("MTGCH names accept community simplified translations but reject English fallbacks", () => {

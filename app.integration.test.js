@@ -44,6 +44,7 @@ test("localized names use Scryfall simplified Chinese before the MTGCH fallback"
   assert.doesNotMatch(lookupSource, /"zht"/);
   assert.ok(lookupSource.indexOf("scryfallRequest") < lookupSource.indexOf("mtgch.lookupSimplifiedChineseName"));
   assert.match(lookupSource, /return \{ lang: "zhs", name: mtgchName, source: "mtgch" \}/);
+  assert.match(appSource, /const incompleteSplitName = isSplitCard\(card\)[^;]+!localizedName\.includes\("\/\/"\)/);
 });
 
 test("card image failures use one delegated listener", () => {

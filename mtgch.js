@@ -16,16 +16,26 @@
   }
 
   function extractSimplifiedChineseName(card) {
-    const candidates = [
-      card && card.atomic_official_name,
-      card && card.atomic_translated_name,
-      card && card.zhs_face_name,
-      card && card.zhs_name,
-      card && card.full_official_name,
-      card && card.full_translated_name
-    ];
+    const fullNameLayout = card && (card.layout === "split" || card.layout === "aftermath");
+    const candidates = fullNameLayout
+      ? [
+          card && card.full_official_name,
+          card && card.full_translated_name,
+          card && card.zhs_name,
+          card && card.atomic_official_name,
+          card && card.atomic_translated_name,
+          card && card.zhs_face_name
+        ]
+      : [
+          card && card.atomic_official_name,
+          card && card.atomic_translated_name,
+          card && card.zhs_face_name,
+          card && card.zhs_name,
+          card && card.full_official_name,
+          card && card.full_translated_name
+        ];
     for (const candidate of candidates) {
-      const name = frontName(candidate);
+      const name = fullNameLayout ? String(candidate || "").trim() : frontName(candidate);
       if (name && isSimplifiedChineseName(name)) return name;
     }
     return "";
