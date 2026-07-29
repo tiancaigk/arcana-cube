@@ -24,6 +24,7 @@ test("application shell loads dependencies before app.js", () => {
   const catalog = html.indexOf('src="catalog.js"');
   const productSources = html.indexOf('src="productSources.js"');
   const mtgjsonPrices = html.indexOf('src="mtgjsonPrices.js"');
+  const mtgjsonHistoryShards = html.indexOf('src="mtgjsonHistoryShards.js"');
   const priceMaintenance = html.indexOf('src="priceMaintenance.js"');
   const chart = html.indexOf('src="chart.js"');
   const basicLands = html.indexOf('src="basicLands.js"');
@@ -33,7 +34,7 @@ test("application shell loads dependencies before app.js", () => {
   const selectors = html.indexOf('src="selectors.js"');
   const renderScheduler = html.indexOf('src="renderScheduler.js"');
   const app = html.indexOf('src="app.js"');
-  assert.ok(migrations >= 0 && migrations < core && core < priceHistory && priceHistory < changeLog && changeLog < health && health < storage && storage < workspace && workspace < workspaceSession && workspaceSession < persistence && persistence < scryfall && scryfall < mtgch && mtgch < catalog && catalog < productSources && productSources < mtgjsonPrices && mtgjsonPrices < priceMaintenance && priceMaintenance < chart && chart < basicLands && basicLands < collectionCommands && collectionCommands < viewPreferences && viewPreferences < imageCache && imageCache < selectors && selectors < renderScheduler && renderScheduler < app);
+  assert.ok(migrations >= 0 && migrations < core && core < priceHistory && priceHistory < changeLog && changeLog < health && health < storage && storage < workspace && workspace < workspaceSession && workspaceSession < persistence && persistence < scryfall && scryfall < mtgch && mtgch < catalog && catalog < productSources && productSources < mtgjsonPrices && mtgjsonPrices < mtgjsonHistoryShards && mtgjsonHistoryShards < priceMaintenance && priceMaintenance < chart && chart < basicLands && basicLands < collectionCommands && collectionCommands < viewPreferences && viewPreferences < imageCache && imageCache < selectors && selectors < renderScheduler && renderScheduler < app);
 });
 
 test("localized names use Scryfall simplified Chinese before the MTGCH fallback", () => {
@@ -201,12 +202,15 @@ test("automatic price maintenance waits for folder restore and records daily his
   assert.match(appSource, /价格部分更新/);
 });
 
-test("price history replaces 90 days and requests missing printing history locally", () => {
+test("price history loads offline shards before requesting missing printing history locally", () => {
   assert.match(appSource, /function syncMtgjsonPriceHistory\(\)/);
   assert.match(appSource, /function loadMissingMtgjsonHistory\(index, cards\)/);
   assert.match(appSource, /!hasMtgjsonHistoricalEntry\(index, card\)/);
+  assert.match(appSource, /mtgjsonHistoryShardCatalog\.load\(index, requestedIds\)/);
+  assert.match(appSource, /mergeMtgjsonPriceSeries\(entry\.foil, latest\.foil, index\.providers\)/);
+  assert.ok(appSource.indexOf("mtgjsonHistoryShardCatalog.load(index, requestedIds)") < appSource.indexOf("fetch(endpoint"));
   assert.match(appSource, /fetch\(endpoint,[\s\S]*scryfallIds: missingIds/);
-  assert.match(appSource, /mergeMtgjsonPriceIndexes\(index, payload\)/);
+  assert.match(appSource, /mergeMtgjsonPriceIndexes\(mergedIndex, payload\)/);
   assert.match(appSource, /syncPriceHistoryWindow\(/);
   assert.match(appSource, /mtgjsonPriceSeries\(index, card, finish\)/);
   assert.match(appSource, /windowDays: 90/);

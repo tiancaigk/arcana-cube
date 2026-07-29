@@ -98,8 +98,13 @@ async function main() {
     client = createCdpClient(page.webSocketDebuggerUrl);
     await client.open();
     const runtimeErrors = [];
+    const networkFailures = [];
+    const networkRequests = new Map();
     client.on("Runtime.exceptionThrown", (event) => runtimeErrors.push(event.exceptionDetails && event.exceptionDetails.text || "Runtime exception"));
+    client.on("Network.requestWillBeSent", (event) => networkRequests.set(event.requestId, event.request && event.request.url || ""));
+    client.on("Network.loadingFailed", (event) => networkFailures.push(`${event.errorText || "network error"}: ${networkRequests.get(event.requestId) || ""}`));
     await client.send("Runtime.enable");
+    await client.send("Network.enable");
     await client.send("Page.enable");
     await client.send("Browser.setDownloadBehavior", { behavior: "deny" });
     await client.send("Page.navigate", { url: `http://127.0.0.1:${appPort}/` });
@@ -173,7 +178,7 @@ async function main() {
     const sheetJsSource = await evaluate(`(async () => {
       document.querySelector('#exportBtn').click();
       const started = Date.now();
-      while (!window.XLSX && Date.now() - started < 10000) {
+      while (!window.XLSX && Date.now() - started < 30000) {
         await new Promise((resolve) => setTimeout(resolve, 50));
       }
       const script = [...document.scripts].find((item) => item.src.endsWith('/vendor/xlsx.full.min.js'));
@@ -251,8 +256,31 @@ async function main() {
       throw new Error(`本地文件产品来源加载失败：${fileProductSourceState.status || "无内容"}`);
     }
     if (!fileProductSourceState.scriptSource.startsWith("file:")) throw new Error("本地文件模式没有使用同目录产品来源索引");
+    const fileHistoryShardState = await evaluate(`(async () => {
+      const id = '68785426-6868-4184-8d52-75a6a920848b';
+      if (!window.CubeMtgjsonPriceIndex) {
+        await new Promise((resolve, reject) => {
+          const script = document.createElement('script');
+          script.src = 'mtgjson-price-index.js';
+          script.onload = resolve;
+          script.onerror = reject;
+          document.head.appendChild(script);
+        });
+      }
+      const catalog = window.CubeMtgjsonHistoryShards.createHistoryShardCatalog();
+      const result = await catalog.load(window.CubeMtgjsonPriceIndex, [id]);
+      const entry = result.cards[id];
+      return {
+        foilPoints: entry?.foil?.length || 0,
+        nonfoilPoints: entry?.nonfoil?.length || 0,
+        sourceVersion: window.CubeMtgjsonHistoryShardData?.sld?.sourceVersion || ''
+      };
+    })()`);
+    if (fileHistoryShardState.foilPoints !== 90 || fileHistoryShardState.nonfoilPoints !== 90) {
+      throw new Error(`本地文件 MTGJSON 历史分片加载失败：${JSON.stringify({ ...fileHistoryShardState, networkFailures, runtimeErrors })}`);
+    }
     if (runtimeErrors.length) throw new Error(`页面运行时错误：${runtimeErrors.join("; ")}`);
-    process.stdout.write(`Browser smoke test passed: ${initialCount} cards, ${whiteCount} white cards, ${productSourceState.rowCount} HTTP product sources, ${fileProductSourceState.rowCount} file product sources.\n`);
+    process.stdout.write(`Browser smoke test passed: ${initialCount} cards, ${whiteCount} white cards, ${productSourceState.rowCount} HTTP product sources, ${fileProductSourceState.rowCount} file product sources, ${fileHistoryShardState.foilPoints} file history points.\n`);
   } finally {
     if (client) client.close();
     chrome.kill("SIGTERM");

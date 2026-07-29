@@ -97,7 +97,7 @@ npm run build:product-sources
 
 每次刷新会保存价格来源、提供商和数据日期；每日快照保留紧凑的来源统计。版本选择弹窗也使用同一提供商顺序，并通过轻量的可选版本索引显示每个实体版本的最新 Foil / Non-Foil 价格；选中版本时会立即写入对应的 MTGJSON 价格，不再沿用 Scryfall 报价。总价历史弹窗中的“同步近 90 天”会用 MTGJSON 逐卡数据重建最近 90 个自然日内有源数据的每日快照和总价；更早的记录以及窗口内 MTGJSON 完全缺少的日期保持不变。
 
-刚切换到、尚未包含在完整历史区的印刷版本会在同步时通过本地服务器按需读取 `AllPrices.json.gz`，结果缓存于 `.cache/mtgjson/history/`，后续日期只合并轻量索引中的最新价格点，不再扫描完整文件。直接双击 `index.html` 仍可日常浏览和显示最新价，但首次补全新版本历史时需要先运行 `启动 Cube.command`；页面会自动访问本机 `127.0.0.1:4173`。
+刚切换到、尚未包含在主历史区的已知印刷版本，会从 `mtgjson-history-*.js` 中按系列加载离线 90 天价格分片；直接双击 `index.html` 也可以完成同步，不需要启动本地服务器。分片缺失或版本过旧时，本地服务器仍可按需读取 `AllPrices.json.gz` 作为后备，并将结果缓存于 `.cache/mtgjson/history/`。
 
 网页不会下载超过 1 GB 的 MTGJSON 完整价格 JSON。维护脚本将当前牌表的有限历史，以及这些牌名所有实体版本的最新价格，压缩为 `mtgjson-price-index.json` 与供本地直开使用的 `mtgjson-price-index.js`。首次扩展版本目录时需要发现并映射所有可选印刷版本，后续每日构建会复用索引中的映射：
 
@@ -107,9 +107,12 @@ npm run build:prices
 
 # 首次建立或重新补齐 MTGJSON 提供的有限历史
 npm run build:prices:history
+
+# 基于现有价格索引单独重建离线历史分片
+npm run build:prices:shards
 ```
 
-GitHub Actions 每天生成当天精简索引并提交；本地运行仍可使用仓库中最后一次生成的索引。
+历史构建会同时重建可选实体版本的离线分片。GitHub Actions 每天生成当天精简索引并提交；本地运行仍可使用仓库中最后一次生成的索引。
 
 ## 中文牌名
 
@@ -124,7 +127,7 @@ GitHub Actions 每天生成当天精简索引并提交；本地运行仍可使�
 - `collectionCommands.js`、`viewPreferences.js`：收藏变更副作用和非关键视图偏好
 - `scryfall.js`、`catalog.js`：Scryfall 请求与卡牌目录查询
 - `productSources.js`、`product-source-index.json`、`product-source-index.js`：MTGJSON 产品来源查询，以及服务器与本地直开模式的精简索引
-- `mtgjsonPrices.js`、`mtgjson-price-index.*`：MTGJSON 价格选择、历史序列和轻量运行时索引
+- `mtgjsonPrices.js`、`mtgjsonHistoryShards.js`、`mtgjson-price-index.*`：MTGJSON 价格选择、历史序列、离线分片和轻量运行时索引
 - `storage.js`、`workspace.js`、`persistence.js`：浏览器镜像、文件夹读写和按域保存
 - `imageCache.js`：高清原图与 WebP 缩略图缓存
 - `priceHistory.js`、`changeLog.js`、`health.js`：历史记录和工作区检查

@@ -31,7 +31,8 @@
   const { createMtgchClient } = window.MtgchClient;
   const { createCatalog, printingKey } = window.CubeCatalog;
   const { createProductSourceCatalog } = window.CubeProductSources;
-  const { createMtgjsonPriceCatalog, hasHistoricalEntry: hasMtgjsonHistoricalEntry, lookupPrice: lookupMtgjsonPrice, lookupPrintingPrice: lookupMtgjsonPrintingPrice, mergePriceIndexes: mergeMtgjsonPriceIndexes, priceSeries: mtgjsonPriceSeries, providerLabel } = window.CubeMtgjsonPrices;
+  const { createMtgjsonPriceCatalog, hasHistoricalEntry: hasMtgjsonHistoricalEntry, lookupPrice: lookupMtgjsonPrice, lookupPrintingPrice: lookupMtgjsonPrintingPrice, mergePriceIndexes: mergeMtgjsonPriceIndexes, mergeSeries: mergeMtgjsonPriceSeries, priceSeries: mtgjsonPriceSeries, providerLabel } = window.CubeMtgjsonPrices;
+  const { createHistoryShardCatalog } = window.CubeMtgjsonHistoryShards;
   const { applyIndexedPricesToCard, applyIndexedPriceUpdates } = window.CubePriceMaintenance;
   const { datePositions } = window.CubeChart;
   const { BASIC_LAND_LABELS, BASIC_LAND_ORDER, classifyBasicLandBatch, groupBasicLands, parseCollectorNumberRange } = window.CubeBasicLands;
@@ -77,6 +78,7 @@
     loadFallback: loadMtgjsonPriceIndexScript,
     preferFallback: window.location.protocol === "file:"
   });
+  const mtgjsonHistoryShardCatalog = createHistoryShardCatalog();
   const selectors = createCubeSelectors(window.CubeCore, window.CubePriceHistory);
   const imageCache = createImageCache({
     workspace,
@@ -1292,12 +1294,44 @@
   }
 
   async function loadMissingMtgjsonHistory(index, cards) {
-    const missingIds = [...new Set(cards
+    const requestedIds = [...new Set(cards
       .filter((card) => card.scryfallId && !hasMtgjsonHistoricalEntry(index, card))
       .map((card) => card.scryfallId))];
-    if (!missingIds.length) return { index, requested: 0, resolved: 0 };
+    if (!requestedIds.length) return { index, requested: 0, resolved: 0, bundled: 0 };
+    const bundled = await mtgjsonHistoryShardCatalog.load(index, requestedIds);
+    const bundledCards = Object.fromEntries(Object.entries(bundled.cards).map(([scryfallId, entry]) => {
+      const latest = index.printingPrices && index.printingPrices[scryfallId] || {};
+      return [scryfallId, {
+        ...entry,
+        foil: mergeMtgjsonPriceSeries(entry.foil, latest.foil, index.providers),
+        nonfoil: mergeMtgjsonPriceSeries(entry.nonfoil, latest.nonfoil, index.providers)
+      }];
+    }));
+    let mergedIndex = index;
+    if (Object.keys(bundledCards).length) {
+      mergedIndex = mergeMtgjsonPriceIndexes(index, {
+        format: index.format,
+        version: index.version,
+        providers: index.providers,
+        source: {
+          ...(index.source || {}),
+          historyFrom: bundled.historyFrom,
+          historyTo: bundled.historyTo
+        },
+        cards: bundledCards
+      });
+    }
+    const missingIds = requestedIds.filter((scryfallId) => !bundledCards[scryfallId]);
+    if (!missingIds.length) {
+      return {
+        index: mergedIndex,
+        requested: requestedIds.length,
+        resolved: requestedIds.length,
+        bundled: requestedIds.length
+      };
+    }
     const endpoint = mtgjsonHistoryEndpoint();
-    if (!endpoint) throw new Error(`有 ${missingIds.length} 个新版本需要本地补全，请通过 Cube 本地服务器打开项目后重试`);
+    if (!endpoint) throw new Error(`有 ${missingIds.length} 个版本不在离线历史包中，请更新 MTGJSON 价格数据后重试`);
     let response;
     try {
       response = await fetch(endpoint, {
@@ -1310,11 +1344,12 @@
     }
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(payload.error || "MTGJSON 新版本历史补全失败");
-    const merged = mergeMtgjsonPriceIndexes(index, payload);
+    const merged = mergeMtgjsonPriceIndexes(mergedIndex, payload);
     return {
       index: merged,
-      requested: missingIds.length,
-      resolved: Object.keys(payload.cards || {}).length
+      requested: requestedIds.length,
+      resolved: Object.keys(bundledCards).length + Object.keys(payload.cards || {}).length,
+      bundled: Object.keys(bundledCards).length
     };
   }
 
