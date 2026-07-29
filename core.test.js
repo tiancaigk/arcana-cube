@@ -371,6 +371,10 @@ test("localized name helpers store Chinese printed card names", () => {
   });
   assert.deepEqual(fireIce.localizedNames, { zhs: "热火 // 寒冰" });
   assert.equal(getCardDisplayName(fireIce, getPreferredLocalizedName(fireIce)), "热火 // 寒冰");
+  assert.equal(getCardDisplayName({
+    name: "Expansion // Explosion",
+    layout: "split"
+  }, "迸增 // 迸裂 // 迸增 // 迸裂"), "迸增 // 迸裂");
   assert.equal(getCardDisplayName(pathway, "树渠通路 // 潮渠通路"), "树渠通路");
   assert.deepEqual(normalizeLocalizedNames({
     name: "Treasure Map // Treasure Cove",

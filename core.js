@@ -435,9 +435,21 @@
     return name.includes("//") && manaCost.includes("//") && typeLine.includes("//");
   }
 
+  function collapseRepeatedSplitName(name) {
+    let parts = String(name || "").split(/\s*\/\/\s*/).map((part) => part.trim());
+    while (parts.length >= 4 && parts.length % 2 === 0) {
+      const middle = parts.length / 2;
+      const first = parts.slice(0, middle);
+      const second = parts.slice(middle);
+      if (!first.every((part, index) => part === second[index])) break;
+      parts = first;
+    }
+    return parts.join(" // ").trim();
+  }
+
   function getCardDisplayName(card, name = card && card.name) {
     const value = String(name || "").trim();
-    return isSplitCard(card) ? value : getFrontDisplayName(value);
+    return isSplitCard(card) ? collapseRepeatedSplitName(value) : getFrontDisplayName(value);
   }
 
   function getLookupName(name) {
