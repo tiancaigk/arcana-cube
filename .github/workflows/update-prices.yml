@@ -1,0 +1,47 @@
+name: Update MTGJSON Prices
+
+on:
+  schedule:
+    - cron: "30 15 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: mtgjson-prices
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install build dependency
+        run: npm ci
+
+      - name: Build compact daily price index
+        run: npm run build:prices
+
+      - name: Commit updated prices
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add mtgjson-price-index.json mtgjson-price-index.js
+          if git diff --cached --quiet; then
+            echo "Price index is already current."
+            exit 0
+          fi
+          git commit -m "Update MTGJSON prices"
+          git pull --rebase origin main
+          git push origin HEAD:main

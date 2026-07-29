@@ -13,6 +13,8 @@ flowchart LR
   COMMANDS --> RENDER["renderScheduler"]
   APP --> CATALOG["catalog"]
   CATALOG --> HTTP["scryfall"]
+  APP --> MTGPRICE["mtgjsonPrices / 精简价格索引"]
+  MTGPRICE --> PRICEBUILD["MTGJSON 每日构建"]
   APP --> SELECTORS["selectors"]
   SELECTORS --> RENDER["renderScheduler"]
   RENDER --> UI
@@ -34,7 +36,7 @@ flowchart LR
 | `basicLands.js` | 五种基本地的编号区间解析、分组排序和批量添加判定 | DOM、网络请求和状态写入 |
 | `collectionCommands.js` | 一次收藏变更的日志、保存、渲染和反馈副作用顺序 | 业务校验和数据变更 |
 | `viewPreferences.js` | 枚举型视图偏好的规范化读写与存储异常降级 | Cube 业务数据 |
-| `priceHistory.js` | 每日快照、趋势、逐卡价格索引 | Scryfall 请求 |
+| `priceHistory.js` | 每日快照、趋势、逐卡价格索引和非覆盖式历史补齐 | 网络请求 |
 | `changeLog.js` | 改动记录规范化、限长、文件包装 | 触发业务操作 |
 | `health.js` | 只读分析文件夹缺图、孤立文件和数据完整性 | 修复或删除文件 |
 | `storage.js` | 浏览器 Cube 镜像、工作区包装、目录句柄存储 | 业务域调度 |
@@ -43,7 +45,8 @@ flowchart LR
 | `persistence.js` | 脏域快照、延迟合并、浏览器/文件夹写入协调 | 数据格式解释 |
 | `scryfall.js` | 通用 JSON 请求、重试、取消和 HTTP 错误 | 卡牌查询策略 |
 | `catalog.js` | 名称、印刷版本、Oracle 分页和批量查询 | UI 和本地文件 |
-| `priceMaintenance.js` | 把批量查询结果安全应用到当前牌张并汇总刷新结果 | 发起网络请求和显示反馈 |
+| `mtgjsonPrices.js` | 校验精简索引、按提供商优先级选价、换算 Cardmarket EUR、暴露当前与历史序列 | 下载完整 MTGJSON 文件 |
+| `priceMaintenance.js` | 把 MTGJSON 价格及可追溯的来源元数据安全应用到当前牌张 | 发起网络请求和显示反馈 |
 | `chart.js` | 按真实日期计算价格曲线横轴坐标 | DOM 和价格数据存储 |
 | `imageCache.js` | 原图下载、精确命名、缩略图补全和进度 | Canvas 实现和目录选择 |
 | `selectors.js` | 按修订号缓存筛选、分组、统计、分析和价格视图 | 修改状态 |
@@ -103,7 +106,7 @@ flowchart LR
 | Finish 或日印 | `stats`，并优先替换单卡节点；筛选不再匹配时回退到 `cards` |
 | 添加、删除、换版、导入 | `meta`, `stats`, `cards`, `analytics` |
 | 基本地添加、删除或换版 | `basics`, `stats` |
-| 价格刷新 | `stats`, `cards` |
+| 价格刷新 | `stats`, `cards`, `basics` |
 | 启动、恢复、文件夹重载 | `renderAll()` |
 
 搜索输入由 `requestAnimationFrame` 合并，保持即时反馈但每帧最多重建一次牌表。图片错误使用 `cardGrid` 上的单个捕获监听，禁止在每次 `renderCards()` 后逐图绑定事件。
@@ -112,11 +115,12 @@ flowchart LR
 
 1. 卡牌分类、筛选、排序或导入格式变化放在 `core.js`，先补纯函数测试；五种基本地专属规则放在 `basicLands.js`。
 2. 新的 Scryfall 用例放在 `catalog.js`；只有传输、重试或取消策略才改 `scryfall.js`。
-3. 新的文件夹数据必须先定义独立保存域及兼容格式，再扩展 `workspace.js` 和 `persistence.js`。
-4. 新的派生视图放入 `selectors.js`，用明确修订号失效，不在卡片模板循环中重复扫描全量数据。
-5. 新的收藏修改应通过 `collectionCommands.js` 汇总副作用，并请求最小渲染区域；只有跨区域载入或恢复才调用 `renderAll()`。
-6. 仅影响显示的枚举选项放入 `viewPreferences.js`；会随 Cube 文件夹迁移的数据必须进入正式数据域并通过 migration 演进。
-7. 真实 `cube-data.json`、价格历史、改动记录和 `images/` 始终保持 Git 忽略。
+3. MTGJSON 价格提供商顺序、Cardmarket 汇率换算、索引校验和序列解析放在 `mtgjsonPrices.js`；完整价格文件只允许由构建脚本流式处理，禁止交给浏览器。
+4. 新的文件夹数据必须先定义独立保存域及兼容格式，再扩展 `workspace.js` 和 `persistence.js`。
+5. 新的派生视图放入 `selectors.js`，用明确修订号失效，不在卡片模板循环中重复扫描全量数据。
+6. 新的收藏修改应通过 `collectionCommands.js` 汇总副作用，并请求最小渲染区域；只有跨区域载入或恢复才调用 `renderAll()`。
+7. 仅影响显示的枚举选项放入 `viewPreferences.js`；会随 Cube 文件夹迁移的数据必须进入正式数据域并通过 migration 演进。
+8. 真实 `cube-data.json`、价格历史、改动记录和 `images/` 始终保持 Git 忽略。
 
 ## 本地服务
 

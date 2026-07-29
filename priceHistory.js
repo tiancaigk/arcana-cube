@@ -4,7 +4,7 @@
   root.CubePriceHistory = api;
 })(typeof globalThis !== "undefined" ? globalThis : this, function () {
   const PRICE_HISTORY_FORMAT = "arcana-cube-price-history";
-  const PRICE_HISTORY_VERSION = 1;
+  const PRICE_HISTORY_VERSION = 2;
 
   function clone(value) {
     if (typeof structuredClone === "function") return structuredClone(value);
@@ -75,7 +75,22 @@
     const refresh = source.refresh && typeof source.refresh === "object" ? {
       checked: Math.max(0, Number(source.refresh.checked) || 0),
       updated: Math.max(0, Number(source.refresh.updated) || 0),
-      missing: Math.max(0, Number(source.refresh.missing) || 0)
+      missing: Math.max(0, Number(source.refresh.missing) || 0),
+      ...(Number(source.refresh.fallback) > 0 ? { fallback: Math.max(0, Number(source.refresh.fallback) || 0) } : {})
+    } : null;
+    const sourceSummary = {};
+    Object.entries(source.sourceSummary || {}).forEach(([key, value]) => {
+      const count = Math.max(0, Math.floor(Number(value) || 0));
+      if (key && count) sourceSummary[key] = count;
+    });
+    const backfillSource = source.backfill && typeof source.backfill === "object" ? source.backfill : null;
+    const backfill = backfillSource ? {
+      origin: String(backfillSource.origin || "mtgjson"),
+      added: Math.max(0, Math.floor(Number(backfillSource.added) || 0)),
+      providers: Object.fromEntries(Object.entries(backfillSource.providers || {}).flatMap(([key, value]) => {
+        const count = Math.max(0, Math.floor(Number(value) || 0));
+        return key && count ? [[key, count]] : [];
+      }))
     } : null;
     return {
       date,
@@ -84,7 +99,9 @@
       pricedCount,
       missingCount: Math.max(0, Number.isFinite(Number(source.missingCount)) ? Number(source.missingCount) : cardCount - pricedCount),
       cards,
-      ...(refresh ? { refresh } : {})
+      ...(refresh ? { refresh } : {}),
+      ...(Object.keys(sourceSummary).length ? { sourceSummary } : {}),
+      ...(backfill && backfill.added ? { backfill } : {})
     };
   }
 
@@ -120,12 +137,19 @@
     const snapshotCards = {};
     let totalUsd = 0;
     let pricedCount = 0;
+    const sourceSummary = {};
     (cards || []).forEach((card) => {
       const price = getPriceNumber(card, card && card.finish);
       if (price === null) return;
       snapshotCards[cardPriceKey(card, card.finish)] = price;
       totalUsd += price;
       pricedCount += 1;
+      const finish = normalizeFinish(card && card.finish);
+      const priceSource = card && card.priceSources && card.priceSources[finish] || card && card.priceSource || {};
+      const sourceKey = priceSource.origin && priceSource.provider
+        ? `${priceSource.origin}:${priceSource.provider}`
+        : "legacy";
+      sourceSummary[sourceKey] = (sourceSummary[sourceKey] || 0) + 1;
     });
     next.snapshots[date] = {
       date,
@@ -134,14 +158,99 @@
       pricedCount,
       missingCount: Math.max(0, (cards || []).length - pricedCount),
       cards: snapshotCards,
+      sourceSummary,
       ...(options.refresh ? { refresh: {
         checked: Math.max(0, Number(options.refresh.checked) || 0),
         updated: Math.max(0, Number(options.refresh.updated) || 0),
-        missing: Math.max(0, Number(options.refresh.missing) || 0)
+        missing: Math.max(0, Number(options.refresh.missing) || 0),
+        ...(Number(options.refresh.fallback) > 0 ? { fallback: Math.max(0, Number(options.refresh.fallback) || 0) } : {})
       } } : {})
     };
     next.updatedAt = (options.now instanceof Date ? options.now : new Date()).toISOString();
     return next;
+  }
+
+  function backfillPriceHistory(history, cards, getSeries, options = {}) {
+    if (typeof getSeries !== "function") throw new Error("价格历史补齐缺少价格序列");
+    const next = normalizePriceHistory(history);
+    const sourceCards = Array.isArray(cards) ? cards : [];
+    const pointsByDate = new Map();
+    const providers = {};
+
+    sourceCards.forEach((card) => {
+      const finish = normalizeFinish(card && card.finish);
+      const key = cardPriceKey(card, finish);
+      (getSeries(card, finish) || []).forEach((point) => {
+        const date = String(point && point.date || "");
+        const usd = normalizeUsd(point && point.usd);
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || usd === null) return;
+        const datePoints = pointsByDate.get(date) || [];
+        datePoints.push({ key, usd, provider: String(point.provider || "unknown") });
+        pointsByDate.set(date, datePoints);
+      });
+    });
+
+    let addedPoints = 0;
+    let skippedExisting = 0;
+    let createdSnapshots = 0;
+    let updatedSnapshots = 0;
+    const touchedDates = [];
+    [...pointsByDate.entries()].sort(([a], [b]) => a.localeCompare(b)).forEach(([date, points]) => {
+      const existed = Boolean(next.snapshots[date]);
+      const snapshot = existed
+        ? normalizeSnapshot(date, next.snapshots[date])
+        : normalizeSnapshot(date, { cardCount: sourceCards.length, cards: {} });
+      let addedForDate = 0;
+      const providersForDate = {};
+      points.forEach((point) => {
+        if (Object.prototype.hasOwnProperty.call(snapshot.cards, point.key)) {
+          skippedExisting += 1;
+          return;
+        }
+        snapshot.cards[point.key] = point.usd;
+        snapshot.sourceSummary = snapshot.sourceSummary || {};
+        const sourceKey = `mtgjson:${point.provider}`;
+        snapshot.sourceSummary[sourceKey] = (snapshot.sourceSummary[sourceKey] || 0) + 1;
+        providersForDate[point.provider] = (providersForDate[point.provider] || 0) + 1;
+        providers[point.provider] = (providers[point.provider] || 0) + 1;
+        addedForDate += 1;
+        addedPoints += 1;
+      });
+      if (!addedForDate) return;
+      const values = Object.values(snapshot.cards);
+      snapshot.totalUsd = normalizeUsd(values.reduce((sum, value) => sum + value, 0)) || 0;
+      snapshot.cardCount = Math.max(Number(snapshot.cardCount) || 0, sourceCards.length);
+      snapshot.pricedCount = values.length;
+      snapshot.missingCount = Math.max(0, snapshot.cardCount - snapshot.pricedCount);
+      const existingBackfill = snapshot.backfill || {};
+      const existingProviders = existingBackfill.providers || {};
+      snapshot.backfill = {
+        origin: String(options.origin || "mtgjson"),
+        added: Math.max(0, Number(existingBackfill.added) || 0) + addedForDate,
+        providers: {
+          ...existingProviders,
+          ...Object.fromEntries(Object.entries(providersForDate).map(([provider, count]) => [
+            provider,
+            (Number(existingProviders[provider]) || 0) + count
+          ]))
+        }
+      };
+      next.snapshots[date] = snapshot;
+      touchedDates.push(date);
+      if (existed) updatedSnapshots += 1;
+      else createdSnapshots += 1;
+    });
+    if (addedPoints) next.updatedAt = (options.now instanceof Date ? options.now : new Date()).toISOString();
+    return {
+      history: next,
+      addedPoints,
+      skippedExisting,
+      createdSnapshots,
+      updatedSnapshots,
+      providers,
+      firstDate: touchedDates[0] || "",
+      lastDate: touchedDates[touchedDates.length - 1] || ""
+    };
   }
 
   function cardSeries(history, card, finish = card && card.finish) {
@@ -248,6 +357,7 @@
   return {
     PRICE_HISTORY_FORMAT,
     PRICE_HISTORY_VERSION,
+    backfillPriceHistory,
     buildPriceTrendIndex,
     cardPriceKey,
     cardSeries,

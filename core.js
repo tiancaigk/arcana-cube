@@ -84,6 +84,21 @@
     const frontColors = (face && face.colors) || card.colors || [];
     const frontTypeLine = (face && face.type_line) || card.type_line || "Unknown";
     const finishes = getAvailableFinishes(card);
+    const finish = chooseValidFinish({ finishes }, "foil");
+    const priceUpdatedAt = new Date().toISOString();
+    const scryfallPriceSource = {
+      origin: "scryfall",
+      provider: "scryfall",
+      currency: "USD",
+      date: priceUpdatedAt.slice(0, 10)
+    };
+    const nonfoilPrice = normalizePrice(card.prices && card.prices.usd);
+    const foilPrice = normalizePrice(card.prices && card.prices.usd_foil);
+    const etchedPrice = normalizePrice(card.prices && card.prices.usd_etched);
+    const priceSources = {
+      ...(nonfoilPrice ? { nonfoil: scryfallPriceSource } : {}),
+      ...(foilPrice || etchedPrice ? { foil: scryfallPriceSource } : {})
+    };
     return {
       id: `${card.id || cryptoId()}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
       scryfallId: card.id || "",
@@ -117,13 +132,16 @@
       localBackThumbnail: "",
       scryfallUri: card.scryfall_uri || "",
       prices: {
-        usd: normalizePrice(card.prices && card.prices.usd),
-        usdFoil: normalizePrice(card.prices && card.prices.usd_foil),
-        usdEtched: normalizePrice(card.prices && card.prices.usd_etched)
+        usd: nonfoilPrice,
+        usdFoil: foilPrice,
+        usdEtched: etchedPrice
       },
-      priceUpdatedAt: new Date().toISOString(),
+      priceSources,
+      priceSource: priceSources[finish] || null,
+      priceDataDate: priceUpdatedAt.slice(0, 10),
+      priceUpdatedAt,
       finishes,
-      finish: chooseValidFinish({ finishes }, "foil"),
+      finish,
       JapanPrint: false,
       addedAt: new Date().toISOString()
     };

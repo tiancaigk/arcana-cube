@@ -23,6 +23,7 @@ test("application shell loads dependencies before app.js", () => {
   const mtgch = html.indexOf('src="mtgch.js"');
   const catalog = html.indexOf('src="catalog.js"');
   const productSources = html.indexOf('src="productSources.js"');
+  const mtgjsonPrices = html.indexOf('src="mtgjsonPrices.js"');
   const priceMaintenance = html.indexOf('src="priceMaintenance.js"');
   const chart = html.indexOf('src="chart.js"');
   const basicLands = html.indexOf('src="basicLands.js"');
@@ -32,7 +33,7 @@ test("application shell loads dependencies before app.js", () => {
   const selectors = html.indexOf('src="selectors.js"');
   const renderScheduler = html.indexOf('src="renderScheduler.js"');
   const app = html.indexOf('src="app.js"');
-  assert.ok(migrations >= 0 && migrations < core && core < priceHistory && priceHistory < changeLog && changeLog < health && health < storage && storage < workspace && workspace < workspaceSession && workspaceSession < persistence && persistence < scryfall && scryfall < mtgch && mtgch < catalog && catalog < productSources && productSources < priceMaintenance && priceMaintenance < chart && chart < basicLands && basicLands < collectionCommands && collectionCommands < viewPreferences && viewPreferences < imageCache && imageCache < selectors && selectors < renderScheduler && renderScheduler < app);
+  assert.ok(migrations >= 0 && migrations < core && core < priceHistory && priceHistory < changeLog && changeLog < health && health < storage && storage < workspace && workspace < workspaceSession && workspaceSession < persistence && persistence < scryfall && scryfall < mtgch && mtgch < catalog && catalog < productSources && productSources < mtgjsonPrices && mtgjsonPrices < priceMaintenance && priceMaintenance < chart && chart < basicLands && basicLands < collectionCommands && collectionCommands < viewPreferences && viewPreferences < imageCache && imageCache < selectors && selectors < renderScheduler && renderScheduler < app);
 });
 
 test("localized names use Scryfall simplified Chinese before the MTGCH fallback", () => {
@@ -188,8 +189,20 @@ test("automatic price maintenance waits for folder restore and records daily his
   assert.match(appSource, /const PRICE_MAINTENANCE_INTERVAL_MS\s*=\s*60 \* 60 \* 1000/);
   assert.match(appSource, /recordCurrentPriceHistory\(\{ onlyIfMissing: !force,/);
   assert.match(appSource, /await restoreDirectoryMode\(\);[\s\S]*try\s*\{[\s\S]*await refreshStalePrices\(\);[\s\S]*finally\s*\{[\s\S]*schedulePriceMaintenance\(\);/);
-  assert.match(appSource, /lookupPrintingBatchDetailed/);
+  assert.match(appSource, /mtgjsonPriceCatalog\.loadIndex\(\)/);
+  assert.match(appSource, /applyIndexedPriceUpdates\(targets, index/);
+  assert.doesNotMatch(appSource, /applyScryfallPriceFallbacks/);
+  assert.match(appSource, /Cardmarket 换算/);
   assert.match(appSource, /价格部分更新/);
+});
+
+test("price history can be safely backfilled from the MTGJSON compact index", () => {
+  assert.match(appSource, /function backfillMtgjsonPriceHistory\(\)/);
+  assert.match(appSource, /backfillPriceHistory\(/);
+  assert.match(appSource, /mtgjsonPriceSeries\(index, card, finish\)/);
+  assert.match(appSource, /已有记录不会被覆盖/);
+  assert.match(appSource, /data-backfill-price-history/);
+  assert.match(styleSource, /\.price-history-tools/);
 });
 
 test("key interactive regions expose accessible state", () => {

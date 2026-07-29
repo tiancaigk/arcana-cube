@@ -92,7 +92,7 @@
     addIssue("orphan-originals", "info", "未被牌表引用的原图", orphanOriginals, "这些文件不会显示在当前牌表中；检查确认后可在文件管理器中自行归档。");
     addIssue("orphan-thumbnails", "info", "未被牌表引用的缩略图", orphanThumbnails, "通常来自已删除或已换版本的牌。");
     addIssue("uncached-originals", "info", "尚未保存到本地的卡图", uncachedOriginals, "这些牌仍可能使用网络图片，离线时无法显示。");
-    addIssue("missing-selected-prices", "info", "当前表面工艺缺少价格", missingPrices.map((card) => card && card.name || "未命名卡牌"), "Scryfall 未必为所有版本和表面工艺提供美元价格。");
+    addIssue("missing-selected-prices", "info", "当前表面工艺缺少价格", missingPrices.map((card) => card && card.name || "未命名卡牌"), "MTGJSON 的实体卡零售来源未必为所有版本和表面工艺提供价格。");
 
     const severityCounts = issues.reduce((counts, issue) => {
       counts[issue.severity] += 1;
