@@ -158,6 +158,7 @@ test("basic lands use a dedicated five-group collection view", () => {
 });
 
 test("collection grids keep six main cards and five basic lands per row", () => {
+  assert.match(styleSource, /\.collection-view,\s*\.analytics-view,\s*\.basic-lands-view\s*\{[^}]*width:\s*100%;[^}]*max-width:\s*1500px;[^}]*margin:\s*0 auto;/s);
   assert.match(styleSource, /\.card-group-grid\s*\{[^}]*grid-template-columns:\s*repeat\(6, minmax\(0, 1fr\)\)/s);
   assert.match(styleSource, /\.basic-land-grid \.card-group-grid\s*\{[^}]*grid-template-columns:\s*repeat\(5, minmax\(0, 1fr\)\)/s);
 });

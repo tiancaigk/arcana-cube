@@ -159,18 +159,41 @@ async function main() {
 
     const narrowMainGrid = await measureCollectionGrid(1280);
     const wideMainGrid = await measureCollectionGrid(1720);
-    const basicLandColumns = await evaluate(`(async () => {
+
+    async function measureBasicLandGrid(width) {
+      await client.send("Emulation.setDeviceMetricsOverride", {
+        width,
+        height: 1000,
+        deviceScaleFactor: 1,
+        mobile: false
+      });
+      await delay(50);
+      return evaluate(`(async () => {
       document.querySelector('[data-view="basicLands"]').click();
       await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
       const grid = document.querySelector('#basicLandGrid .card-group-grid');
-      const columns = grid ? getComputedStyle(grid).gridTemplateColumns.split(' ').filter(Boolean).length : 0;
+      const card = grid?.querySelector('.card-item');
+      const result = {
+        columns: grid ? getComputedStyle(grid).gridTemplateColumns.split(' ').filter(Boolean).length : 0,
+        cardWidth: card ? card.getBoundingClientRect().width : 0
+      };
       document.querySelector('[data-view="collection"]').click();
-      return columns;
+      return result;
     })()`);
+    }
+
+    const narrowBasicLandGrid = await measureBasicLandGrid(1280);
+    const wideBasicLandGrid = await measureBasicLandGrid(1720);
     if (narrowMainGrid.columns !== 6 || wideMainGrid.columns !== 6
       || !(wideMainGrid.cardWidth > narrowMainGrid.cardWidth)
-      || basicLandColumns !== 5) {
-      throw new Error(`牌表列数或弹性尺寸错误：${JSON.stringify({ narrowMainGrid, wideMainGrid, basicLandColumns })}`);
+      || narrowBasicLandGrid.columns !== 5 || wideBasicLandGrid.columns !== 5
+      || !(wideBasicLandGrid.cardWidth > narrowBasicLandGrid.cardWidth)) {
+      throw new Error(`牌表列数或弹性尺寸错误：${JSON.stringify({
+        narrowMainGrid,
+        wideMainGrid,
+        narrowBasicLandGrid,
+        wideBasicLandGrid
+      })}`);
     }
 
     const localPriceState = await evaluate(`(async () => {
