@@ -266,6 +266,8 @@ test("key interactive regions expose accessible state", () => {
   assert.match(appSource, /loadPreferredMtgjsonPriceIndex/);
   assert.match(appSource, /rebuildLocal:\s*force/);
   assert.match(appSource, /本地索引已重建/);
+  assert.match(appSource, /内置 MTGJSON/);
+  assert.match(appSource, /请先双击“启动 Cube\.command”/);
   assert.match(appSource, /data-price-change-period=/);
   assert.match(appSource, /data-price-change-ranking=/);
   assert.match(appSource, /priceChangesForPeriod\(state\.priceHistory, getValuedCards\(\), selectedPeriod, today\)/);

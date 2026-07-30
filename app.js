@@ -1130,7 +1130,9 @@
 
   function priceStatus(priceView) {
     const updated = priceView.latestUpdatedAt === null ? "尚未更新" : new Intl.DateTimeFormat("zh-CN", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" }).format(priceView.latestUpdatedAt);
-    const sourceName = state.priceIndexMode === "local" ? "本地 MTGJSON" : "MTGJSON";
+    const sourceName = state.priceIndexMode === "local"
+      ? "本地 MTGJSON"
+      : state.priceIndexMode === "bundled" && mtgjsonLocalPriceEndpoint() ? "内置 MTGJSON" : "MTGJSON";
     const source = state.priceIndexSource && state.priceIndexSource.date ? ` · ${sourceName} ${state.priceIndexSource.date}` : "";
     return `最近更新 ${updated}${source}${priceView.missingCount ? ` · 缺价 ${priceView.missingCount} 张` : ""}`;
   }
@@ -1360,6 +1362,9 @@
           return { index: localIndex, mode: "local", rebuilt: true, warning: "" };
         } catch (error) {
           warning = error.name === "AbortError" ? "本地价格索引更新超时" : error.message || "本地价格索引更新失败";
+          if (options.rebuildLocal) {
+            throw new Error(`${warning}。请先双击“启动 Cube.command”，再从 http://127.0.0.1:4173/ 打开 Cube`);
+          }
         }
       }
       if (localIndex) {
