@@ -139,6 +139,40 @@ async function main() {
     const initialCount = await evaluate("document.querySelectorAll('#cardGrid .card-item').length");
     if (!initialCount) throw new Error("牌表没有渲染卡牌");
 
+    async function measureCollectionGrid(width) {
+      await client.send("Emulation.setDeviceMetricsOverride", {
+        width,
+        height: 1000,
+        deviceScaleFactor: 1,
+        mobile: false
+      });
+      await delay(50);
+      return evaluate(`(() => {
+        const grid = document.querySelector('#cardGrid .card-group-grid');
+        const card = grid?.querySelector('.card-item');
+        return {
+          columns: grid ? getComputedStyle(grid).gridTemplateColumns.split(' ').filter(Boolean).length : 0,
+          cardWidth: card ? card.getBoundingClientRect().width : 0
+        };
+      })()`);
+    }
+
+    const narrowMainGrid = await measureCollectionGrid(1280);
+    const wideMainGrid = await measureCollectionGrid(1720);
+    const basicLandColumns = await evaluate(`(async () => {
+      document.querySelector('[data-view="basicLands"]').click();
+      await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+      const grid = document.querySelector('#basicLandGrid .card-group-grid');
+      const columns = grid ? getComputedStyle(grid).gridTemplateColumns.split(' ').filter(Boolean).length : 0;
+      document.querySelector('[data-view="collection"]').click();
+      return columns;
+    })()`);
+    if (narrowMainGrid.columns !== 6 || wideMainGrid.columns !== 6
+      || !(wideMainGrid.cardWidth > narrowMainGrid.cardWidth)
+      || basicLandColumns !== 5) {
+      throw new Error(`牌表列数或弹性尺寸错误：${JSON.stringify({ narrowMainGrid, wideMainGrid, basicLandColumns })}`);
+    }
+
     const localPriceState = await evaluate(`(async () => {
       document.querySelector('[data-refresh-prices]').click();
       await new Promise((resolve) => requestAnimationFrame(resolve));

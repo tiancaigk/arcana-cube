@@ -157,6 +157,11 @@ test("basic lands use a dedicated five-group collection view", () => {
   assert.match(styleSource, /\.basic-land-summary/);
 });
 
+test("collection grids keep six main cards and five basic lands per row", () => {
+  assert.match(styleSource, /\.card-group-grid\s*\{[^}]*grid-template-columns:\s*repeat\(6, minmax\(0, 1fr\)\)/s);
+  assert.match(styleSource, /\.basic-land-grid \.card-group-grid\s*\{[^}]*grid-template-columns:\s*repeat\(5, minmax\(0, 1fr\)\)/s);
+});
+
 test("basic lands switch between kind and release-ordered set groups", () => {
   assert.match(html, /data-basic-land-grouping="kind"[^>]+aria-pressed="true"/);
   assert.match(html, /data-basic-land-grouping="set"[^>]+aria-pressed="false"/);
