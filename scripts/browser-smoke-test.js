@@ -152,6 +152,23 @@ async function main() {
       throw new Error(`手动价格更新没有优先使用本地索引：${localPriceState || "无状态"}，更新 ${localPriceIndexUpdates} 次`);
     }
 
+    const totalHistoryState = await evaluate(`(() => {
+      document.querySelector('[data-show-total-history]').click();
+      const dialog = document.querySelector('#priceHistoryDialog');
+      const result = {
+        title: document.querySelector('#priceHistoryContent .price-history-head strong')?.textContent.trim() || '',
+        subtitle: document.querySelector('#priceHistoryContent .price-history-head small')?.textContent.trim() || '',
+        syncNote: document.querySelector('#priceHistoryContent .price-history-tools small')?.textContent.trim() || ''
+      };
+      dialog.querySelector('[data-close-dialog]').click();
+      return result;
+    })()`);
+    if (totalHistoryState.title !== "Cube 总价"
+      || !totalHistoryState.subtitle.startsWith("全部历史")
+      || !totalHistoryState.syncNote.includes("不限制下方曲线范围")) {
+      throw new Error(`Cube 总价没有显示完整历史范围：${JSON.stringify(totalHistoryState)}`);
+    }
+
     const productSourceState = await evaluate(`(async () => {
       document.querySelector('#cardGrid [data-preview-image]').click();
       const started = Date.now();

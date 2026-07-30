@@ -218,9 +218,19 @@ test("price history loads offline shards before requesting missing printing hist
   assert.match(appSource, /syncPriceHistoryWindow\(/);
   assert.match(appSource, /mtgjsonPriceSeries\(index, card, finish\)/);
   assert.match(appSource, /windowDays: 90/);
-  assert.match(appSource, /最近 90 天覆盖，之前记录保留/);
+  assert.match(appSource, /仅补全最近 90 天，不限制下方曲线范围/);
   assert.match(appSource, /data-sync-price-history/);
   assert.match(styleSource, /\.price-history-tools/);
+});
+
+test("Cube total chart always renders the complete stored price history", () => {
+  const start = appSource.indexOf("function openTotalPriceHistory()");
+  const end = appSource.indexOf("function mtgjsonHistoryEndpoint()", start);
+  const source = appSource.slice(start, end);
+  assert.match(source, /const points = totalSeries\(state\.priceHistory\)/);
+  assert.doesNotMatch(source, /\.slice\(\s*-\s*90\s*\)/);
+  assert.match(source, /全部历史/);
+  assert.match(source, /仅补全最近 90 天，不限制下方曲线范围/);
 });
 
 test("price charts use a smooth area treatment with readable axes and range summary", () => {

@@ -1274,17 +1274,22 @@
 
   function openTotalPriceHistory() {
     const points = totalSeries(state.priceHistory);
+    const firstPoint = points[0];
+    const latestPoint = points[points.length - 1];
     const source = state.priceIndexSource;
     const historyRange = source && source.historyFrom
       ? `${formatHistoryDate(source.historyFrom)} 至 ${formatHistoryDate(source.historyTo || source.date)}`
       : "首次使用时加载精简历史索引";
+    const fullRange = firstPoint && latestPoint
+      ? `全部历史 · ${formatHistoryDate(firstPoint.date)} 至 ${formatHistoryDate(latestPoint.date)} · ${points.length} 个每日快照`
+      : "全部历史";
     const tools = `<div class="price-history-tools">
-      <div><strong>MTGJSON 历史同步</strong><small>${escapeHtml(historyRange)} · 最近 90 天覆盖，之前记录保留</small></div>
+      <div><strong>MTGJSON 历史同步</strong><small>${escapeHtml(historyRange)} · 仅补全最近 90 天，不限制下方曲线范围</small></div>
       <button type="button" class="text-button" data-sync-price-history ${state.syncingPriceHistory ? "disabled" : ""}>${state.syncingPriceHistory ? "正在同步…" : "同步近 90 天"}</button>
     </div>`;
     elements.priceHistoryContent.innerHTML = tools + renderPriceHistoryPanel({
       title: "Cube 总价",
-      subtitle: `${points.length} 个每日快照`,
+      subtitle: fullRange,
       points,
       emptyText: "暂无总价历史。点击总价旁边的刷新按钮后，会记录今天的 Cube 总价。"
     });
