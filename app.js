@@ -196,6 +196,7 @@
     refreshingPrices: false,
     syncingPriceHistory: false,
     priceIndexSource: null,
+    priceIndexMode: "",
     imageCaching: false,
     folderSync: {
       syncing: false,
@@ -1129,7 +1130,8 @@
 
   function priceStatus(priceView) {
     const updated = priceView.latestUpdatedAt === null ? "尚未更新" : new Intl.DateTimeFormat("zh-CN", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" }).format(priceView.latestUpdatedAt);
-    const source = state.priceIndexSource && state.priceIndexSource.date ? ` · MTGJSON ${state.priceIndexSource.date}` : "";
+    const sourceName = state.priceIndexMode === "local" ? "本地 MTGJSON" : "MTGJSON";
+    const source = state.priceIndexSource && state.priceIndexSource.date ? ` · ${sourceName} ${state.priceIndexSource.date}` : "";
     return `最近更新 ${updated}${source}${priceView.missingCount ? ` · 缺价 ${priceView.missingCount} 张` : ""}`;
   }
 
@@ -1293,6 +1295,83 @@
     return "";
   }
 
+  function mtgjsonLocalPriceEndpoint() {
+    if (isLocalHttpPage()) return "/mtgjson-price-index/local";
+    if (location.protocol === "file:") return "http://127.0.0.1:4173/mtgjson-price-index/local";
+    return "";
+  }
+
+  function localPriceCubeData() {
+    return {
+      meta: { name: state.data.meta.name || "Arcana Cube" },
+      cards: getValuedCards().map((card) => ({
+        scryfallId: card.scryfallId || "",
+        oracleId: card.oracleId || "",
+        set: card.set || "",
+        collectorNumber: card.collectorNumber || "",
+        name: card.name || ""
+      }))
+    };
+  }
+
+  function priceIndexGeneratedToday(index) {
+    const generatedAt = new Date(index && index.generatedAt || "");
+    return !Number.isNaN(generatedAt.getTime()) && dateKey(generatedAt) === dateKey();
+  }
+
+  async function requestLocalPriceIndex(update = false) {
+    const endpoint = mtgjsonLocalPriceEndpoint();
+    if (!endpoint) return null;
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => controller.abort(), update ? 10 * 60 * 1000 : 3000);
+    try {
+      const response = await fetch(endpoint, {
+        method: update ? "POST" : "GET",
+        headers: { Accept: "application/json", ...(update ? { "Content-Type": "application/json" } : {}) },
+        ...(update ? { body: JSON.stringify({ cubeData: localPriceCubeData() }) } : {}),
+        cache: "no-store",
+        signal: controller.signal
+      });
+      if (!update && response.status === 404) return null;
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload.error || "本地 MTGJSON 价格索引不可用");
+      await mtgjsonPriceCatalog.setIndex(payload);
+      return payload;
+    } finally {
+      window.clearTimeout(timeout);
+    }
+  }
+
+  async function loadPreferredMtgjsonPriceIndex(options = {}) {
+    const endpoint = mtgjsonLocalPriceEndpoint();
+    let localIndex = null;
+    let warning = "";
+    if (endpoint) {
+      try {
+        localIndex = await requestLocalPriceIndex(false);
+      } catch (error) {
+        warning = error.name === "AbortError" ? "连接本地价格服务超时" : error.message || "本地价格服务不可用";
+      }
+      const shouldUpdate = options.rebuildLocal || (options.refreshLocalIfStale && !priceIndexGeneratedToday(localIndex));
+      if (shouldUpdate) {
+        try {
+          localIndex = await requestLocalPriceIndex(true);
+          state.priceIndexMode = "local";
+          return { index: localIndex, mode: "local", rebuilt: true, warning: "" };
+        } catch (error) {
+          warning = error.name === "AbortError" ? "本地价格索引更新超时" : error.message || "本地价格索引更新失败";
+        }
+      }
+      if (localIndex) {
+        state.priceIndexMode = "local";
+        return { index: localIndex, mode: "local", rebuilt: false, warning };
+      }
+    }
+    const index = await mtgjsonPriceCatalog.loadIndex();
+    state.priceIndexMode = "bundled";
+    return { index, mode: "bundled", rebuilt: false, warning };
+  }
+
   async function loadMissingMtgjsonHistory(index, cards) {
     const requestedIds = [...new Set(cards
       .filter((card) => card.scryfallId && !hasMtgjsonHistoricalEntry(index, card))
@@ -1358,7 +1437,7 @@
     state.syncingPriceHistory = true;
     openTotalPriceHistory();
     try {
-      const bundledIndex = await mtgjsonPriceCatalog.loadIndex();
+      const { index: bundledIndex } = await loadPreferredMtgjsonPriceIndex();
       const cards = getValuedCards();
       const supplemental = await loadMissingMtgjsonHistory(bundledIndex, cards);
       const index = supplemental.index;
@@ -2016,8 +2095,13 @@
     state.refreshingPrices = true;
     renderScheduler.request("stats");
     let refreshResult = null;
+    let indexResult = null;
     try {
-      const index = await mtgjsonPriceCatalog.loadIndex();
+      indexResult = await loadPreferredMtgjsonPriceIndex({
+        rebuildLocal: force,
+        refreshLocalIfStale: !force
+      });
+      const index = indexResult.index;
       state.priceIndexSource = index.source || null;
       const indexedResult = applyIndexedPriceUpdates(targets, index, {
         lookupPrice: lookupMtgjsonPrice,
@@ -2065,7 +2149,11 @@
         const sourceDate = state.priceIndexSource && state.priceIndexSource.date ? ` · MTGJSON ${state.priceIndexSource.date}` : "";
         const fallback = refreshResult.fallback ? ` · 替补 ${refreshResult.fallback} 张` : "";
         const converted = refreshResult.converted ? ` · Cardmarket 换算 ${refreshResult.converted} 张` : "";
-        toast("价格已更新", `已检查 ${targets.length} 张牌，更新 ${refreshResult.updated} 张${sourceDate}${fallback}${converted}，并保存今天的价格历史`);
+        const indexMode = indexResult.mode === "local"
+          ? indexResult.rebuilt ? " · 本地索引已重建" : " · 使用本地缓存"
+          : " · 使用内置备用索引";
+        const warning = indexResult.warning ? ` · ${indexResult.warning}` : "";
+        toast(indexResult.warning ? "价格已更新，本地数据源未刷新" : "价格已更新", `已检查 ${targets.length} 张牌，更新 ${refreshResult.updated} 张${sourceDate}${indexMode}${fallback}${converted}${warning}，并保存今天的价格历史`, Boolean(indexResult.warning));
       }
       return;
     }
@@ -2164,7 +2252,8 @@
     try {
       const [printingResult, priceResult] = await Promise.all([
         catalog.lookupAllPrintings(card, state.printingController.signal),
-        mtgjsonPriceCatalog.loadIndex()
+        loadPreferredMtgjsonPriceIndex()
+          .then((result) => result.index)
           .then((index) => ({ index, error: "" }))
           .catch((error) => ({ index: null, error: error.message || "加载失败" }))
       ]);

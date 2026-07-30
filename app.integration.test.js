@@ -203,13 +203,17 @@ test("automatic price maintenance waits for folder restore and records daily his
 });
 
 test("price history loads offline shards before requesting missing printing history locally", () => {
+  const historyLoaderSource = appSource.slice(
+    appSource.indexOf("async function loadMissingMtgjsonHistory"),
+    appSource.indexOf("async function syncMtgjsonPriceHistory")
+  );
   assert.match(appSource, /function syncMtgjsonPriceHistory\(\)/);
   assert.match(appSource, /function loadMissingMtgjsonHistory\(index, cards\)/);
   assert.match(appSource, /!hasMtgjsonHistoricalEntry\(index, card\)/);
   assert.match(appSource, /mtgjsonHistoryShardCatalog\.load\(index, requestedIds\)/);
   assert.match(appSource, /mergeMtgjsonPriceSeries\(entry\.foil, latest\.foil, index\.providers\)/);
-  assert.ok(appSource.indexOf("mtgjsonHistoryShardCatalog.load(index, requestedIds)") < appSource.indexOf("fetch(endpoint"));
-  assert.match(appSource, /fetch\(endpoint,[\s\S]*scryfallIds: missingIds/);
+  assert.ok(historyLoaderSource.indexOf("mtgjsonHistoryShardCatalog.load(index, requestedIds)") < historyLoaderSource.indexOf("fetch(endpoint"));
+  assert.match(historyLoaderSource, /fetch\(endpoint,[\s\S]*scryfallIds: missingIds/);
   assert.match(appSource, /mergeMtgjsonPriceIndexes\(mergedIndex, payload\)/);
   assert.match(appSource, /syncPriceHistoryWindow\(/);
   assert.match(appSource, /mtgjsonPriceSeries\(index, card, finish\)/);
@@ -258,6 +262,10 @@ test("key interactive regions expose accessible state", () => {
   assert.match(styleSource, /\.type-row\.active \.type-name\s*\{[^}]*color:\s*var\(--bucket-color/);
   assert.match(styleSource, /\.type-row\.active\s*\{[^}]*outline:\s*1px solid var\(--bucket-color/);
   assert.match(appSource, /data-show-today-price-changes/);
+  assert.match(appSource, /mtgjson-price-index\/local/);
+  assert.match(appSource, /loadPreferredMtgjsonPriceIndex/);
+  assert.match(appSource, /rebuildLocal:\s*force/);
+  assert.match(appSource, /本地索引已重建/);
   assert.match(appSource, /data-price-change-period=/);
   assert.match(appSource, /data-price-change-ranking=/);
   assert.match(appSource, /priceChangesForPeriod\(state\.priceHistory, getValuedCards\(\), selectedPeriod, today\)/);

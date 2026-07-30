@@ -187,6 +187,18 @@ test("price catalog falls back to the local script index and caches it", async (
   assert.equal(fallbackCalls, 1);
 });
 
+test("price catalog accepts a freshly rebuilt local index", async () => {
+  const catalog = createMtgjsonPriceCatalog({
+    fetchImpl: async () => { throw new Error("bundled index should not load"); },
+    loadFallback: async () => { throw new Error("fallback should not load"); }
+  });
+  const index = sampleIndex();
+  index.source.date = "2026-07-29";
+  await catalog.setIndex(index);
+  assert.equal((await catalog.loadIndex()).source.date, "2026-07-29");
+  assert.equal((await catalog.lookup({ scryfallId: "printing", finish: "foil" })).price.usd, 3.5);
+});
+
 test("generated local-file script assigns a validated index", () => {
   const script = buildIndexScript(sampleIndex());
   assert.match(script, /CubeMtgjsonPriceIndex/);

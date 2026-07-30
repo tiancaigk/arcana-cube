@@ -112,7 +112,7 @@ npm run build:prices:history
 npm run build:prices:shards
 ```
 
-历史构建会同时重建可选实体版本的离线分片。GitHub Actions 每天生成当天精简索引并提交；本地运行仍可使用仓库中最后一次生成的索引。
+历史构建会同时重建可选实体版本的离线分片。本地服务器运行时，网页优先使用 `.cache/mtgjson/local/` 中的本机索引：手动更新会立即重建，自动维护在价格需要刷新且当天尚未构建时最多重建一次。只有本地服务或本地索引不可用时，才退回仓库内置索引。GitHub Actions 每天生成并提交内置索引，主要服务 GitHub Pages 和本地离线兜底。
 
 ## 中文牌名
 

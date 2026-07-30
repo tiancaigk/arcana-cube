@@ -6,6 +6,7 @@ const path = require("node:path");
 const { Readable } = require("node:stream");
 const { URL } = require("node:url");
 const { createMtgjsonHistoryService } = require("./mtgjson-history-service.js");
+const { createLocalPriceIndexService } = require("./local-price-index-service.js");
 
 const rootDir = path.resolve(__dirname, "..");
 
@@ -127,6 +128,49 @@ async function serveMtgjsonHistory(req, res, historyService) {
   }
 }
 
+function isLoopbackRequest(req) {
+  const address = String(req.socket && req.socket.remoteAddress || "");
+  return address === "127.0.0.1" || address === "::1" || address === "::ffff:127.0.0.1";
+}
+
+async function serveLocalPriceIndex(req, res, priceIndexService) {
+  const cors = historyCorsHeaders(req);
+  if (!cors || !isLoopbackRequest(req)) {
+    send(res, 403, { "Content-Type": "application/json; charset=utf-8" }, JSON.stringify({ error: "Local request required" }));
+    return;
+  }
+  if (req.method === "OPTIONS") {
+    send(res, 204, {
+      ...cors,
+      "Access-Control-Allow-Headers": "Content-Type",
+      "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+      "Access-Control-Max-Age": "600"
+    });
+    return;
+  }
+  if (req.method !== "GET" && req.method !== "POST") {
+    send(res, 405, { ...cors, "Allow": "GET, POST, OPTIONS", "Content-Type": "application/json; charset=utf-8" }, JSON.stringify({ error: "Method Not Allowed" }));
+    return;
+  }
+  try {
+    const index = req.method === "POST"
+      ? await priceIndexService.update((await readJsonBody(req, 1024 * 1024)).cubeData)
+      : await priceIndexService.readIndex();
+    send(res, 200, {
+      ...cors,
+      "Cache-Control": "no-store",
+      "Content-Type": "application/json; charset=utf-8"
+    }, JSON.stringify(index));
+  } catch (error) {
+    const missing = req.method === "GET" && error && error.code === "ENOENT";
+    send(res, missing ? 404 : 500, {
+      ...cors,
+      "Cache-Control": "no-store",
+      "Content-Type": "application/json; charset=utf-8"
+    }, JSON.stringify({ error: missing ? "本地价格索引尚未建立" : error.message || "本地价格索引更新失败" }));
+  }
+}
+
 function getStaticFilePath(pathname) {
   let decodedPath;
   try {
@@ -217,6 +261,7 @@ function createLocalServer(options = {}) {
   const host = options.host || "127.0.0.1";
   const port = options.port || 4173;
   const historyService = options.historyService || createMtgjsonHistoryService({ rootDir });
+  const priceIndexService = options.priceIndexService || createLocalPriceIndexService({ rootDir });
   return http.createServer(async (req, res) => {
     try {
       const requestUrl = new URL(req.url || "/", `http://${req.headers.host || `${host}:${port}`}`);
@@ -230,6 +275,10 @@ function createLocalServer(options = {}) {
       }
       if (requestUrl.pathname === "/mtgjson-price-history") {
         await serveMtgjsonHistory(req, res, historyService);
+        return;
+      }
+      if (requestUrl.pathname === "/mtgjson-price-index/local") {
+        await serveLocalPriceIndex(req, res, priceIndexService);
         return;
       }
       serveStatic(req, res, requestUrl);
@@ -249,4 +298,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { createLocalServer, historyCorsHeaders, readJsonBody, readServerOptions, serveMtgjsonHistory };
+module.exports = { createLocalServer, historyCorsHeaders, isLoopbackRequest, readJsonBody, readServerOptions, serveLocalPriceIndex, serveMtgjsonHistory };

@@ -74,7 +74,23 @@ async function main() {
   if (!fs.existsSync(chromePath)) throw new Error(`没有找到 Chrome：${chromePath}`);
   const profileDir = fs.mkdtempSync(path.join(os.tmpdir(), "arcana-cube-browser-"));
   const debugPort = 9300 + Math.floor(Math.random() * 500);
-  const server = createLocalServer({ host: "127.0.0.1", port: 0 });
+  const bundledPriceIndex = JSON.parse(fs.readFileSync(path.join(__dirname, "..", "mtgjson-price-index.json"), "utf8"));
+  let localPriceIndexReads = 0;
+  let localPriceIndexUpdates = 0;
+  const server = createLocalServer({
+    host: "127.0.0.1",
+    port: 0,
+    priceIndexService: {
+      readIndex: async () => {
+        localPriceIndexReads += 1;
+        return bundledPriceIndex;
+      },
+      update: async () => {
+        localPriceIndexUpdates += 1;
+        return bundledPriceIndex;
+      }
+    }
+  });
   await new Promise((resolve, reject) => {
     server.once("error", reject);
     server.listen(0, "127.0.0.1", resolve);
@@ -122,6 +138,19 @@ async function main() {
     }
     const initialCount = await evaluate("document.querySelectorAll('#cardGrid .card-item').length");
     if (!initialCount) throw new Error("牌表没有渲染卡牌");
+
+    const localPriceState = await evaluate(`(async () => {
+      document.querySelector('[data-refresh-prices]').click();
+      await new Promise((resolve) => requestAnimationFrame(resolve));
+      const started = Date.now();
+      while (document.querySelector('[data-refresh-prices].loading') && Date.now() - started < 10000) {
+        await new Promise((resolve) => setTimeout(resolve, 50));
+      }
+      return document.querySelector('.stat-card:last-child .stat-foot')?.textContent.trim() || '';
+    })()`);
+    if (!localPriceState.includes("本地 MTGJSON") || localPriceIndexUpdates !== 1) {
+      throw new Error(`手动价格更新没有优先使用本地索引：${localPriceState || "无状态"}，更新 ${localPriceIndexUpdates} 次`);
+    }
 
     const productSourceState = await evaluate(`(async () => {
       document.querySelector('#cardGrid [data-preview-image]').click();

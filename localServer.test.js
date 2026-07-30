@@ -1,6 +1,6 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { createLocalServer, historyCorsHeaders, readServerOptions } = require("./scripts/local-server.js");
+const { createLocalServer, historyCorsHeaders, isLoopbackRequest, readServerOptions } = require("./scripts/local-server.js");
 
 test("local server defaults to loopback on port 4173", () => {
   assert.deepEqual(readServerOptions([], {}), { host: "127.0.0.1", port: 4173 });
@@ -38,6 +38,12 @@ test("MTGJSON history endpoint accepts LAN same-origin requests", () => {
   }), null);
 });
 
+test("local price updates are restricted to loopback clients", () => {
+  assert.equal(isLoopbackRequest({ socket: { remoteAddress: "127.0.0.1" } }), true);
+  assert.equal(isLoopbackRequest({ socket: { remoteAddress: "::ffff:127.0.0.1" } }), true);
+  assert.equal(isLoopbackRequest({ socket: { remoteAddress: "192.168.1.50" } }), false);
+});
+
 test("local server exposes cached MTGJSON history to local file pages", async (t) => {
   const calls = [];
   const server = createLocalServer({
@@ -64,4 +70,41 @@ test("local server exposes cached MTGJSON history to local file pages", async (t
   assert.equal(response.status, 200);
   assert.equal(response.headers.get("access-control-allow-origin"), "null");
   assert.deepEqual(calls, [["printing"]]);
+});
+
+test("local server reads and rebuilds the machine-local MTGJSON index", async (t) => {
+  const calls = [];
+  const cached = { format: "arcana-cube-mtgjson-prices", version: 2, providers: [], source: { date: "2026-07-28" }, cards: {} };
+  const updated = { ...cached, source: { date: "2026-07-29" } };
+  const server = createLocalServer({
+    host: "127.0.0.1",
+    port: 0,
+    priceIndexService: {
+      readIndex: async () => cached,
+      update: async (cubeData) => {
+        calls.push(cubeData);
+        return updated;
+      }
+    }
+  });
+  await new Promise((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(0, "127.0.0.1", resolve);
+  });
+  t.after(() => new Promise((resolve) => server.close(resolve)));
+  const port = server.address().port;
+  const readResponse = await fetch(`http://127.0.0.1:${port}/mtgjson-price-index/local`, {
+    headers: { Origin: "null" }
+  });
+  assert.equal(readResponse.status, 200);
+  assert.equal((await readResponse.json()).source.date, "2026-07-28");
+
+  const updateResponse = await fetch(`http://127.0.0.1:${port}/mtgjson-price-index/local`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Origin: "null" },
+    body: JSON.stringify({ cubeData: { meta: { name: "Test" }, cards: [{ name: "Card" }] } })
+  });
+  assert.equal(updateResponse.status, 200);
+  assert.equal((await updateResponse.json()).source.date, "2026-07-29");
+  assert.equal(calls.length, 1);
 });

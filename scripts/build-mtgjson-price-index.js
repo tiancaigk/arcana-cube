@@ -17,11 +17,16 @@ const {
 } = require("../mtgjsonPrices.js");
 
 const rootDir = path.resolve(__dirname, "..");
+const bundledOutputFile = path.join(rootDir, "mtgjson-price-index.json");
 const cubeFile = process.env.CUBE_DATA_FILE
   ? path.resolve(process.env.CUBE_DATA_FILE)
   : path.join(rootDir, "cube-data.json");
-const outputFile = path.join(rootDir, "mtgjson-price-index.json");
-const scriptOutputFile = path.join(rootDir, "mtgjson-price-index.js");
+const outputFile = process.env.MTGJSON_PRICE_OUTPUT_FILE
+  ? path.resolve(process.env.MTGJSON_PRICE_OUTPUT_FILE)
+  : bundledOutputFile;
+const scriptOutputFile = process.env.MTGJSON_PRICE_SCRIPT_OUTPUT_FILE
+  ? path.resolve(process.env.MTGJSON_PRICE_SCRIPT_OUTPUT_FILE)
+  : path.join(rootDir, "mtgjson-price-index.js");
 const cacheRoot = path.join(rootDir, ".cache", "mtgjson");
 const apiRoot = "https://mtgjson.com/api/v5";
 const exchangeApiRoot = "https://api.frankfurter.dev/v2";
@@ -195,12 +200,16 @@ function findPrinting(setPayload, cubeCard) {
 }
 
 async function readExistingIndex() {
-  try {
-    const value = JSON.parse(await fsp.readFile(outputFile, "utf8"));
-    return validateIndex(value) ? value : null;
-  } catch (_error) {
-    return null;
+  const candidates = outputFile === bundledOutputFile ? [outputFile] : [outputFile, bundledOutputFile];
+  for (const file of candidates) {
+    try {
+      const value = JSON.parse(await fsp.readFile(file, "utf8"));
+      if (validateIndex(value)) return value;
+    } catch (_error) {
+      // Try the bundled index when a local runtime index does not exist yet.
+    }
   }
+  return null;
 }
 
 async function mapPrintingUuids(cubeCards, existingIndex, cacheDir) {
@@ -305,6 +314,10 @@ async function main() {
   const cube = parseCube(JSON.parse(await fsp.readFile(cubeFile, "utf8")));
   const cubeCards = [...(cube.cards || []), ...(cube.basicLands || [])];
   const existingIndex = await readExistingIndex();
+  await Promise.all([
+    fsp.mkdir(path.dirname(outputFile), { recursive: true }),
+    fsp.mkdir(path.dirname(scriptOutputFile), { recursive: true })
+  ]);
   const metadata = await fetchJson(`${apiRoot}/Meta.json`);
   const sourceVersion = String(metadata.meta && metadata.meta.version || "unknown");
   const cacheDir = path.join(cacheRoot, sourceVersion.replace(/[^a-z0-9._+-]/gi, "_"));
