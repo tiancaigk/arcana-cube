@@ -158,9 +158,10 @@ test("basic lands use a dedicated five-group collection view", () => {
 });
 
 test("collection grids keep six main cards and five basic lands per row", () => {
+  assert.match(html, /href="styles\.css\?v=20260730-grid"/);
   assert.match(styleSource, /\.collection-view,\s*\.analytics-view,\s*\.basic-lands-view\s*\{[^}]*width:\s*100%;[^}]*max-width:\s*1500px;[^}]*margin:\s*0 auto;/s);
-  assert.match(styleSource, /\.card-group-grid\s*\{[^}]*grid-template-columns:\s*repeat\(6, minmax\(0, 1fr\)\)/s);
-  assert.match(styleSource, /\.basic-land-grid \.card-group-grid\s*\{[^}]*grid-template-columns:\s*repeat\(5, minmax\(0, 1fr\)\)/s);
+  assert.match(styleSource, /\.card-group-grid\s*\{[^}]*--collection-columns:\s*6;[^}]*grid-template-columns:\s*repeat\(var\(--collection-columns\), minmax\(0, 1fr\)\)/s);
+  assert.match(styleSource, /\.basic-land-grid \.card-group-grid\s*\{[^}]*--collection-columns:\s*5;/s);
 });
 
 test("basic lands switch between kind and release-ordered set groups", () => {
@@ -170,7 +171,7 @@ test("basic lands switch between kind and release-ordered set groups", () => {
   assert.match(appSource, /basicLandGrouping:\s*loadBasicLandGrouping\(\)/);
   assert.match(appSource, /groupBasicLands\(cards, state\.basicLandGrouping\)/);
   assert.match(appSource, /viewPreferences\.set\("basicLandGrouping", mode\)/);
-  assert.match(styleSource, /\.basic-land-grid \.card-group-grid\s*\{[^}]*grid-template-columns:\s*repeat\(5, minmax\(0, 1fr\)\)/s);
+  assert.match(styleSource, /\.basic-land-grid \.card-group-grid\s*\{[^}]*--collection-columns:\s*5;/s);
 });
 
 test("basic lands support partial-success collector number range additions", () => {
