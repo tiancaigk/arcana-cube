@@ -657,9 +657,8 @@
       changeLog: () => normalizeChangeLog(state.changeLog)
     };
     selected.forEach((domain) => {
-      const snapshot = snapshots[domain]();
-      if (options.delayMs) persistence.scheduleDirty(domain, snapshot, options.delayMs);
-      else persistence.markDirty(domain, snapshot);
+      if (options.delayMs) persistence.scheduleDirty(domain, snapshots[domain], options.delayMs);
+      else persistence.markDirty(domain, snapshots[domain]());
     });
     if (state.storage.mode === "directory" && state.storage.directoryHandle) {
       if (state.folderSync.lastResult && state.folderSync.lastResult.ok) {

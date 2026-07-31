@@ -78,20 +78,34 @@
       enqueueDirectory(domain, snapshot);
     }
 
+    function scheduledSnapshot(entry) {
+      if (entry.createSnapshot) {
+        entry.snapshot = entry.createSnapshot();
+        entry.createSnapshot = null;
+      }
+      return entry.snapshot;
+    }
+
     function promoteScheduled(domain) {
       const delayed = scheduled.get(domain);
       if (!delayed) return;
       clearTimer(delayed.timer);
       scheduled.delete(domain);
-      if (!delayed.browserSaved) writeBrowser(domain, delayed.snapshot);
-      enqueueDirectory(domain, delayed.snapshot);
+      const snapshot = scheduledSnapshot(delayed);
+      if (!delayed.browserSaved) writeBrowser(domain, snapshot);
+      enqueueDirectory(domain, snapshot);
     }
 
     function scheduleDirty(domain, snapshot, delayMs) {
       validateDomain(domain);
       const previous = scheduled.get(domain);
       if (previous) clearTimer(previous.timer);
-      const entry = { snapshot, browserSaved: false, timer: null };
+      const entry = {
+        snapshot: typeof snapshot === "function" ? undefined : snapshot,
+        createSnapshot: typeof snapshot === "function" ? snapshot : null,
+        browserSaved: false,
+        timer: null
+      };
       entry.timer = setTimer(() => promoteScheduled(domain), Math.max(0, Number(delayMs) || 0));
       scheduled.set(domain, entry);
       if (getDirectoryHandle()) dirty.add(domain);
@@ -151,7 +165,7 @@
     function flushBrowserSync() {
       scheduled.forEach((entry, domain) => {
         if (entry.browserSaved) return;
-        writeBrowser(domain, entry.snapshot);
+        writeBrowser(domain, scheduledSnapshot(entry));
         entry.browserSaved = true;
       });
     }

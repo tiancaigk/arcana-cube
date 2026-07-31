@@ -46,10 +46,20 @@ test("persistence writes only the marked domain", async () => {
 
 test("twenty scheduled Cube changes coalesce without writing other domains", async () => {
   const { coordinator, browserWrites, directoryWrites, timers } = createHarness();
-  for (let index = 0; index < 20; index += 1) coordinator.scheduleDirty("cube", { revision: index }, 400);
+  let revision = 0;
+  let snapshots = 0;
+  for (let index = 0; index < 20; index += 1) {
+    revision = index;
+    coordinator.scheduleDirty("cube", () => {
+      snapshots += 1;
+      return { revision };
+    }, 400);
+  }
+  assert.equal(snapshots, 0);
   assert.deepEqual(browserWrites.cube, []);
   timers.runAll();
   await coordinator.flush();
+  assert.equal(snapshots, 1);
   assert.deepEqual(browserWrites.cube, [{ revision: 19 }]);
   assert.deepEqual(directoryWrites.cube, [{ revision: 19 }]);
   assert.deepEqual(directoryWrites.priceHistory, []);
@@ -58,8 +68,14 @@ test("twenty scheduled Cube changes coalesce without writing other domains", asy
 
 test("flushBrowserSync preserves a delayed browser snapshot without forcing directory IO", () => {
   const { coordinator, browserWrites, directoryWrites } = createHarness();
-  coordinator.scheduleDirty("cube", { notes: "latest" }, 400);
+  let snapshots = 0;
+  coordinator.scheduleDirty("cube", () => {
+    snapshots += 1;
+    return { notes: "latest" };
+  }, 400);
   coordinator.flushBrowserSync();
+  coordinator.flushBrowserSync();
+  assert.equal(snapshots, 1);
   assert.deepEqual(browserWrites.cube, [{ notes: "latest" }]);
   assert.deepEqual(directoryWrites.cube, []);
   assert.equal(coordinator.hasDirty("cube"), true);

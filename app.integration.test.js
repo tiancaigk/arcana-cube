@@ -64,6 +64,7 @@ test("browser mirror writes use the persistence coordinator", () => {
   assert.match(appSource, /return persistence\.saveBrowser\("cube", data\)/);
   assert.match(appSource, /return persistence\.saveBrowser\("priceHistory", priceHistory\)/);
   assert.match(appSource, /return persistence\.saveBrowser\("changeLog", changeLog\)/);
+  assert.match(appSource, /persistence\.scheduleDirty\(domain, snapshots\[domain\], options\.delayMs\)/);
 });
 
 test("card image failures use one delegated listener", () => {
