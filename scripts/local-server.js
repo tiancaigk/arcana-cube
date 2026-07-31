@@ -4,12 +4,15 @@ const fs = require("node:fs");
 const http = require("node:http");
 const path = require("node:path");
 const { Readable } = require("node:stream");
+const { pipeline } = require("node:stream/promises");
 const { URL } = require("node:url");
+const zlib = require("node:zlib");
 const { createMtgjsonHistoryService } = require("./mtgjson-history-service.js");
 const { createLocalPriceIndexService } = require("./local-price-index-service.js");
 const { createLocalProductSourceIndexService } = require("./local-product-source-index-service.js");
 
 const rootDir = path.resolve(__dirname, "..");
+const IMAGE_PROXY_TIMEOUT_MS = 30000;
 
 const mimeTypes = new Map([
   [".css", "text/css; charset=utf-8"],
@@ -214,15 +217,41 @@ async function proxyImage(req, res, requestUrl) {
     return;
   }
 
-  const upstream = await fetch(targetUrl, {
-    headers: {
-      "User-Agent": "ArcanaCubeLocalServer/1.0"
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), IMAGE_PROXY_TIMEOUT_MS);
+  const abortOnDisconnect = () => {
+    if (!res.writableEnded) controller.abort();
+  };
+  const cleanup = () => {
+    clearTimeout(timeout);
+    res.off("close", abortOnDisconnect);
+  };
+  res.once("close", abortOnDisconnect);
+  let upstream;
+  try {
+    upstream = await fetch(targetUrl, {
+      headers: { "User-Agent": "ArcanaCubeLocalServer/1.0" },
+      signal: controller.signal
+    });
+  } catch (error) {
+    cleanup();
+    if (!res.headersSent) {
+      send(res, error && error.name === "AbortError" ? 504 : 502, { "Content-Type": "text/plain; charset=utf-8" }, "Image fetch failed");
     }
-  });
+    return;
+  }
 
   const contentType = upstream.headers.get("content-type") || "application/octet-stream";
   if (!upstream.ok) {
+    if (upstream.body) await upstream.body.cancel().catch(() => {});
+    cleanup();
     send(res, upstream.status, { "Content-Type": "text/plain; charset=utf-8" }, `Image fetch failed: HTTP ${upstream.status}`);
+    return;
+  }
+  if (!contentType.toLowerCase().startsWith("image/")) {
+    if (upstream.body) await upstream.body.cancel().catch(() => {});
+    cleanup();
+    send(res, 502, { "Content-Type": "text/plain; charset=utf-8" }, "Image fetch returned invalid content");
     return;
   }
 
@@ -231,19 +260,31 @@ async function proxyImage(req, res, requestUrl) {
     "Content-Type": contentType
   };
   if (req.method === "HEAD") {
+    if (upstream.body) await upstream.body.cancel().catch(() => {});
+    cleanup();
     send(res, 200, headers);
     return;
   }
 
   res.writeHead(200, headers);
   if (upstream.body) {
-    Readable.fromWeb(upstream.body).pipe(res);
+    try {
+      await pipeline(Readable.fromWeb(upstream.body), res);
+    } catch (error) {
+      if (!res.destroyed) res.destroy(error);
+    } finally {
+      cleanup();
+    }
     return;
   }
-  res.end(Buffer.from(await upstream.arrayBuffer()));
+  try {
+    res.end(Buffer.from(await upstream.arrayBuffer()));
+  } finally {
+    cleanup();
+  }
 }
 
-function serveStatic(req, res, requestUrl) {
+async function serveStatic(req, res, requestUrl) {
   if (req.method !== "GET" && req.method !== "HEAD") {
     send(res, 405, { "Allow": "GET, HEAD", "Content-Type": "text/plain; charset=utf-8" }, "Method Not Allowed");
     return;
@@ -267,6 +308,8 @@ function serveStatic(req, res, requestUrl) {
 
   const contentType = mimeTypes.get(path.extname(filePath).toLowerCase()) || "application/octet-stream";
   const extension = path.extname(filePath).toLowerCase();
+  const compressible = [".css", ".html", ".js", ".json", ".svg"].includes(extension);
+  const useGzip = req.method === "GET" && compressible && stat.size >= 1024 && /(?:^|,)\s*gzip\s*(?:,|$)/i.test(String(req.headers["accept-encoding"] || ""));
   const etag = `W/"${stat.size.toString(16)}-${Math.trunc(stat.mtimeMs).toString(16)}"`;
   const headers = {
     "Cache-Control": [".png", ".jpg", ".jpeg", ".svg", ".webp"].includes(extension) ? "public, max-age=86400" : "no-cache",
@@ -274,6 +317,8 @@ function serveStatic(req, res, requestUrl) {
     "ETag": etag,
     "Last-Modified": stat.mtime.toUTCString()
   };
+  if (compressible) headers.Vary = "Accept-Encoding";
+  if (useGzip) headers["Content-Encoding"] = "gzip";
   if (req.headers["if-none-match"] === etag) {
     send(res, 304, headers);
     return;
@@ -283,7 +328,13 @@ function serveStatic(req, res, requestUrl) {
     res.end();
     return;
   }
-  fs.createReadStream(filePath).pipe(res);
+  try {
+    if (useGzip) await pipeline(fs.createReadStream(filePath), zlib.createGzip(), res);
+    else await pipeline(fs.createReadStream(filePath), res);
+  } catch (error) {
+    if (!res.headersSent) send(res, 500, { "Content-Type": "text/plain; charset=utf-8" }, "Static file read failed");
+    else if (!res.destroyed) res.destroy(error);
+  }
 }
 
 function createLocalServer(options = {}) {
@@ -315,7 +366,7 @@ function createLocalServer(options = {}) {
         await serveLocalProductSourceIndex(req, res, productSourceIndexService);
         return;
       }
-      serveStatic(req, res, requestUrl);
+      await serveStatic(req, res, requestUrl);
     } catch (error) {
       console.error(error);
       send(res, 500, { "Content-Type": "text/plain; charset=utf-8" }, error.message || "Server Error");

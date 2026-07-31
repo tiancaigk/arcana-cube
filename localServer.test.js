@@ -37,6 +37,22 @@ test("local static assets support conditional browser caching", async (t) => {
   assert.equal(cached.status, 304);
 });
 
+test("local server compresses large text assets for LAN clients", async (t) => {
+  const server = createLocalServer({ host: "127.0.0.1", port: 0 });
+  await new Promise((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(0, "127.0.0.1", resolve);
+  });
+  t.after(() => new Promise((resolve) => server.close(resolve)));
+  const response = await fetch(`http://127.0.0.1:${server.address().port}/app.js`, {
+    headers: { "Accept-Encoding": "gzip" }
+  });
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get("content-encoding"), "gzip");
+  assert.equal(response.headers.get("vary"), "Accept-Encoding");
+  assert.match(await response.text(), /Arcana Cube|PRICE_HISTORY/);
+});
+
 test("MTGJSON history endpoint accepts LAN same-origin requests", () => {
   assert.deepEqual(historyCorsHeaders({
     headers: {
