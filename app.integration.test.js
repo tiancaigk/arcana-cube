@@ -88,6 +88,9 @@ test("printing selector filters Foil-capable versions and forces Foil on selecti
   assert.match(appSource, /filterPrintings\(state\.printings, elements\.printingSearchInput\.value, state\.printingFinishFilter\)/);
   assert.match(appSource, /replacePrinting\(current, printing, state\.printingFinishFilter === "foil" \? "foil" : current\.finish\)/);
   assert.match(appSource, /lookupMtgjsonPrintingPrice\(state\.printingPriceIndex, printing, "foil"\)/);
+  assert.match(appSource, /loadMtgjsonPrintingPriceIndex\(\)/);
+  assert.match(appSource, /overlayMtgjsonPriceIndex\(bundled, preferred\.index\)/);
+  assert.match(appSource, /localIndex && priceIndexMatchesCube\(localIndex\)/);
   assert.match(appSource, /applyIndexedPricesToCard\(replaced, state\.printingPriceIndex, lookupMtgjsonPrintingPrice, \{ clearMissing: true \}\)/);
   const summaryStart = appSource.indexOf("function printingPriceSummary(printing)");
   const summaryEnd = appSource.indexOf("function printingPriceTitle(printing)", summaryStart);

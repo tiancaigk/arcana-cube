@@ -215,6 +215,30 @@
     };
   }
 
+  function overlayPriceIndex(baseIndex, currentIndex) {
+    if (!validateIndex(baseIndex) || !validateIndex(currentIndex)) throw new Error("MTGJSON 价格索引格式无效");
+    if (baseIndex.providers.join("\0") !== currentIndex.providers.join("\0")) {
+      throw new Error("MTGJSON 价格来源顺序不一致");
+    }
+    return {
+      ...baseIndex,
+      ...currentIndex,
+      source: currentIndex.source || baseIndex.source,
+      cards: {
+        ...(baseIndex.cards || {}),
+        ...(currentIndex.cards || {})
+      },
+      printingOracleIds: [...new Set([
+        ...(baseIndex.printingOracleIds || []),
+        ...(currentIndex.printingOracleIds || [])
+      ])],
+      printingPrices: {
+        ...(baseIndex.printingPrices || {}),
+        ...(currentIndex.printingPrices || {})
+      }
+    };
+  }
+
   function buildIndexScript(index) {
     const serialized = JSON.stringify(index)
       .replace(/\u2028/g, "\\u2028")
@@ -299,6 +323,7 @@
     mergePriceIndexes,
     mergeSeries,
     normalizeSeries,
+    overlayPriceIndex,
     priceSeries,
     printingEntry,
     printingPriceSeries,

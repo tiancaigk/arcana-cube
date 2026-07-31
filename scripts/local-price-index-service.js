@@ -8,6 +8,7 @@ function validateCubeData(cubeData) {
   if (!cubeData || typeof cubeData !== "object" || !Array.isArray(cubeData.cards)) {
     throw new Error("本地价格更新缺少有效牌表");
   }
+  if (!cubeData.cards.length) throw new Error("本地价格更新没有可处理的卡牌");
   if (cubeData.cards.length > 5000) throw new Error("本地价格更新的卡牌数量异常");
   return cubeData;
 }

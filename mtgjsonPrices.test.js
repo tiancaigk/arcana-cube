@@ -13,6 +13,7 @@ const {
   lookupPrintingPrice,
   mergePriceIndexes,
   mergeSeries,
+  overlayPriceIndex,
   priceSeries,
   validateIndex
 } = require("./mtgjsonPrices.js");
@@ -223,6 +224,23 @@ test("series merging replaces the same date and ignores malformed points", () =>
     ["2026-07-27", 1.5, 1],
     ["2026-07-28", 2, 0]
   ]);
+});
+
+test("runtime price overlays retain the complete selectable printing catalog", () => {
+  const bundled = sampleIndex();
+  bundled.printingOracleIds = ["oracle", "bundled-oracle"];
+  bundled.printingPrices.bundled = { foil: [["2026-07-28", 4, 0]], nonfoil: [] };
+  const local = sampleIndex();
+  local.source = { date: "2026-07-30", cubeFingerprint: "current" };
+  local.cards.current = { foil: [["2026-07-30", 9, 0]], nonfoil: [] };
+  local.printingOracleIds = ["oracle", "local-oracle"];
+  local.printingPrices.printing = { foil: [["2026-07-30", 5, 0]], nonfoil: [] };
+  const merged = overlayPriceIndex(bundled, local);
+  assert.equal(merged.source.date, "2026-07-30");
+  assert.equal(merged.printingPrices.bundled.foil[0][1], 4);
+  assert.equal(merged.printingPrices.printing.foil[0][1], 5);
+  assert.equal(merged.cards.current.foil[0][1], 9);
+  assert.deepEqual(merged.printingOracleIds, ["oracle", "bundled-oracle", "local-oracle"]);
 });
 
 test("price catalog falls back to the local script index and caches it", async () => {

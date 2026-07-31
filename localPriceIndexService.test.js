@@ -43,5 +43,6 @@ test("local price index service builds from supplied Cube data and caches the re
 
 test("local price index service rejects malformed or unreasonable Cube data", () => {
   assert.throws(() => validateCubeData({}), /有效牌表/);
+  assert.throws(() => validateCubeData({ cards: [] }), /没有可处理的卡牌/);
   assert.throws(() => validateCubeData({ cards: Array.from({ length: 5001 }, () => ({})) }), /数量异常/);
 });

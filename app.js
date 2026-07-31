@@ -31,7 +31,7 @@
   const { createMtgchClient } = window.MtgchClient;
   const { createCatalog, printingKey } = window.CubeCatalog;
   const { createProductSourceCatalog } = window.CubeProductSources;
-  const { createMtgjsonPriceCatalog, cubeFingerprint, hasHistoricalEntry: hasMtgjsonHistoricalEntry, lookupPrice: lookupMtgjsonPrice, lookupPrintingPrice: lookupMtgjsonPrintingPrice, mergePriceIndexes: mergeMtgjsonPriceIndexes, mergeSeries: mergeMtgjsonPriceSeries, priceSeries: mtgjsonPriceSeries, providerLabel } = window.CubeMtgjsonPrices;
+  const { createMtgjsonPriceCatalog, cubeFingerprint, hasHistoricalEntry: hasMtgjsonHistoricalEntry, lookupPrice: lookupMtgjsonPrice, lookupPrintingPrice: lookupMtgjsonPrintingPrice, mergePriceIndexes: mergeMtgjsonPriceIndexes, mergeSeries: mergeMtgjsonPriceSeries, overlayPriceIndex: overlayMtgjsonPriceIndex, priceSeries: mtgjsonPriceSeries, providerLabel } = window.CubeMtgjsonPrices;
   const { createHistoryShardCatalog } = window.CubeMtgjsonHistoryShards;
   const { applyIndexedPricesToCard, applyIndexedPriceUpdates } = window.CubePriceMaintenance;
   const { dateLabelIndexes, datePositions, splitDateSeries } = window.CubeChart;
@@ -1485,14 +1485,24 @@
           }
         }
       }
-      if (localIndex) {
+      if (localIndex && priceIndexMatchesCube(localIndex)) {
         state.priceIndexMode = "local";
         return { index: localIndex, mode: "local", rebuilt: false, warning };
       }
+      if (localIndex && !warning) warning = "本地价格索引与当前牌表不一致，已忽略旧缓存";
     }
+    mtgjsonPriceCatalog.clearCache();
     const index = await mtgjsonPriceCatalog.loadIndex();
     state.priceIndexMode = "bundled";
     return { index, mode: "bundled", rebuilt: false, warning };
+  }
+
+  async function loadMtgjsonPrintingPriceIndex() {
+    const preferred = await loadPreferredMtgjsonPriceIndex();
+    if (preferred.mode === "bundled") return preferred.index;
+    mtgjsonPriceCatalog.clearCache();
+    const bundled = await mtgjsonPriceCatalog.loadIndex();
+    return overlayMtgjsonPriceIndex(bundled, preferred.index);
   }
 
   async function loadMissingMtgjsonHistory(index, cards) {
@@ -2396,8 +2406,7 @@
     try {
       const [printingResult, priceResult] = await Promise.all([
         catalog.lookupAllPrintings(card, state.printingController.signal),
-        loadPreferredMtgjsonPriceIndex()
-          .then((result) => result.index)
+        loadMtgjsonPrintingPriceIndex()
           .then((index) => ({ index, error: "" }))
           .catch((error) => ({ index: null, error: error.message || "加载失败" }))
       ]);
