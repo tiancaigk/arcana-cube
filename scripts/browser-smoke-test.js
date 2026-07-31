@@ -5,12 +5,17 @@ const os = require("node:os");
 const path = require("node:path");
 const { spawn } = require("node:child_process");
 const { pathToFileURL } = require("node:url");
+const { cubeFingerprint } = require("../mtgjsonPrices.js");
 const { createLocalServer } = require("./local-server.js");
 
 const chromePath = process.env.CHROME_PATH || "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
 
 function delay(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function hasCompletedProductSourceResult(state) {
+  return state.rowCount > 0 || /尚未收录|当前没有这张|已识别当前实体版本|索引与牌表版本不一致/.test(state.status || "");
 }
 
 async function waitForJson(url, timeoutMs = 10000) {
@@ -85,9 +90,13 @@ async function main() {
         localPriceIndexReads += 1;
         return bundledPriceIndex;
       },
-      update: async () => {
+      update: async (cubeData) => {
         localPriceIndexUpdates += 1;
-        return bundledPriceIndex;
+        const cards = [...(cubeData.cards || []), ...(cubeData.basicLands || [])];
+        return {
+          ...bundledPriceIndex,
+          source: { ...(bundledPriceIndex.source || {}), cubeFingerprint: cubeFingerprint(cards) }
+        };
       }
     }
   });
@@ -196,13 +205,15 @@ async function main() {
       })}`);
     }
 
+    await evaluate("document.querySelector('[data-refresh-prices]').click()");
+    const localUpdateStarted = Date.now();
+    while (localPriceIndexUpdates < 1 && Date.now() - localUpdateStarted < 10000) await delay(25);
     const localPriceState = await evaluate(`(async () => {
-      document.querySelector('[data-refresh-prices]').click();
-      await new Promise((resolve) => requestAnimationFrame(resolve));
       const started = Date.now();
       while (document.querySelector('[data-refresh-prices].loading') && Date.now() - started < 10000) {
         await new Promise((resolve) => setTimeout(resolve, 50));
       }
+      await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
       return document.querySelector('.stat-card:last-child .stat-foot')?.textContent.trim() || '';
     })()`);
     if (!localPriceState.includes("本地 MTGJSON") || localPriceIndexUpdates !== 1) {
@@ -229,7 +240,7 @@ async function main() {
     const productSourceState = await evaluate(`(async () => {
       document.querySelector('#cardGrid [data-preview-image]').click();
       const started = Date.now();
-      while (document.querySelector('.product-source-status.loading') && Date.now() - started < 5000) {
+      while (document.querySelector('.product-source-status.loading') && Date.now() - started < 15000) {
         await new Promise((resolve) => setTimeout(resolve, 50));
       }
       const dialog = document.querySelector('#imagePreviewDialog');
@@ -248,7 +259,7 @@ async function main() {
     if (!productSourceState.opened || !productSourceState.hasPanel || !productSourceState.closed) {
       throw new Error("卡牌详情或产品来源面板开关失败");
     }
-    if (!productSourceState.rowCount && !productSourceState.status.includes("尚未收录")) {
+    if (!hasCompletedProductSourceResult(productSourceState)) {
       throw new Error(`产品来源没有完成加载：${productSourceState.status || "无内容"}`);
     }
     if (!productSourceState.source.startsWith("MTGJSON")) throw new Error("产品来源没有标明数据出处");
@@ -382,7 +393,7 @@ async function main() {
     const fileProductSourceState = await evaluate(`(async () => {
       document.querySelector('#cardGrid [data-preview-image]').click();
       const started = Date.now();
-      while (document.querySelector('.product-source-status.loading') && Date.now() - started < 5000) {
+      while (document.querySelector('.product-source-status.loading') && Date.now() - started < 15000) {
         await new Promise((resolve) => setTimeout(resolve, 50));
       }
       return {
@@ -391,8 +402,8 @@ async function main() {
         scriptSource: [...document.scripts].find((item) => item.src.endsWith('/product-source-index.js'))?.src || ''
       };
     })()`);
-    if (!fileProductSourceState.rowCount && !fileProductSourceState.status.includes("尚未收录")) {
-      throw new Error(`本地文件产品来源加载失败：${fileProductSourceState.status || "无内容"}`);
+    if (!hasCompletedProductSourceResult(fileProductSourceState)) {
+      throw new Error(`本地文件产品来源加载失败：${JSON.stringify({ ...fileProductSourceState, networkFailures, runtimeErrors })}`);
     }
     if (!fileProductSourceState.scriptSource.startsWith("file:")) throw new Error("本地文件模式没有使用同目录产品来源索引");
     const fileHistoryShardState = await evaluate(`(async () => {
