@@ -14,6 +14,7 @@ const {
   fetchEurUsdRates,
   streamSelectedPrices
 } = require("./build-mtgjson-price-index.js");
+const { pruneMtgjsonCache, safeVersionName } = require("./mtgjson-cache.js");
 
 const apiRoot = "https://mtgjson.com/api/v5";
 const MAX_HISTORY_IDS = 1000;
@@ -113,7 +114,7 @@ function createMtgjsonHistoryService(options = {}) {
     const index = await readIndex(ids);
     const sourceVersion = String(index.source && index.source.version || "").trim();
     if (!sourceVersion) throw new Error("MTGJSON 索引缺少版本信息");
-    const versionDir = path.join(cacheRoot, sourceVersion.replace(/[^a-z0-9._+-]/gi, "_"));
+    const versionDir = path.join(cacheRoot, safeVersionName(sourceVersion));
     const historyCacheDir = path.join(cacheRoot, "history");
     const legacyCacheDir = path.join(versionDir, "history");
     await fsp.mkdir(versionDir, { recursive: true });
@@ -171,6 +172,7 @@ function createMtgjsonHistoryService(options = {}) {
     }
 
     const range = historyRange(cards);
+    await pruneMtgjsonCache(cacheRoot, sourceVersion).catch(() => {});
     return {
       format: INDEX_FORMAT,
       version: INDEX_VERSION,

@@ -4,6 +4,7 @@ const fs = require("node:fs/promises");
 const path = require("node:path");
 const { collapseProducts, isPaperProduct } = require("../productSources.js");
 const { cubeFingerprint } = require("../mtgjsonPrices.js");
+const { pruneMtgjsonCache, safeVersionName } = require("./mtgjson-cache.js");
 
 const rootDir = path.resolve(__dirname, "..");
 const cubeFile = path.resolve(process.env.CUBE_DATA_FILE || path.join(rootDir, "cube-data.json"));
@@ -182,7 +183,7 @@ async function main() {
   process.stdout.write(`Reading MTGJSON product catalog for ${cubeCards.length} cards in ${cardsBySet.size} sets...\n`);
   const setList = await fetchJson(`${apiRoot}/SetList.json`);
   const sourceVersion = String(setList.meta && setList.meta.version || "unknown");
-  const cacheDir = path.join(cacheRoot, sourceVersion.replace(/[^a-z0-9._+-]/gi, "_"));
+  const cacheDir = path.join(cacheRoot, safeVersionName(sourceVersion));
   await fs.mkdir(cacheDir, { recursive: true });
   const productMap = buildProductMap(setList);
   const setCodes = [...cardsBySet.keys()].sort();
@@ -257,7 +258,12 @@ async function main() {
   await fs.writeFile(temporaryScriptFile, buildIndexScript(index));
   await fs.rename(temporaryFile, outputFile);
   await fs.rename(temporaryScriptFile, scriptOutputFile);
+  const pruned = await pruneMtgjsonCache(cacheRoot, sourceVersion).catch((error) => {
+    process.stderr.write(`MTGJSON cache cleanup skipped: ${error.message || error}\n`);
+    return { removed: [] };
+  });
   process.stdout.write(`Wrote ${path.basename(outputFile)} and ${path.basename(scriptOutputFile)}: ${index.stats.indexedCards}/${index.stats.requestedCards} cards indexed.\n`);
+  if (pruned.removed.length) process.stdout.write(`Removed ${pruned.removed.length} obsolete MTGJSON cache version(s).\n`);
   if (missingCards.length) process.stdout.write(`Missing cards (${missingCards.length}): ${missingCards.slice(0, 12).join("; ")}${missingCards.length > 12 ? "; ..." : ""}\n`);
   if (unresolvedProducts.size) process.stdout.write(`Unresolved sealed product IDs: ${unresolvedProducts.size}\n`);
 }
