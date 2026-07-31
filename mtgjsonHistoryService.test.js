@@ -7,6 +7,8 @@ const { MAX_HISTORY_IDS, createMtgjsonHistoryService, normalizeIds } = require("
 
 const scryfallId = "68785426-6868-4184-8d52-75a6a920848b";
 const uuid = "c37b5396-403c-5514-9c3c-3f3ace3baf71";
+const localOnlyId = "14a9cc52-a45b-4cde-8aff-d672b35c3118";
+const localOnlyUuid = "037b5396-403c-5514-9c3c-3f3ace3baf72";
 
 function writeIndex(rootDir) {
   fs.writeFileSync(path.join(rootDir, "mtgjson-price-index.json"), JSON.stringify({
@@ -60,6 +62,41 @@ test("history service extracts and caches selected MTGJSON printing history", as
   assert.equal(first.source.historyFrom, "2026-04-29");
   assert.deepEqual(second.cards[scryfallId].foil.at(-1), ["2026-07-29", 17.5, 1]);
   assert.equal(streamCalls, 1);
+  const cached = JSON.parse(fs.readFileSync(path.join(rootDir, ".cache", "history", `${scryfallId}.json`), "utf8"));
+  assert.equal(cached.sourceVersion, "next-test-version");
+  assert.deepEqual(cached.entry.foil.at(-1), ["2026-07-29", 17.5, 1]);
+});
+
+test("history service prefers a newer local index when it covers a requested printing", async () => {
+  const rootDir = fs.mkdtempSync(path.join(os.tmpdir(), "arcana-history-local-"));
+  writeIndex(rootDir);
+  const localIndexFile = path.join(rootDir, "local-price-index.json");
+  fs.writeFileSync(localIndexFile, JSON.stringify({
+    format: "arcana-cube-mtgjson-prices",
+    version: 2,
+    providers: ["tcgplayer", "manapool", "cardkingdom", "cardmarket"],
+    source: { version: "local-version", date: "2026-07-31" },
+    cards: {
+      [localOnlyId]: { uuid: localOnlyUuid, foil: [["2026-07-31", 18.23, 1]], nonfoil: [] }
+    },
+    printingPrices: {}
+  }));
+  const service = createMtgjsonHistoryService({
+    rootDir,
+    localIndexFile,
+    cacheRoot: path.join(rootDir, ".cache"),
+    downloadFile: async (_url, destination) => destination,
+    fetchEurUsdRates: async () => ({ rates: {}, from: "", to: "" }),
+    streamSelectedPrices: async (_file, targetUuids) => {
+      assert.deepEqual([...targetUuids], [localOnlyUuid]);
+      return new Map([[localOnlyUuid, {
+        paper: { manapool: { currency: "USD", retail: { foil: { "2026-05-03": 20, "2026-07-31": 18.23 } } } }
+      }]]);
+    }
+  });
+  const result = await service.getHistory([localOnlyId]);
+  assert.equal(result.source.version, "local-version");
+  assert.deepEqual(result.cards[localOnlyId].foil, [["2026-05-03", 20, 1], ["2026-07-31", 18.23, 1]]);
 });
 
 test("history service accepts only unique Scryfall UUIDs", () => {

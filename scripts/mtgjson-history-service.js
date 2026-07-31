@@ -32,31 +32,67 @@ function historyRange(cards) {
   return { from: dates[0] || "", to: dates[dates.length - 1] || "" };
 }
 
+async function mapLimit(items, limit, mapper) {
+  const source = Array.isArray(items) ? items : [];
+  const results = new Array(source.length);
+  let cursor = 0;
+  async function worker() {
+    while (cursor < source.length) {
+      const index = cursor;
+      cursor += 1;
+      results[index] = await mapper(source[index], index);
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(Math.max(1, limit), source.length) }, worker));
+  return results;
+}
+
+function indexCoverage(index, scryfallIds) {
+  return scryfallIds.reduce((count, scryfallId) => {
+    const entry = index.cards[scryfallId] || index.printingPrices && index.printingPrices[scryfallId];
+    return count + (entry && entry.uuid ? 1 : 0);
+  }, 0);
+}
+
 function createMtgjsonHistoryService(options = {}) {
   const rootDir = options.rootDir || path.resolve(__dirname, "..");
   const indexFile = options.indexFile || path.join(rootDir, "mtgjson-price-index.json");
+  const localIndexFile = options.localIndexFile || path.join(rootDir, ".cache", "mtgjson", "local", "mtgjson-price-index.json");
   const cacheRoot = options.cacheRoot || path.join(rootDir, ".cache", "mtgjson");
   const download = options.downloadFile || downloadFile;
   const fetchRates = options.fetchEurUsdRates || fetchEurUsdRates;
   const streamPrices = options.streamSelectedPrices || streamSelectedPrices;
   let queue = Promise.resolve();
 
-  async function readIndex() {
-    const index = JSON.parse(await fsp.readFile(indexFile, "utf8"));
-    if (!validateIndex(index)) throw new Error("MTGJSON 价格索引格式无效");
-    return index;
+  async function readValidIndex(file) {
+    try {
+      const index = JSON.parse(await fsp.readFile(file, "utf8"));
+      return validateIndex(index) ? index : null;
+    } catch (_error) {
+      return null;
+    }
+  }
+
+  async function readIndex(scryfallIds) {
+    const [bundled, local] = await Promise.all([readValidIndex(indexFile), readValidIndex(localIndexFile)]);
+    const candidates = [bundled, local].filter(Boolean);
+    if (!candidates.length) throw new Error("MTGJSON 价格索引格式无效");
+    return candidates.sort((a, b) => (
+      indexCoverage(b, scryfallIds) - indexCoverage(a, scryfallIds)
+      || String(b.source && b.source.date || "").localeCompare(String(a.source && a.source.date || ""))
+    ))[0];
   }
 
   async function loadCachedEntry(cacheDir, legacyCacheDir, scryfallId) {
     try {
       const payload = JSON.parse(await fsp.readFile(path.join(cacheDir, `${scryfallId}.json`), "utf8"));
-      if (payload.entry) return payload.entry;
+      if (payload.entry) return { entry: payload.entry, sourceVersion: String(payload.sourceVersion || ""), legacy: false };
     } catch (_error) {
       // Try the former per-version cache location.
     }
     try {
       const payload = JSON.parse(await fsp.readFile(path.join(legacyCacheDir, `${scryfallId}.json`), "utf8"));
-      return payload.entry || null;
+      return payload.entry ? { entry: payload.entry, sourceVersion: String(payload.sourceVersion || ""), legacy: true } : null;
     } catch (_error) {
       return null;
     }
@@ -74,7 +110,7 @@ function createMtgjsonHistoryService(options = {}) {
     if (!ids.length) throw new Error("没有需要补全历史的卡牌版本");
     if (ids.length > MAX_HISTORY_IDS) throw new Error(`单次最多补全 ${MAX_HISTORY_IDS} 个卡牌版本`);
 
-    const index = await readIndex();
+    const index = await readIndex(ids);
     const sourceVersion = String(index.source && index.source.version || "").trim();
     if (!sourceVersion) throw new Error("MTGJSON 索引缺少版本信息");
     const versionDir = path.join(cacheRoot, sourceVersion.replace(/[^a-z0-9._+-]/gi, "_"));
@@ -86,42 +122,52 @@ function createMtgjsonHistoryService(options = {}) {
     const cards = {};
     const unresolved = [];
     const missing = new Map();
-    for (const scryfallId of ids) {
+    const cacheWrites = [];
+    await mapLimit(ids, 16, async (scryfallId) => {
       const indexed = index.cards[scryfallId] || index.printingPrices && index.printingPrices[scryfallId];
       const uuid = String(indexed && indexed.uuid || "");
       if (!uuid) {
         unresolved.push(scryfallId);
-        continue;
+        return;
       }
       const cached = await loadCachedEntry(historyCacheDir, legacyCacheDir, scryfallId);
       if (cached) {
         const entry = {
           uuid,
-          foil: mergeSeries(cached.foil, indexed.foil, index.providers).slice(-90),
-          nonfoil: mergeSeries(cached.nonfoil, indexed.nonfoil, index.providers).slice(-90)
+          foil: mergeSeries(cached.entry.foil, indexed.foil, index.providers).slice(-90),
+          nonfoil: mergeSeries(cached.entry.nonfoil, indexed.nonfoil, index.providers).slice(-90)
         };
         cards[scryfallId] = entry;
-        await saveCachedEntry(historyCacheDir, scryfallId, sourceVersion, entry);
+        const previous = {
+          uuid,
+          foil: mergeSeries([], cached.entry.foil, index.providers).slice(-90),
+          nonfoil: mergeSeries([], cached.entry.nonfoil, index.providers).slice(-90)
+        };
+        if (cached.legacy || cached.sourceVersion !== sourceVersion || JSON.stringify(previous) !== JSON.stringify(entry)) {
+          cacheWrites.push([scryfallId, entry]);
+        }
       } else {
         missing.set(scryfallId, uuid);
       }
-    }
+    });
+    await mapLimit(cacheWrites, 16, ([scryfallId, entry]) => saveCachedEntry(historyCacheDir, scryfallId, sourceVersion, entry));
 
     if (missing.size) {
       const priceFile = path.join(versionDir, "AllPrices.json.gz");
       await download(`${apiRoot}/AllPrices.json.gz`, priceFile);
       const priceEntries = await streamPrices(priceFile, new Set(missing.values()));
       const exchange = await fetchRates(priceEntries);
-      for (const [scryfallId, uuid] of missing) {
+      const missingEntries = [...missing];
+      await mapLimit(missingEntries, 16, async ([scryfallId, uuid]) => {
         const priceEntry = priceEntries.get(uuid);
         const entry = {
           uuid,
-          foil: buildPriceSeries(priceEntry, "foil", index.providers, exchange.rates),
-          nonfoil: buildPriceSeries(priceEntry, "nonfoil", index.providers, exchange.rates)
+          foil: buildPriceSeries(priceEntry, "foil", index.providers, exchange.rates).slice(-90),
+          nonfoil: buildPriceSeries(priceEntry, "nonfoil", index.providers, exchange.rates).slice(-90)
         };
         cards[scryfallId] = entry;
         await saveCachedEntry(historyCacheDir, scryfallId, sourceVersion, entry);
-      }
+      });
     }
 
     const range = historyRange(cards);
@@ -153,4 +199,4 @@ function createMtgjsonHistoryService(options = {}) {
   return { getHistory };
 }
 
-module.exports = { MAX_HISTORY_IDS, createMtgjsonHistoryService, historyRange, normalizeIds };
+module.exports = { MAX_HISTORY_IDS, createMtgjsonHistoryService, historyRange, indexCoverage, mapLimit, normalizeIds };
