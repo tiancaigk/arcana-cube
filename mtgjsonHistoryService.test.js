@@ -3,7 +3,7 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
-const { createMtgjsonHistoryService, normalizeIds } = require("./scripts/mtgjson-history-service.js");
+const { MAX_HISTORY_IDS, createMtgjsonHistoryService, normalizeIds } = require("./scripts/mtgjson-history-service.js");
 
 const scryfallId = "68785426-6868-4184-8d52-75a6a920848b";
 const uuid = "c37b5396-403c-5514-9c3c-3f3ace3baf71";
@@ -64,4 +64,25 @@ test("history service extracts and caches selected MTGJSON printing history", as
 
 test("history service accepts only unique Scryfall UUIDs", () => {
   assert.deepEqual(normalizeIds([scryfallId, scryfallId.toUpperCase(), "bad"]), [scryfallId]);
+});
+
+test("history service accepts a complete Cube-sized request", async () => {
+  const rootDir = fs.mkdtempSync(path.join(os.tmpdir(), "arcana-history-limit-"));
+  writeIndex(rootDir);
+  const ids = Array.from({ length: 101 }, (_value, index) => (
+    `00000000-0000-4000-8000-${String(index).padStart(12, "0")}`
+  ));
+  const result = await createMtgjsonHistoryService({ rootDir }).getHistory(ids);
+  assert.equal(result.stats.requestedCards, 101);
+  assert.equal(result.stats.unresolvedCards, 101);
+});
+
+test("history service retains a guard against unreasonable requests", async () => {
+  const ids = Array.from({ length: MAX_HISTORY_IDS + 1 }, (_value, index) => (
+    `00000000-0000-4000-8000-${String(index).padStart(12, "0")}`
+  ));
+  await assert.rejects(
+    createMtgjsonHistoryService({ rootDir: "/missing" }).getHistory(ids),
+    new RegExp(`最多补全 ${MAX_HISTORY_IDS}`)
+  );
 });

@@ -16,6 +16,7 @@ const {
 } = require("./build-mtgjson-price-index.js");
 
 const apiRoot = "https://mtgjson.com/api/v5";
+const MAX_HISTORY_IDS = 1000;
 
 function normalizeIds(values) {
   return [...new Set((Array.isArray(values) ? values : [])
@@ -71,7 +72,7 @@ function createMtgjsonHistoryService(options = {}) {
   async function loadHistory(scryfallIds) {
     const ids = normalizeIds(scryfallIds);
     if (!ids.length) throw new Error("没有需要补全历史的卡牌版本");
-    if (ids.length > 100) throw new Error("单次最多补全 100 个卡牌版本");
+    if (ids.length > MAX_HISTORY_IDS) throw new Error(`单次最多补全 ${MAX_HISTORY_IDS} 个卡牌版本`);
 
     const index = await readIndex();
     const sourceVersion = String(index.source && index.source.version || "").trim();
@@ -152,4 +153,4 @@ function createMtgjsonHistoryService(options = {}) {
   return { getHistory };
 }
 
-module.exports = { createMtgjsonHistoryService, historyRange, normalizeIds };
+module.exports = { MAX_HISTORY_IDS, createMtgjsonHistoryService, historyRange, normalizeIds };
