@@ -577,7 +577,7 @@
       : state.storage.rememberedDirectoryHandle ? "重新连接文件夹" : "选择 Cube 文件夹";
     if (elements.connectFolderBtn) {
       elements.connectFolderBtn.textContent = connectLabel;
-      elements.connectFolderBtn.disabled = !state.storage.supported;
+      elements.connectFolderBtn.disabled = !state.storage.supported || state.imageCaching || state.folderSync.syncing;
       elements.connectFolderBtn.title = state.storage.supported ? connectLabel : "当前浏览器不支持文件夹写入";
     }
     if (elements.cacheImagesBtn) {
@@ -625,14 +625,32 @@
     }
   }
 
-  async function disconnectDirectoryMode(message = "已切回浏览器本地保存") {
+  async function prepareDirectoryTransition(action) {
+    if (state.imageCaching || state.folderSync.syncing) {
+      toast(`暂时无法${action}`, "请等待当前文件操作完成", true);
+      return false;
+    }
     await persistence.flush();
+    if (!persistence.hasDirty()) return true;
+    state.folderSync = {
+      syncing: false,
+      dirty: true,
+      lastResult: { ok: false, message: "仍有更改未能写入当前文件夹" }
+    };
+    renderStorageStatus();
+    toast(`暂时无法${action}`, "当前文件夹仍有未写入更改，请恢复写入权限或重试保存", true);
+    return false;
+  }
+
+  async function disconnectDirectoryMode(message = "已切回浏览器本地保存") {
+    if (!await prepareDirectoryTransition("断开文件夹")) return false;
+    const directoryHandle = state.storage.directoryHandle;
     state.storage.mode = "browser";
     state.storage.directoryHandle = null;
     state.storage.directoryName = "";
     state.storage.rememberedDirectoryName = "";
     state.storage.rememberedDirectoryHandle = null;
-    persistence.clearDirectory();
+    if (directoryHandle) persistence.clearDirectory(directoryHandle);
     try {
       await cubeHandleStore.clear(DIRECTORY_HANDLE_KEY);
     } catch (error) {
@@ -640,6 +658,7 @@
     }
     renderStorageStatus();
     if (message) toast("文件夹已断开", message);
+    return true;
   }
 
   async function flushDirectoryWrites(directoryHandle) {
@@ -810,7 +829,7 @@
       return;
     }
     try {
-      await persistence.flush();
+      if (!await prepareDirectoryTransition("更换文件夹")) return;
       const directoryHandle = await window.showDirectoryPicker({ mode: "readwrite" });
       if (!await requestDirectoryPermission(directoryHandle, "readwrite")) {
         toast("没有获得权限", "需要允许读写该文件夹才能自动保存", true);

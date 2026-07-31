@@ -161,6 +161,17 @@ test("remembered Cube folders reconnect without reopening the picker", () => {
   assert.match(appSource, /state\.storage\.mode !== "directory" && !state\.storage\.rememberedDirectoryHandle/);
 });
 
+test("folder transitions wait for active work and preserve failed writes", () => {
+  assert.match(appSource, /async function prepareDirectoryTransition\(action\)/);
+  assert.match(appSource, /state\.imageCaching \|\| state\.folderSync\.syncing/);
+  assert.match(appSource, /await persistence\.flush\(\);/);
+  assert.match(appSource, /if \(!persistence\.hasDirty\(\)\) return true;/);
+  assert.match(appSource, /if \(!await prepareDirectoryTransition\("断开文件夹"\)\) return false;/);
+  assert.match(appSource, /if \(!await prepareDirectoryTransition\("更换文件夹"\)\) return;/);
+  assert.match(appSource, /persistence\.clearDirectory\(directoryHandle\)/);
+  assert.doesNotMatch(appSource, /persistence\.clearDirectory\(\);/);
+});
+
 test("folder reload never flushes browser data over the file being loaded", () => {
   const start = appSource.indexOf("async function reloadFromDirectory()");
   const end = appSource.indexOf("async function connectCubeFolder()", start);
