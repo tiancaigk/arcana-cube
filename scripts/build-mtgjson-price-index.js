@@ -12,6 +12,7 @@ const {
   PROVIDER_ORDER,
   buildIndexScript,
   buildPriceSeries,
+  cubeFingerprint,
   mergeSeries,
   validateIndex
 } = require("../mtgjsonPrices.js");
@@ -110,7 +111,7 @@ async function fetchOraclePrintings(oracleIds) {
   return printings;
 }
 
-async function collectPrintingCandidates(cubeCards, existingIndex, cacheDir) {
+async function collectPrintingCandidates(cubeCards, existingIndex, cacheDir, options = {}) {
   const currentCandidates = cubeCards.map(normalizePrintingCandidate).filter(Boolean);
   const oracleIds = [...new Set(currentCandidates.map((card) => card.oracleId))].sort();
   const desiredOracleIds = new Set(oracleIds);
@@ -121,28 +122,27 @@ async function collectPrintingCandidates(cubeCards, existingIndex, cacheDir) {
   });
   currentCandidates.forEach((candidate) => candidates.set(candidate.scryfallId, candidate));
 
-  const coveredOracleIds = new Set(existingIndex && existingIndex.printingOracleIds || []);
-  let missingOracleIds = oracleIds.filter((oracleId) => !coveredOracleIds.has(oracleId));
   const catalogCacheFile = path.join(cacheDir, "selectable-printings.json");
-  if (missingOracleIds.length) {
-    try {
-      const cached = JSON.parse(await fsp.readFile(catalogCacheFile, "utf8"));
-      const cachedOracleIds = new Set(cached.oracleIds || []);
-      (cached.candidates || []).map(normalizePrintingCandidate).filter(Boolean).forEach((candidate) => {
-        if (desiredOracleIds.has(candidate.oracleId)) candidates.set(candidate.scryfallId, candidate);
-      });
-      missingOracleIds = missingOracleIds.filter((oracleId) => !cachedOracleIds.has(oracleId));
-    } catch (_error) {
-      // Cache miss.
-    }
+  let cachedOracleIds = new Set();
+  try {
+    const cached = JSON.parse(await fsp.readFile(catalogCacheFile, "utf8"));
+    cachedOracleIds = Number(cached.version) === 2 ? new Set(cached.oracleIds || []) : new Set();
+    (cached.candidates || []).map(normalizePrintingCandidate).filter(Boolean).forEach((candidate) => {
+      if (desiredOracleIds.has(candidate.oracleId)) candidates.set(candidate.scryfallId, candidate);
+    });
+  } catch (_error) {
+    // Cache miss for the current MTGJSON data version.
   }
+  const missingOracleIds = oracleIds.filter((oracleId) => !cachedOracleIds.has(oracleId));
   if (missingOracleIds.length) {
     process.stdout.write(`Discovering selectable printings for ${missingOracleIds.length} Oracle cards...\n`);
-    const discovered = await fetchOraclePrintings(missingOracleIds);
+    const discoverPrintings = options.fetchOraclePrintings || fetchOraclePrintings;
+    const discovered = await discoverPrintings(missingOracleIds);
     discovered.map(normalizePrintingCandidate).filter(Boolean).forEach((candidate) => {
       candidates.set(candidate.scryfallId, candidate);
     });
     await fsp.writeFile(catalogCacheFile, JSON.stringify({
+      version: 2,
       oracleIds,
       candidates: [...candidates.values()]
     }));
@@ -165,24 +165,12 @@ async function downloadFile(url, destination) {
   return destination;
 }
 
-async function readCachedSet(setCode, cacheDir) {
+async function readCachedSet(setCode, cacheDir, loadSet = fetchJson) {
   const cacheFile = path.join(cacheDir, `${setCode}.json`);
   try {
     return JSON.parse(await fsp.readFile(cacheFile, "utf8"));
   } catch (_error) {
-    const cacheVersions = await fsp.readdir(cacheRoot, { withFileTypes: true }).catch(() => []);
-    for (const entry of cacheVersions.filter((item) => item.isDirectory()).sort((a, b) => b.name.localeCompare(a.name))) {
-      const previousFile = path.join(cacheRoot, entry.name, `${setCode}.json`);
-      if (previousFile === cacheFile) continue;
-      try {
-        const text = await fsp.readFile(previousFile, "utf8");
-        await fsp.writeFile(cacheFile, text);
-        return JSON.parse(text);
-      } catch (_previousError) {
-        // Try the next cached build.
-      }
-    }
-    const payload = await fetchJson(`${apiRoot}/${encodeURIComponent(setCode)}.json`);
+    const payload = await loadSet(`${apiRoot}/${encodeURIComponent(setCode)}.json`);
     await fsp.writeFile(cacheFile, JSON.stringify(payload));
     return payload;
   }
@@ -401,6 +389,7 @@ async function main() {
       name: "MTGJSON",
       version: sourceVersion,
       date: sourceDate,
+      cubeFingerprint: cubeFingerprint(cubeCards),
       historyFrom: allDates[0] || "",
       historyTo: allDates[allDates.length - 1] || "",
       url: "https://mtgjson.com/",
@@ -457,5 +446,6 @@ module.exports = {
   mapPrintingUuids,
   normalizePrintingCandidate,
   parseCube,
+  readCachedSet,
   streamSelectedPrices
 };

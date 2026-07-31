@@ -181,19 +181,20 @@ test("normalizeScryfallCard keeps Treasure Map's front-face classification", () 
   assert.equal(filterCards([treasureMap], { query: "", color: "C", type: "Artifact" }).length, 1);
 });
 
-test("normalizeScryfallCard keeps the exact printing number", () => {
+test("normalizeScryfallCard keeps the exact printing and waits for canonical MTGJSON prices", () => {
   const card = normalizeScryfallCard({ id: "card", name: "Black Vise", set: "lea", collector_number: "233", type_line: "Artifact", finishes: ["nonfoil", "foil"], prices: { usd: "1.23", usd_foil: "4.56" } });
   assert.equal(card.set, "LEA");
   assert.equal(card.collectorNumber, "233");
   assert.equal(card.scryfallId, "card");
   assert.equal(card.finish, "foil");
-  assert.equal(card.prices.usd, "1.23");
-  assert.equal(card.prices.usdFoil, "4.56");
+  assert.deepEqual(card.prices, { usd: "", usdFoil: "", usdEtched: "" });
+  assert.equal(card.priceSource, null);
+  assert.equal(card.priceUpdatedAt, "");
   assert.equal(normalizeFinish("nonfoil"), "nonfoil");
   assert.equal(normalizeFinish("something else"), "foil");
-  assert.equal(getUsdPrice(card, "foil"), "4.56");
-  assert.equal(getUsdPrice(card, "nonfoil"), "1.23");
-  assert.equal(getPriceNumber(card, "foil"), 4.56);
+  assert.equal(getUsdPrice({ prices: { usd: "1.23", usdFoil: "4.56" } }, "foil"), "4.56");
+  assert.equal(getUsdPrice({ prices: { usd: "1.23", usdFoil: "4.56" } }, "nonfoil"), "1.23");
+  assert.equal(getPriceNumber({ prices: { usd: "1.23", usdFoil: "4.56" } }, "foil"), 4.56);
   assert.equal(getUsdPrice({ prices: { usd: "1.23", usdFoil: "" }, finish: "foil" }), "");
   assert.equal(getPriceNumber({ prices: { usd: "1.23", usdFoil: "" }, finish: "foil" }), null);
 });
@@ -336,7 +337,7 @@ test("finish helpers respect the selected printing's availability", () => {
   assert.equal(chooseValidFinish(nonfoilOnly, "foil"), "nonfoil");
   const etched = normalizeScryfallCard({ id: "etched", name: "Etched", set: "tst", type_line: "Artifact", finishes: ["etched"], prices: { usd_etched: "5.00" } });
   assert.deepEqual(etched.finishes, ["foil"]);
-  assert.equal(getUsdPrice(etched, "foil"), "5.00");
+  assert.equal(getUsdPrice(etched, "foil"), "");
   const replaced = replacePrinting({ id: "cube-card", addedAt: "date", finish: "nonfoil" }, { id: "foil-only", name: "Card", set: "tst", type_line: "Artifact", finishes: ["foil"], foil: true, nonfoil: false });
   assert.equal(replaced.finish, "foil");
 });

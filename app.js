@@ -31,7 +31,7 @@
   const { createMtgchClient } = window.MtgchClient;
   const { createCatalog, printingKey } = window.CubeCatalog;
   const { createProductSourceCatalog } = window.CubeProductSources;
-  const { createMtgjsonPriceCatalog, hasHistoricalEntry: hasMtgjsonHistoricalEntry, lookupPrice: lookupMtgjsonPrice, lookupPrintingPrice: lookupMtgjsonPrintingPrice, mergePriceIndexes: mergeMtgjsonPriceIndexes, mergeSeries: mergeMtgjsonPriceSeries, priceSeries: mtgjsonPriceSeries, providerLabel } = window.CubeMtgjsonPrices;
+  const { createMtgjsonPriceCatalog, cubeFingerprint, hasHistoricalEntry: hasMtgjsonHistoricalEntry, lookupPrice: lookupMtgjsonPrice, lookupPrintingPrice: lookupMtgjsonPrintingPrice, mergePriceIndexes: mergeMtgjsonPriceIndexes, mergeSeries: mergeMtgjsonPriceSeries, priceSeries: mtgjsonPriceSeries, providerLabel } = window.CubeMtgjsonPrices;
   const { createHistoryShardCatalog } = window.CubeMtgjsonHistoryShards;
   const { applyIndexedPricesToCard, applyIndexedPriceUpdates } = window.CubePriceMaintenance;
   const { datePositions } = window.CubeChart;
@@ -219,6 +219,7 @@
     emptyPriceHistory,
     emptyChangeLog
   });
+  let automaticPriceRefreshTimer = 0;
   state.priceHistory = initialWorkspace.priceHistoryData;
   state.changeLog = initialWorkspace.changeLogData;
 
@@ -1332,6 +1333,10 @@
     return !Number.isNaN(generatedAt.getTime()) && dateKey(generatedAt) === dateKey();
   }
 
+  function priceIndexMatchesCube(index) {
+    return Boolean(index && index.source && index.source.cubeFingerprint === cubeFingerprint(getValuedCards()));
+  }
+
   async function requestLocalPriceIndex(update = false) {
     const endpoint = mtgjsonLocalPriceEndpoint();
     if (!endpoint) return null;
@@ -1365,7 +1370,7 @@
       } catch (error) {
         warning = error.name === "AbortError" ? "连接本地价格服务超时" : error.message || "本地价格服务不可用";
       }
-      const shouldUpdate = options.rebuildLocal || (options.refreshLocalIfStale && !priceIndexGeneratedToday(localIndex));
+      const shouldUpdate = options.rebuildLocal || (options.refreshLocalIfStale && (!priceIndexGeneratedToday(localIndex) || !priceIndexMatchesCube(localIndex)));
       if (shouldUpdate) {
         try {
           localIndex = await requestLocalPriceIndex(true);
@@ -2094,7 +2099,8 @@
 
   async function refreshStalePrices(force = false) {
     if (state.refreshingPrices) return;
-    const targets = getValuedCards().filter((card) => force || !card.priceSource || !card.priceSource.origin || needsPriceRefresh(card));
+    const needsMtgjsonPrice = (card) => !card.priceSource || card.priceSource.origin !== "mtgjson" || needsPriceRefresh(card);
+    const targets = getValuedCards().filter((card) => force || needsMtgjsonPrice(card));
     if (!targets.length) {
       const recorded = recordCurrentPriceHistory({ onlyIfMissing: !force, refresh: force ? { checked: 0, updated: 0, missing: 0 } : null });
       if (force) {
@@ -2122,7 +2128,7 @@
       const indexedResult = applyIndexedPriceUpdates(targets, index, {
         lookupPrice: lookupMtgjsonPrice,
         findCardLocation,
-        needsPriceRefresh,
+        needsPriceRefresh: needsMtgjsonPrice,
         force
       });
       refreshResult = {
@@ -2185,6 +2191,17 @@
         schedulePriceMaintenance();
       }
     }, PRICE_MAINTENANCE_INTERVAL_MS);
+  }
+
+  function scheduleAutomaticPriceRefresh(delay = 300) {
+    window.clearTimeout(automaticPriceRefreshTimer);
+    automaticPriceRefreshTimer = window.setTimeout(() => {
+      if (state.refreshingPrices) {
+        scheduleAutomaticPriceRefresh(1000);
+        return;
+      }
+      refreshStalePrices().catch(() => {});
+    }, delay);
   }
 
   function printingImage(printing) {
@@ -2298,6 +2315,7 @@
     const current = location.cards[location.index];
     const replaced = replacePrinting(current, printing, state.printingFinishFilter === "foil" ? "foil" : current.finish);
     const next = applyIndexedPricesToCard(replaced, state.printingPriceIndex, lookupMtgjsonPrintingPrice, { clearMissing: true });
+    next.priceUpdatedAt = "";
     location.cards[location.index] = next;
     collectionCommands.execute({
       changed: true,
@@ -2313,6 +2331,7 @@
       render: { pool: location.pool },
       feedback: { title: "版本已更新", message: `${printing.set.toUpperCase()} · ${printing.collector_number}` }
     });
+    scheduleAutomaticPriceRefresh();
     elements.printingDialog.close();
   }
 
@@ -2327,7 +2346,7 @@
     }
     const before = normalizeFinish(current.finish);
     current.finish = normalizeFinish(current.finish) === "foil" ? "nonfoil" : "foil";
-    current.priceSource = current.priceSources && current.priceSources[current.finish] || current.priceSource || null;
+    current.priceSource = current.priceSources && current.priceSources[current.finish] || null;
     location.cards[location.index] = current;
     collectionCommands.execute({
       changed: true,
@@ -2342,6 +2361,7 @@
     if (state.editingCardId === cardId && elements.printingDialog.open) {
       renderPrintingFinishFilter();
     }
+    if (!current.priceSource) scheduleAutomaticPriceRefresh();
   }
 
   function toggleJapanPrint(cardId) {
@@ -2409,6 +2429,7 @@
         changes: [{ type: "basicLand.added", summary: `添加基本地：${card.name}`, details: { card: cardLogInfo(card), after: cardLogInfo(card) } }],
         render: { scopes: ["basics", "stats"] }
       });
+      scheduleAutomaticPriceRefresh();
       return true;
     }
     const duplicate = findSingletonCard(state.data.cards, card);
@@ -2423,6 +2444,7 @@
       changes: [{ type: "card.added", summary: `添加卡牌：${card.name}`, details: { card: cardLogInfo(card), after: cardLogInfo(card) } }],
       render: { pool: "draft" }
     });
+    scheduleAutomaticPriceRefresh();
     return true;
   }
 
@@ -2501,6 +2523,7 @@
     });
     const { counts, items } = classified;
     collectionCommands.execute({ changed: counts.added > 0, changes, render: { scopes: ["basics", "stats"] } });
+    if (counts.added > 0) scheduleAutomaticPriceRefresh();
     const summary = { setCode: setCode.toUpperCase(), first: collectorNumbers[0], last: collectorNumbers[collectorNumbers.length - 1], counts, items };
     renderBasicLandRangeResult(summary);
     toast("批量添加完成", `添加 ${counts.added} 张，跳过 ${items.length - counts.added} 张`);
@@ -2818,6 +2841,7 @@
     requestDataRender();
     elements.importDialog.close();
     toast("Excel 导入完成", `已添加 ${rows.length} 张核验通过的卡牌`);
+    if (rows.length) scheduleAutomaticPriceRefresh();
     state.excelFile = null;
     state.excelRows = [];
     state.excelValidated = false;
@@ -2900,6 +2924,7 @@
     requestDataRender();
     elements.importDialog.close();
     toast("文本导入完成", `已添加 ${rows.length} 张核验通过的卡牌`);
+    if (rows.length) scheduleAutomaticPriceRefresh();
     elements.importText.value = "";
     resetTextValidation();
   }

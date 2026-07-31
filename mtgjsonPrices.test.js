@@ -1,9 +1,13 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
+const fsp = require("node:fs/promises");
+const os = require("node:os");
+const path = require("node:path");
 const {
   buildIndexScript,
   buildPriceSeries,
   createMtgjsonPriceCatalog,
+  cubeFingerprint,
   hasHistoricalEntry,
   lookupPrice,
   lookupPrintingPrice,
@@ -12,6 +16,7 @@ const {
   priceSeries,
   validateIndex
 } = require("./mtgjsonPrices.js");
+const { collectPrintingCandidates, readCachedSet } = require("./scripts/build-mtgjson-price-index.js");
 
 function sampleIndex() {
   return {
@@ -42,6 +47,55 @@ function sampleIndex() {
     }
   };
 }
+
+test("Cube price fingerprints are stable by printing set and change with selected versions", () => {
+  const first = cubeFingerprint([{ scryfallId: "b" }, { scryfallId: "a" }, { scryfallId: "a" }]);
+  assert.equal(first, cubeFingerprint([{ scryfallId: "a" }, { scryfallId: "b" }]));
+  assert.notEqual(first, cubeFingerprint([{ scryfallId: "a" }, { scryfallId: "c" }]));
+});
+
+test("selectable printings are rediscovered for each MTGJSON data-version cache", async (t) => {
+  const cacheDir = await fsp.mkdtemp(path.join(os.tmpdir(), "arcana-printings-"));
+  t.after(() => fsp.rm(cacheDir, { recursive: true, force: true }));
+  const oracleId = "4457ed35-7c10-48c8-9776-456485fdf070";
+  const cubeCards = [{ scryfallId: "current", oracleId, set: "TST", collectorNumber: "1", name: "Card" }];
+  const existingIndex = {
+    printingOracleIds: [oracleId],
+    printingPrices: {
+      old: { scryfallId: "old", oracleId, set: "OLD", collectorNumber: "2", name: "Card" }
+    }
+  };
+  let discoveryCalls = 0;
+  const first = await collectPrintingCandidates(cubeCards, existingIndex, cacheDir, {
+    fetchOraclePrintings: async (ids) => {
+      discoveryCalls += 1;
+      assert.deepEqual(ids, [oracleId]);
+      return [{ id: "new", oracle_id: oracleId, set: "new", collector_number: "3", name: "Card" }];
+    }
+  });
+  assert.equal(discoveryCalls, 1);
+  assert.deepEqual(first.candidates.map((card) => card.scryfallId).sort(), ["current", "new", "old"]);
+
+  await collectPrintingCandidates(cubeCards, existingIndex, cacheDir, {
+    fetchOraclePrintings: async () => {
+      throw new Error("current-version cache should cover this Oracle ID");
+    }
+  });
+});
+
+test("set metadata cache fetches once within the current data version", async (t) => {
+  const cacheDir = await fsp.mkdtemp(path.join(os.tmpdir(), "arcana-set-"));
+  t.after(() => fsp.rm(cacheDir, { recursive: true, force: true }));
+  let calls = 0;
+  const loadSet = async (url) => {
+    calls += 1;
+    assert.match(url, /TST\.json$/);
+    return { data: { cards: [{ uuid: "printing" }] } };
+  };
+  assert.equal((await readCachedSet("TST", cacheDir, loadSet)).data.cards[0].uuid, "printing");
+  assert.equal((await readCachedSet("TST", cacheDir, loadSet)).data.cards[0].uuid, "printing");
+  assert.equal(calls, 1);
+});
 
 test("MTGJSON price series uses USD providers before converted Cardmarket EUR", () => {
   const entry = {

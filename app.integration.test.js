@@ -204,6 +204,9 @@ test("automatic price maintenance waits for folder restore and records daily his
   assert.match(appSource, /await restoreDirectoryMode\(\);[\s\S]*try\s*\{[\s\S]*await refreshStalePrices\(\);[\s\S]*finally\s*\{[\s\S]*schedulePriceMaintenance\(\);/);
   assert.match(appSource, /mtgjsonPriceCatalog\.loadIndex\(\)/);
   assert.match(appSource, /applyIndexedPriceUpdates\(targets, index/);
+  assert.match(appSource, /priceIndexMatchesCube\(localIndex\)/);
+  assert.match(appSource, /card\.priceSource\.origin !== "mtgjson"/);
+  assert.match(appSource, /function scheduleAutomaticPriceRefresh\(delay = 300\)/);
   assert.doesNotMatch(appSource, /applyScryfallPriceFallbacks/);
   assert.match(appSource, /Cardmarket 换算/);
   assert.match(appSource, /价格部分更新/);

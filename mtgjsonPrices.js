@@ -27,6 +27,19 @@
     return Math.round(rate * 1000000) / 1000000;
   }
 
+  function cubeFingerprint(cards) {
+    const printingIds = [...new Set((Array.isArray(cards) ? cards : [])
+      .map((card) => String(card && card.scryfallId || "").trim())
+      .filter(Boolean))].sort();
+    let hash = 2166136261;
+    const source = printingIds.join("\0");
+    for (let index = 0; index < source.length; index += 1) {
+      hash ^= source.charCodeAt(index);
+      hash = Math.imul(hash, 16777619);
+    }
+    return `${printingIds.length}-${(hash >>> 0).toString(16).padStart(8, "0")}`;
+  }
+
   function exchangeRateForDate(rates, date) {
     const entries = rates instanceof Map ? [...rates.entries()] : Object.entries(rates || {});
     return entries
@@ -279,6 +292,7 @@
     buildPriceSeries,
     cardEntry,
     createMtgjsonPriceCatalog,
+    cubeFingerprint,
     exchangeRateForDate,
     hasHistoricalEntry,
     lookupPrice,
