@@ -201,7 +201,12 @@
       indexPromise = null;
     }
 
-    return { loadIndex, lookup, clearCache };
+    function setIndex(index) {
+      indexPromise = validatePayload(index);
+      return indexPromise;
+    }
+
+    return { loadIndex, lookup, clearCache, setIndex };
   }
 
   return {

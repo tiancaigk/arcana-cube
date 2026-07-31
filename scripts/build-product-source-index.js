@@ -3,11 +3,12 @@
 const fs = require("node:fs/promises");
 const path = require("node:path");
 const { collapseProducts, isPaperProduct } = require("../productSources.js");
+const { cubeFingerprint } = require("../mtgjsonPrices.js");
 
 const rootDir = path.resolve(__dirname, "..");
-const cubeFile = path.join(rootDir, "cube-data.json");
-const outputFile = path.join(rootDir, "product-source-index.json");
-const scriptOutputFile = path.join(rootDir, "product-source-index.js");
+const cubeFile = path.resolve(process.env.CUBE_DATA_FILE || path.join(rootDir, "cube-data.json"));
+const outputFile = path.resolve(process.env.PRODUCT_SOURCE_OUTPUT_FILE || path.join(rootDir, "product-source-index.json"));
+const scriptOutputFile = path.resolve(process.env.PRODUCT_SOURCE_SCRIPT_OUTPUT_FILE || path.join(rootDir, "product-source-index.js"));
 const cacheRoot = path.join(rootDir, ".cache", "mtgjson");
 const apiRoot = "https://mtgjson.com/api/v5";
 const headers = {
@@ -238,7 +239,8 @@ async function main() {
       version: sourceVersion,
       date: String(setList.meta && setList.meta.date || ""),
       url: "https://mtgjson.com/",
-      license: "MIT"
+      license: "MIT",
+      cubeFingerprint: cubeFingerprint(cubeCards)
     },
     products,
     stats: {

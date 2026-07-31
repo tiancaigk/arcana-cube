@@ -161,6 +161,25 @@ test("catalog prefers a local script index for direct file pages", async () => {
   assert.equal(fallbacks, 1);
 });
 
+test("catalog can replace a stale bundled index with a rebuilt local index", async () => {
+  const bundled = {
+    format: "arcana-cube-product-sources",
+    version: 1,
+    products: {},
+    cards: {}
+  };
+  const rebuilt = {
+    ...bundled,
+    products: { foil: product("foil", "Artist Series Foil", "box_set", "secret_lair") },
+    cards: { printing: { sources: { foil: ["foil"] } } }
+  };
+  const catalog = createProductSourceCatalog({ loadFallback: async () => bundled });
+  await catalog.loadIndex();
+  await catalog.setIndex(rebuilt);
+  const result = await catalog.lookup({ scryfallId: "printing", finish: "foil" });
+  assert.equal(result.products[0].name, "Artist Series Foil");
+});
+
 test("generated script indexes expose the same payload without fetch", () => {
   const vm = require("node:vm");
   const payload = {

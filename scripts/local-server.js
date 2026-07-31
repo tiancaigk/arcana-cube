@@ -7,6 +7,7 @@ const { Readable } = require("node:stream");
 const { URL } = require("node:url");
 const { createMtgjsonHistoryService } = require("./mtgjson-history-service.js");
 const { createLocalPriceIndexService } = require("./local-price-index-service.js");
+const { createLocalProductSourceIndexService } = require("./local-product-source-index-service.js");
 
 const rootDir = path.resolve(__dirname, "..");
 
@@ -133,7 +134,7 @@ function isLoopbackRequest(req) {
   return address === "127.0.0.1" || address === "::1" || address === "::ffff:127.0.0.1";
 }
 
-async function serveLocalPriceIndex(req, res, priceIndexService) {
+async function serveLocalIndex(req, res, indexService, messages) {
   const cors = historyCorsHeaders(req);
   if (!cors || !isLoopbackRequest(req)) {
     send(res, 403, { "Content-Type": "application/json; charset=utf-8" }, JSON.stringify({ error: "Local request required" }));
@@ -154,8 +155,8 @@ async function serveLocalPriceIndex(req, res, priceIndexService) {
   }
   try {
     const index = req.method === "POST"
-      ? await priceIndexService.update((await readJsonBody(req, 1024 * 1024)).cubeData)
-      : await priceIndexService.readIndex();
+      ? await indexService.update((await readJsonBody(req, 1024 * 1024)).cubeData)
+      : await indexService.readIndex();
     send(res, 200, {
       ...cors,
       "Cache-Control": "no-store",
@@ -167,8 +168,22 @@ async function serveLocalPriceIndex(req, res, priceIndexService) {
       ...cors,
       "Cache-Control": "no-store",
       "Content-Type": "application/json; charset=utf-8"
-    }, JSON.stringify({ error: missing ? "本地价格索引尚未建立" : error.message || "本地价格索引更新失败" }));
+    }, JSON.stringify({ error: missing ? messages.missing : error.message || messages.failed }));
   }
+}
+
+function serveLocalPriceIndex(req, res, priceIndexService) {
+  return serveLocalIndex(req, res, priceIndexService, {
+    missing: "本地价格索引尚未建立",
+    failed: "本地价格索引更新失败"
+  });
+}
+
+function serveLocalProductSourceIndex(req, res, productSourceIndexService) {
+  return serveLocalIndex(req, res, productSourceIndexService, {
+    missing: "本地产品来源索引尚未建立",
+    failed: "本地产品来源索引更新失败"
+  });
 }
 
 function getStaticFilePath(pathname) {
@@ -276,6 +291,7 @@ function createLocalServer(options = {}) {
   const port = options.port || 4173;
   const historyService = options.historyService || createMtgjsonHistoryService({ rootDir });
   const priceIndexService = options.priceIndexService || createLocalPriceIndexService({ rootDir });
+  const productSourceIndexService = options.productSourceIndexService || createLocalProductSourceIndexService({ rootDir });
   return http.createServer(async (req, res) => {
     try {
       const requestUrl = new URL(req.url || "/", `http://${req.headers.host || `${host}:${port}`}`);
@@ -295,6 +311,10 @@ function createLocalServer(options = {}) {
         await serveLocalPriceIndex(req, res, priceIndexService);
         return;
       }
+      if (requestUrl.pathname === "/product-source-index/local") {
+        await serveLocalProductSourceIndex(req, res, productSourceIndexService);
+        return;
+      }
       serveStatic(req, res, requestUrl);
     } catch (error) {
       console.error(error);
@@ -312,4 +332,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { createLocalServer, historyCorsHeaders, isLoopbackRequest, readJsonBody, readServerOptions, serveLocalPriceIndex, serveMtgjsonHistory };
+module.exports = { createLocalServer, historyCorsHeaders, isLoopbackRequest, readJsonBody, readServerOptions, serveLocalPriceIndex, serveLocalProductSourceIndex, serveMtgjsonHistory };

@@ -125,3 +125,34 @@ test("local server reads and rebuilds the machine-local MTGJSON index", async (t
   assert.equal((await updateResponse.json()).source.date, "2026-07-29");
   assert.equal(calls.length, 1);
 });
+
+test("local server rebuilds product sources from the active Cube", async (t) => {
+  const calls = [];
+  const cached = { format: "arcana-cube-product-sources", version: 1, source: { cubeFingerprint: "old" }, products: {}, cards: {} };
+  const updated = { ...cached, source: { cubeFingerprint: "current" } };
+  const server = createLocalServer({
+    host: "127.0.0.1",
+    port: 0,
+    productSourceIndexService: {
+      readIndex: async () => cached,
+      update: async (cubeData) => {
+        calls.push(cubeData);
+        return updated;
+      }
+    }
+  });
+  await new Promise((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(0, "127.0.0.1", resolve);
+  });
+  t.after(() => new Promise((resolve) => server.close(resolve)));
+  const port = server.address().port;
+  const response = await fetch(`http://127.0.0.1:${port}/product-source-index/local`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Origin: "null" },
+    body: JSON.stringify({ cubeData: { meta: { name: "Test" }, cards: [{ set: "SLD", collectorNumber: "1854" }] } })
+  });
+  assert.equal(response.status, 200);
+  assert.equal((await response.json()).source.cubeFingerprint, "current");
+  assert.equal(calls[0].cards[0].collectorNumber, "1854");
+});

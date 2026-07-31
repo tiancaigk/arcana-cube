@@ -266,6 +266,8 @@ test("price charts use a smooth area treatment with readable axes and range summ
   assert.match(appSource, /class="price-area"/);
   assert.match(appSource, /Array\.from\(\{ length: 5 \}/);
   assert.match(appSource, /price-history-change \$\{direction\}/);
+  assert.match(appSource, /splitDateSeries\(coords, 7\)/);
+  assert.match(appSource, /dateLabelIndexes\(xPositions, 90\)/);
   assert.doesNotMatch(appSource, /<polyline class="price-line"/);
   assert.match(styleSource, /\.price-chart-plot/);
   assert.match(styleSource, /@keyframes priceLineReveal/);

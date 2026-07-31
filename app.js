@@ -34,7 +34,7 @@
   const { createMtgjsonPriceCatalog, cubeFingerprint, hasHistoricalEntry: hasMtgjsonHistoricalEntry, lookupPrice: lookupMtgjsonPrice, lookupPrintingPrice: lookupMtgjsonPrintingPrice, mergePriceIndexes: mergeMtgjsonPriceIndexes, mergeSeries: mergeMtgjsonPriceSeries, priceSeries: mtgjsonPriceSeries, providerLabel } = window.CubeMtgjsonPrices;
   const { createHistoryShardCatalog } = window.CubeMtgjsonHistoryShards;
   const { applyIndexedPricesToCard, applyIndexedPriceUpdates } = window.CubePriceMaintenance;
-  const { datePositions } = window.CubeChart;
+  const { dateLabelIndexes, datePositions, splitDateSeries } = window.CubeChart;
   const { BASIC_LAND_LABELS, BASIC_LAND_ORDER, classifyBasicLandBatch, groupBasicLands, parseCollectorNumberRange } = window.CubeBasicLands;
   const { createCollectionCommandExecutor } = window.CubeCollectionCommands;
   const { createViewPreferenceStore } = window.CubeViewPreferences;
@@ -94,6 +94,7 @@
   let sheetJsLoader;
   let printingRequestId = 0;
   let priceChartSequence = 0;
+  let preferredProductSourceIndex = { fingerprint: "", promise: null };
 
   const seedCards = [
     ["Swords to Plowshares", "{W}", 1, ["W"], "Instant", "2XM", "uncommon"],
@@ -1254,8 +1255,12 @@
     const xPositions = datePositions(series, padLeft, plotRight);
     const yFor = (value) => plotBottom - ((value - min) / range) * (plotBottom - padTop);
     const coords = series.map((point, index) => ({ ...point, x: xPositions[index], y: yFor(Number(point.usd)) }));
-    const linePath = monotonePricePath(coords);
-    const areaPath = `${linePath} L${coords[coords.length - 1].x.toFixed(2)} ${plotBottom} L${coords[0].x.toFixed(2)} ${plotBottom} Z`;
+    const chartSegments = splitDateSeries(coords, 7);
+    const linePaths = chartSegments.filter((segment) => segment.length > 1).map(monotonePricePath);
+    const areaPaths = chartSegments.filter((segment) => segment.length > 1).map((segment) => {
+      const linePath = monotonePricePath(segment);
+      return `${linePath} L${segment[segment.length - 1].x.toFixed(2)} ${plotBottom} L${segment[0].x.toFixed(2)} ${plotBottom} Z`;
+    });
     const ticks = Array.from({ length: 5 }, (_value, index) => {
       const ratio = index / 4;
       return {
@@ -1263,7 +1268,7 @@
         y: padTop + (plotBottom - padTop) * ratio
       };
     });
-    const dateLabelIndexes = [...new Set([0, Math.floor((series.length - 1) / 2), series.length - 1])];
+    const labelIndexes = dateLabelIndexes(xPositions, 90);
     const pointInterval = Math.max(1, Math.ceil(coords.length / 14));
     const chartId = `price-chart-${++priceChartSequence}`;
     const first = series[0];
@@ -1289,13 +1294,13 @@
         </defs>
         <rect class="price-chart-plot" x="${padLeft}" y="${padTop}" width="${plotRight - padLeft}" height="${plotBottom - padTop}" rx="8"/>
         ${ticks.map((tick) => `<line class="price-grid-line" x1="${padLeft}" y1="${tick.y.toFixed(1)}" x2="${plotRight}" y2="${tick.y.toFixed(1)}"/><text x="${padLeft - 10}" y="${(tick.y + 3).toFixed(1)}" text-anchor="end" class="price-axis">${escapeHtml(formatChartUsd(tick.value))}</text>`).join("")}
-        ${dateLabelIndexes.map((index) => {
+        ${labelIndexes.map((index) => {
           const point = coords[index];
           const anchor = index === 0 ? "start" : index === coords.length - 1 ? "end" : "middle";
           return `<text x="${point.x.toFixed(1)}" y="${height - 10}" text-anchor="${anchor}" class="price-axis price-date-axis">${escapeHtml(formatHistoryDate(point.date))}</text>`;
         }).join("")}
-        <path class="price-area" d="${areaPath}" fill="url(#${chartId}-area)"/>
-        <path class="price-line" d="${linePath}" stroke="url(#${chartId}-line)" pathLength="1"/>
+        ${areaPaths.map((path) => `<path class="price-area" d="${path}" fill="url(#${chartId}-area)"/>`).join("")}
+        ${linePaths.map((path) => `<path class="price-line" d="${path}" stroke="url(#${chartId}-line)" pathLength="1"/>`).join("")}
         ${coords.map((point, index) => `<g class="price-point-group${index === coords.length - 1 ? " latest" : ""}">
           <circle class="price-point${index % pointInterval === 0 || index === coords.length - 1 ? " visible" : ""}" cx="${point.x.toFixed(1)}" cy="${point.y.toFixed(1)}" r="${index === coords.length - 1 ? "4.2" : "2.4"}"/>
           <circle class="price-point-hit" cx="${point.x.toFixed(1)}" cy="${point.y.toFixed(1)}" r="7"><title>${escapeHtml(point.date)} · ${escapeHtml(formatUsd(point.usd))}</title></circle>
@@ -1345,6 +1350,12 @@
     return "";
   }
 
+  function localProductSourceEndpoint() {
+    if (isLocalHttpPage()) return "/product-source-index/local";
+    if (location.protocol === "file:") return "http://127.0.0.1:4173/product-source-index/local";
+    return "";
+  }
+
   function localPriceCubeData() {
     return {
       meta: { name: state.data.meta.name || "Arcana Cube" },
@@ -1365,6 +1376,67 @@
 
   function priceIndexMatchesCube(index) {
     return Boolean(index && index.source && index.source.cubeFingerprint === cubeFingerprint(getValuedCards()));
+  }
+
+  function productSourceIndexMatchesCube(index) {
+    return Boolean(index && index.source && index.source.cubeFingerprint === cubeFingerprint(getValuedCards()));
+  }
+
+  async function requestLocalProductSourceIndex(update = false) {
+    const endpoint = localProductSourceEndpoint();
+    if (!endpoint) return null;
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => controller.abort(), update ? 10 * 60 * 1000 : 3000);
+    try {
+      const response = await fetch(endpoint, {
+        method: update ? "POST" : "GET",
+        headers: { Accept: "application/json", ...(update ? { "Content-Type": "application/json" } : {}) },
+        ...(update ? { body: JSON.stringify({ cubeData: localPriceCubeData() }) } : {}),
+        cache: "no-store",
+        signal: controller.signal
+      });
+      if (!update && response.status === 404) return null;
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload.error || "本地产品来源索引不可用");
+      return payload;
+    } finally {
+      window.clearTimeout(timeout);
+    }
+  }
+
+  function loadPreferredProductSourceIndex() {
+    const fingerprint = cubeFingerprint(getValuedCards());
+    if (preferredProductSourceIndex.fingerprint === fingerprint && preferredProductSourceIndex.promise) {
+      return preferredProductSourceIndex.promise;
+    }
+    const promise = (async () => {
+      let warning = "";
+      productSourceCatalog.clearCache();
+      const bundledIndex = await productSourceCatalog.loadIndex();
+      if (productSourceIndexMatchesCube(bundledIndex)) {
+        return { index: bundledIndex, matchesCube: true, warning };
+      }
+      const endpoint = localProductSourceEndpoint();
+      if (endpoint) {
+        let localIndex = null;
+        try {
+          localIndex = await requestLocalProductSourceIndex(false);
+          if (!productSourceIndexMatchesCube(localIndex)) localIndex = await requestLocalProductSourceIndex(true);
+        } catch (error) {
+          warning = error.name === "AbortError" ? "本地产品来源更新超时" : error.message || "本地产品来源更新失败";
+        }
+        if (productSourceIndexMatchesCube(localIndex)) {
+          await productSourceCatalog.setIndex(localIndex);
+          return { index: localIndex, matchesCube: true, warning };
+        }
+      }
+      return { index: bundledIndex, matchesCube: false, warning };
+    })();
+    preferredProductSourceIndex = { fingerprint, promise };
+    promise.catch(() => {
+      if (preferredProductSourceIndex.promise === promise) preferredProductSourceIndex = { fingerprint: "", promise: null };
+    });
+    return promise;
   }
 
   async function requestLocalPriceIndex(update = false) {
@@ -1881,7 +1953,13 @@
         const hints = [...new Set([...(entry.boosterTypes || []), ...(entry.promoTypes || [])])]
           .map(productSourceHintLabel)
           .filter(Boolean);
-        body = `<div class="product-source-status"><p>MTGJSON 尚未收录这个版本与表面工艺的具体产品来源。</p>
+        const emptyMessage = !result.entry && result.indexMatchesCube === false
+          ? "当前产品来源索引与牌表版本不一致，暂时无法确认这个版本的获取方式。"
+          : !result.entry
+            ? "MTGJSON 当前没有这张实体版本的产品来源记录。"
+            : "MTGJSON 已识别当前实体版本，但没有所选表面工艺的具体产品来源。";
+        body = `<div class="product-source-status"><p>${escapeHtml(emptyMessage)}</p>
+          ${result.warning ? `<p>${escapeHtml(result.warning)}</p>` : ""}
           ${hints.length ? `<div class="product-source-hints">${hints.map((hint) => `<span>${escapeHtml(hint)}</span>`).join("")}</div>` : ""}
         </div>`;
       }
@@ -1916,7 +1994,10 @@
       return;
     }
     try {
+      const preferred = await loadPreferredProductSourceIndex();
       const result = await productSourceCatalog.lookup(card);
+      result.indexMatchesCube = preferred.matchesCube;
+      result.warning = preferred.warning;
       if (state.previewCardId !== cardId || !elements.imagePreviewDialog.open) return;
       state.previewProductSources = { cardId, status: "ready", result, error: "" };
       updateProductSourcePanel(cardId);
