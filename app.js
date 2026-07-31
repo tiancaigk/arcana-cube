@@ -18,6 +18,7 @@
   const IMAGE_CACHE_CHECKPOINT = 100;
   const PRICE_MAINTENANCE_INTERVAL_MS = 60 * 60 * 1000;
   const PRICE_HISTORY_SYNC_TIMEOUT_MS = 10 * 60 * 1000;
+  const LOCAL_INDEX_BUILD_TIMEOUT_MS = 31 * 60 * 1000;
   const SHEETJS_URL = "vendor/xlsx.full.min.js";
   const PRODUCT_SOURCE_INDEX_SCRIPT_URL = "product-source-index.js";
   const MTGJSON_PRICE_INDEX_SCRIPT_URL = "mtgjson-price-index.js";
@@ -1408,7 +1409,7 @@
     const endpoint = localProductSourceEndpoint();
     if (!endpoint) return null;
     const controller = new AbortController();
-    const timeout = window.setTimeout(() => controller.abort(), update ? 10 * 60 * 1000 : 3000);
+    const timeout = window.setTimeout(() => controller.abort(), update ? LOCAL_INDEX_BUILD_TIMEOUT_MS : 3000);
     try {
       const response = await fetch(endpoint, {
         method: update ? "POST" : "GET",
@@ -1465,7 +1466,7 @@
     const endpoint = mtgjsonLocalPriceEndpoint();
     if (!endpoint) return null;
     const controller = new AbortController();
-    const timeout = window.setTimeout(() => controller.abort(), update ? 10 * 60 * 1000 : 3000);
+    const timeout = window.setTimeout(() => controller.abort(), update ? LOCAL_INDEX_BUILD_TIMEOUT_MS : 3000);
     try {
       const response = await fetch(endpoint, {
         method: update ? "POST" : "GET",

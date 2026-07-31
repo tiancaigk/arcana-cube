@@ -3,8 +3,8 @@
 const fsp = require("node:fs/promises");
 const { randomUUID } = require("node:crypto");
 const path = require("node:path");
-const { spawn } = require("node:child_process");
 const { cubeFingerprint } = require("../mtgjsonPrices.js");
+const { runBuilderProcess } = require("./run-builder.js");
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -59,28 +59,14 @@ async function removeFiles(files) {
 }
 
 function runBuilder(options) {
-  return new Promise((resolve, reject) => {
-    const child = spawn(process.execPath, [options.builderFile], {
-      cwd: options.rootDir,
-      env: {
-        ...process.env,
-        CUBE_DATA_FILE: options.cubeFile,
-        PRODUCT_SOURCE_OUTPUT_FILE: options.indexFile,
-        PRODUCT_SOURCE_SCRIPT_OUTPUT_FILE: options.scriptFile
-      },
-      stdio: ["ignore", "pipe", "pipe"]
-    });
-    let output = "";
-    const append = (chunk) => {
-      output = `${output}${chunk}`.slice(-64 * 1024);
-    };
-    child.stdout.on("data", append);
-    child.stderr.on("data", append);
-    child.once("error", reject);
-    child.once("exit", (code) => {
-      if (code === 0) resolve(output);
-      else reject(new Error(output.trim() || `MTGJSON 本地产品来源索引构建失败 (${code})`));
-    });
+  return runBuilderProcess({
+    ...options,
+    failureLabel: "MTGJSON 本地产品来源索引构建",
+    env: {
+      CUBE_DATA_FILE: options.cubeFile,
+      PRODUCT_SOURCE_OUTPUT_FILE: options.indexFile,
+      PRODUCT_SOURCE_SCRIPT_OUTPUT_FILE: options.scriptFile
+    }
   });
 }
 
@@ -120,7 +106,8 @@ function createLocalProductSourceIndexService(options = {}) {
         builderFile,
         cubeFile: stagingCubeFile,
         indexFile: stagingIndexFile,
-        scriptFile: stagingScriptFile
+        scriptFile: stagingScriptFile,
+        timeoutMs: options.builderTimeoutMs
       });
       const index = validateBuiltIndex(
         JSON.parse(await fsp.readFile(stagingIndexFile, "utf8")),

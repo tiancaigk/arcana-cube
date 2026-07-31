@@ -252,6 +252,7 @@ test("basic lands contribute to value and export but not draft analytics", () =>
 
 test("automatic price maintenance waits for folder restore and records daily history", () => {
   assert.match(appSource, /const PRICE_MAINTENANCE_INTERVAL_MS\s*=\s*60 \* 60 \* 1000/);
+  assert.match(appSource, /const LOCAL_INDEX_BUILD_TIMEOUT_MS\s*=\s*31 \* 60 \* 1000/);
   assert.match(appSource, /recordCurrentPriceHistory\(\{ onlyIfMissing: !force,/);
   assert.match(appSource, /await restoreDirectoryMode\(\);[\s\S]*try\s*\{[\s\S]*await refreshStalePrices\(\);[\s\S]*finally\s*\{[\s\S]*schedulePriceMaintenance\(\);/);
   assert.match(appSource, /bundledMtgjsonPriceCatalog\.loadIndex\(\)/);
