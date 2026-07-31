@@ -163,7 +163,9 @@
     basicLandGrouping: loadBasicLandGrouping(),
     nameLocalization: {
       refreshing: false,
-      failures: new Set()
+      failures: new Map(),
+      pending: new Map(),
+      retryTimer: 0
     },
     view: "collection",
     importing: false,
@@ -485,15 +487,15 @@
   }
 
   function localMirrorSave(data = state.data) {
-    cubeStorage.save(data);
+    return persistence.saveBrowser("cube", data);
   }
 
   function savePriceHistoryLocal(priceHistory = state.priceHistory) {
-    localStorage.setItem(PRICE_HISTORY_STORAGE_KEY, JSON.stringify(normalizePriceHistory(priceHistory)));
+    return persistence.saveBrowser("priceHistory", priceHistory);
   }
 
   function saveChangeLogLocal(changeLog = state.changeLog) {
-    localStorage.setItem(CHANGE_LOG_STORAGE_KEY, JSON.stringify(normalizeChangeLog(changeLog)));
+    return persistence.saveBrowser("changeLog", changeLog);
   }
 
   function cardLogInfo(card) {
@@ -953,7 +955,8 @@
       const incompleteSplitName = isSplitCard(card) && String(card.name || "").includes("//") && !localizedName.includes("//");
       if (localizedName && !incompleteSplitName) return false;
       const oracleId = getOracleId(card);
-      if (!oracleId || state.nameLocalization.failures.has(oracleId) || seen.has(oracleId)) return false;
+      const failure = state.nameLocalization.failures.get(oracleId);
+      if (!oracleId || failure && failure.permanent || seen.has(oracleId)) return false;
       seen.add(oracleId);
       return true;
     });
@@ -1030,35 +1033,59 @@
   }
 
   async function refreshMissingLocalizedNames(cards) {
+    missingLocalizedNameCards(cards).forEach((card) => {
+      state.nameLocalization.pending.set(getOracleId(card), card);
+    });
     if (state.nameLanguage !== "zh" || state.nameLocalization.refreshing) return;
+    window.clearTimeout(state.nameLocalization.retryTimer);
+    state.nameLocalization.retryTimer = 0;
     state.nameLocalization.refreshing = true;
     renderNameLanguageToggle();
     let changedSinceSave = 0;
     try {
       while (state.nameLanguage === "zh") {
-        const target = missingLocalizedNameCards(cards)[0];
-        if (!target) break;
-        const oracleId = getOracleId(target);
+        const now = Date.now();
+        const pending = [...state.nameLocalization.pending.entries()].find(([oracleId]) => {
+          const failure = state.nameLocalization.failures.get(oracleId);
+          return !failure || failure.retryAt <= now;
+        });
+        if (!pending) break;
+        const [oracleId, target] = pending;
+        state.nameLocalization.pending.delete(oracleId);
         try {
           const localized = await lookupLocalizedName(target);
           if (!localized) {
-            state.nameLocalization.failures.add(oracleId);
+            state.nameLocalization.failures.set(oracleId, { permanent: true, attempts: 1, retryAt: Infinity });
             continue;
           }
+          state.nameLocalization.failures.delete(oracleId);
           if (applyLocalizedName(oracleId, localized.lang, localized.name)) changedSinceSave += 1;
           if (changedSinceSave >= 20) {
             saveState("cube");
             changedSinceSave = 0;
           }
-        } catch (error) {
-          state.nameLocalization.failures.add(oracleId);
-          break;
+        } catch (_error) {
+          const previous = state.nameLocalization.failures.get(oracleId);
+          const attempts = Math.min(6, Number(previous && previous.attempts || 0) + 1);
+          const retryAt = Date.now() + Math.min(5 * 60 * 1000, 15000 * (2 ** (attempts - 1)));
+          state.nameLocalization.failures.set(oracleId, { permanent: false, attempts, retryAt });
+          state.nameLocalization.pending.set(oracleId, target);
         }
       }
     } finally {
       if (changedSinceSave) saveState("cube");
       state.nameLocalization.refreshing = false;
       renderNameLanguageToggle();
+      const nextRetryAt = [...state.nameLocalization.pending.keys()].reduce((earliest, oracleId) => {
+        const failure = state.nameLocalization.failures.get(oracleId);
+        return failure && Number.isFinite(failure.retryAt) ? Math.min(earliest, failure.retryAt) : earliest;
+      }, Infinity);
+      if (state.nameLanguage === "zh" && Number.isFinite(nextRetryAt)) {
+        state.nameLocalization.retryTimer = window.setTimeout(
+          () => refreshMissingLocalizedNames([]),
+          Math.max(0, nextRetryAt - Date.now())
+        );
+      }
     }
   }
 

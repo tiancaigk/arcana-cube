@@ -65,6 +65,23 @@ test("flushBrowserSync preserves a delayed browser snapshot without forcing dire
   assert.equal(coordinator.hasDirty("cube"), true);
 });
 
+test("an explicit browser mirror failure is contained without scheduling directory IO", async () => {
+  const failures = [];
+  const { coordinator, directoryWrites } = createHarness({
+    browserWriters: {
+      cube: () => { throw new Error("quota exceeded"); },
+      priceHistory: () => {},
+      changeLog: () => {}
+    },
+    onBrowserError: (error, domain) => failures.push(`${domain}:${error.message}`)
+  });
+  assert.equal(coordinator.saveBrowser("cube", { revision: 1 }), false);
+  await coordinator.flush();
+  assert.deepEqual(failures, ["cube:quota exceeded"]);
+  assert.deepEqual(directoryWrites.cube, []);
+  assert.equal(coordinator.hasDirty(), false);
+});
+
 test("a failed directory write remains dirty and reports the failure", async () => {
   const failures = [];
   const { coordinator } = createHarness({

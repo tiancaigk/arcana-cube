@@ -34,9 +34,16 @@
     function writeBrowser(domain, snapshot) {
       try {
         browserWriters[domain](snapshot);
+        return true;
       } catch (error) {
         onBrowserError(error, domain);
+        return false;
       }
+    }
+
+    function saveBrowser(domain, snapshot) {
+      validateDomain(domain);
+      return writeBrowser(domain, snapshot);
     }
 
     function enqueueDirectory(domain, snapshot) {
@@ -141,7 +148,7 @@
       dirty.clear();
     }
 
-    return { markDirty, scheduleDirty, flush, flushBrowserSync, hasDirty, clearDirectory };
+    return { markDirty, scheduleDirty, saveBrowser, flush, flushBrowserSync, hasDirty, clearDirectory };
   }
 
   return { DOMAINS, createPersistenceCoordinator };

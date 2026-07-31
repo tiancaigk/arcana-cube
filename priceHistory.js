@@ -133,13 +133,29 @@
   }
 
   function sortedSnapshots(history) {
-    const normalized = normalizePriceHistory(history);
-    return Object.entries(normalized.snapshots).sort(([a], [b]) => a.localeCompare(b));
+    const snapshots = history && history.snapshots && typeof history.snapshots === "object" ? history.snapshots : {};
+    return Object.entries(snapshots)
+      .filter(([date]) => /^\d{4}-\d{2}-\d{2}$/.test(date))
+      .sort(([a], [b]) => a.localeCompare(b));
+  }
+
+  function snapshotCards(snapshot) {
+    return snapshot && snapshot.cards && typeof snapshot.cards === "object" ? snapshot.cards : {};
+  }
+
+  function snapshotTotalUsd(snapshot) {
+    const stored = normalizeUsd(snapshot && snapshot.totalUsd);
+    if (stored !== null) return stored;
+    return normalizeUsd(Object.values(snapshotCards(snapshot)).reduce((total, value) => {
+      const price = normalizeUsd(value);
+      return price === null ? total : total + price;
+    }, 0)) || 0;
   }
 
   function hasDailySnapshot(history, date = new Date()) {
     const key = typeof date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(date) ? date : dateKey(date);
-    return Object.prototype.hasOwnProperty.call(normalizePriceHistory(history).snapshots, key);
+    const snapshots = history && history.snapshots && typeof history.snapshots === "object" ? history.snapshots : {};
+    return Object.prototype.hasOwnProperty.call(snapshots, key);
   }
 
   function recordDailySnapshot(history, cards, options = {}) {
@@ -275,13 +291,13 @@
   function cardSeries(history, card, finish = card && card.finish) {
     const key = cardPriceKey(card, finish);
     return sortedSnapshots(history)
-      .map(([date, snapshot]) => ({ date, usd: normalizeUsd(snapshot.cards && snapshot.cards[key]) }))
+      .map(([date, snapshot]) => ({ date, usd: normalizeUsd(snapshotCards(snapshot)[key]) }))
       .filter((point) => point.usd !== null);
   }
 
   function totalSeries(history) {
     return sortedSnapshots(history)
-      .map(([date, snapshot]) => ({ date, usd: normalizeUsd(snapshot.totalUsd) }))
+      .map(([date, snapshot]) => ({ date, usd: snapshotTotalUsd(snapshot) }))
       .filter((point) => point.usd !== null);
   }
 
@@ -309,9 +325,8 @@
     const latestPoints = new Map();
     const totals = [];
     sortedSnapshots(history).forEach(([date, snapshot]) => {
-      const totalUsd = normalizeUsd(snapshot.totalUsd);
-      if (totalUsd !== null) totals.push({ date, usd: totalUsd });
-      Object.entries(snapshot.cards || {}).forEach(([key, value]) => {
+      totals.push({ date, usd: snapshotTotalUsd(snapshot) });
+      Object.entries(snapshotCards(snapshot)).forEach(([key, value]) => {
         const usd = normalizeUsd(value);
         if (usd === null) return;
         const points = latestPoints.get(key) || [];
@@ -366,9 +381,10 @@
   }
 
   function priceChangesForPeriod(history, cards, period = "today", date = dateKey()) {
-    const normalized = normalizePriceHistory(history);
     const selectedPeriod = ["today", "week", "month", "history"].includes(period) ? period : "today";
-    const dates = Object.keys(normalized.snapshots).filter((snapshotDate) => snapshotDate <= date).sort();
+    const snapshotEntries = sortedSnapshots(history).filter(([snapshotDate]) => snapshotDate <= date);
+    const dates = snapshotEntries.map(([snapshotDate]) => snapshotDate);
+    const snapshots = Object.fromEntries(snapshotEntries);
     const targetDate = selectedPeriod === "today" ? (dates.includes(date) ? date : "") : dates[dates.length - 1] || "";
     if (!targetDate) return { period: selectedPeriod, previousDate: "", latestDate: "", changes: [] };
     let previousDate = "";
@@ -385,7 +401,7 @@
       period: selectedPeriod,
       previousDate,
       latestDate: targetDate,
-      changes: compareSnapshotPrices(normalized, cards, previousDate, targetDate)
+      changes: compareSnapshotPrices({ snapshots }, cards, previousDate, targetDate)
     };
   }
 

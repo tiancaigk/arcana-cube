@@ -47,6 +47,16 @@ test("localized names use Scryfall simplified Chinese before the MTGCH fallback"
   assert.ok(lookupSource.indexOf("scryfallRequest") < lookupSource.indexOf("mtgch.lookupSimplifiedChineseName"));
   assert.match(lookupSource, /return \{ lang: "zhs", name: mtgchName, source: "mtgch" \}/);
   assert.match(appSource, /const incompleteSplitName = isSplitCard\(card\)[^;]+!localizedName\.includes\("\/\/"\)/);
+  assert.match(appSource, /pending:\s*new Map\(\)/);
+  assert.match(appSource, /failures:\s*new Map\(\)/);
+  assert.match(appSource, /failure\.retryAt <= now/);
+  assert.match(appSource, /state\.nameLocalization\.pending\.set\(oracleId, target\)/);
+});
+
+test("browser mirror writes use the persistence coordinator", () => {
+  assert.match(appSource, /return persistence\.saveBrowser\("cube", data\)/);
+  assert.match(appSource, /return persistence\.saveBrowser\("priceHistory", priceHistory\)/);
+  assert.match(appSource, /return persistence\.saveBrowser\("changeLog", changeLog\)/);
 });
 
 test("card image failures use one delegated listener", () => {

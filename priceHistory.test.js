@@ -49,14 +49,14 @@ test("foil, nonfoil, and printing versions keep separate histories", () => {
   assert.deepEqual(cardSeries(history, { scryfallId: "version-a", finish: "foil" }), [{ date: "2026-07-02", usd: 10 }]);
 });
 
-test("totalSeries sorts snapshots and skips invalid entries", () => {
-  const history = normalizePriceHistory({
+test("totalSeries sorts raw snapshots and derives invalid totals without normalizing the full history", () => {
+  const history = {
     snapshots: {
       "2026-07-03": { totalUsd: "bad", cards: { "a|foil": "1.00" } },
       "2026-07-01": { totalUsd: "8.00", cards: {} },
       "ignored": { totalUsd: "10.00", cards: {} }
     }
-  });
+  };
   assert.deepEqual(totalSeries(history), [
     { date: "2026-07-01", usd: 8 },
     { date: "2026-07-03", usd: 1 }
