@@ -37,6 +37,13 @@ test("application shell loads dependencies before app.js", () => {
   assert.ok(migrations >= 0 && migrations < core && core < priceHistory && priceHistory < changeLog && changeLog < health && health < storage && storage < workspace && workspace < workspaceSession && workspaceSession < persistence && persistence < scryfall && scryfall < mtgch && mtgch < catalog && catalog < productSources && productSources < mtgjsonPrices && mtgjsonPrices < mtgjsonHistoryShards && mtgjsonHistoryShards < priceMaintenance && priceMaintenance < chart && chart < basicLands && basicLands < collectionCommands && collectionCommands < viewPreferences && viewPreferences < imageCache && imageCache < selectors && selectors < renderScheduler && renderScheduler < app);
 });
 
+test("optional browser scripts share one retryable loader", () => {
+  assert.match(appSource, /function loadGlobalScript\(url, readValue, errors\)/);
+  assert.match(appSource, /loadGlobalScript\(SHEETJS_URL/);
+  assert.match(appSource, /loadGlobalScript\(PRODUCT_SOURCE_INDEX_SCRIPT_URL/);
+  assert.match(appSource, /loadGlobalScript\(MTGJSON_PRICE_INDEX_SCRIPT_URL/);
+});
+
 test("localized names use Scryfall simplified Chinese before the MTGCH fallback", () => {
   const lookupStart = appSource.indexOf("async function lookupLocalizedName(card)");
   const lookupEnd = appSource.indexOf("async function refreshMissingLocalizedNames", lookupStart);
@@ -146,6 +153,7 @@ test("published Cube data replaces only the untouched starter list", () => {
   assert.match(appSource, /data\.cards\.every\(\(card\) => seedIds\.has\(card\.id\)\)/);
   assert.doesNotMatch(appSource, /data\.meta\.id === defaultState\.meta\.id/);
   assert.match(appSource, /fetch\(CUBE_FILE_NAME, \{ cache: "no-cache" \}\)/);
+  assert.match(appSource, /toast\("牌表加载失败"/);
   assert.match(appSource, /window\.CubeStorage\.parseWorkspaceData/);
   assert.match(appSource, /image: images\.remoteImage \|\| ""/);
   assert.match(appSource, /localImage: ""/);
@@ -168,7 +176,7 @@ test("basic lands use a dedicated five-group collection view", () => {
 });
 
 test("collection grids keep six main cards and five basic lands per row", () => {
-  assert.match(html, /href="styles\.css\?v=20260730-grid"/);
+  assert.match(html, /href="styles\.css"/);
   assert.match(styleSource, /\.collection-view,\s*\.analytics-view,\s*\.basic-lands-view\s*\{[^}]*width:\s*100%;[^}]*max-width:\s*1500px;[^}]*margin:\s*0 auto;/s);
   assert.match(styleSource, /\.card-group-grid\s*\{[^}]*--collection-columns:\s*6;[^}]*grid-template-columns:\s*repeat\(var\(--collection-columns\), minmax\(0, 1fr\)\)/s);
   assert.match(styleSource, /\.basic-land-grid \.card-group-grid\s*\{[^}]*--collection-columns:\s*5;/s);

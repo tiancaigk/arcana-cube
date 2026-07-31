@@ -20,6 +20,23 @@ test("local server rejects invalid ports", () => {
   assert.throws(() => readServerOptions(["--port", "abc"], {}), /端口/);
 });
 
+test("local static assets support conditional browser caching", async (t) => {
+  const server = createLocalServer({ host: "127.0.0.1", port: 0 });
+  await new Promise((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(0, "127.0.0.1", resolve);
+  });
+  t.after(() => new Promise((resolve) => server.close(resolve)));
+  const url = `http://127.0.0.1:${server.address().port}/styles.css`;
+  const first = await fetch(url);
+  const etag = first.headers.get("etag");
+  assert.equal(first.status, 200);
+  assert.equal(first.headers.get("cache-control"), "no-cache");
+  assert.ok(etag);
+  const cached = await fetch(url, { headers: { "If-None-Match": etag } });
+  assert.equal(cached.status, 304);
+});
+
 test("MTGJSON history endpoint accepts LAN same-origin requests", () => {
   assert.deepEqual(historyCorsHeaders({
     headers: {

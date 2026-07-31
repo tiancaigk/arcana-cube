@@ -402,7 +402,7 @@
     if (!isStarterCube(state.data)) return false;
     try {
       const response = await fetch(CUBE_FILE_NAME, { cache: "no-cache" });
-      if (!response.ok) return false;
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
       const published = window.CubeStorage.parseWorkspaceData(await response.text());
       const publishedForPage = {
         ...published,
@@ -421,6 +421,9 @@
       applyChangeLogData(resolved.changeLogData);
       return true;
     } catch (error) {
+      if (location.protocol === "http:" || location.protocol === "https:") {
+        toast("牌表加载失败", `无法读取 ${CUBE_FILE_NAME}（${error.message || "未知错误"}），已保留当前浏览器数据`, true);
+      }
       return false;
     }
   }
@@ -2664,24 +2667,34 @@
     updateExcelAction();
   }
 
-  function loadSheetJs() {
-    if (window.XLSX) return Promise.resolve(window.XLSX);
-    if (sheetJsLoader) return sheetJsLoader;
-    const loader = new Promise((resolve, reject) => {
+  function loadGlobalScript(url, readValue, errors) {
+    const existing = readValue();
+    if (existing) return Promise.resolve(existing);
+    return new Promise((resolve, reject) => {
       const script = document.createElement("script");
-      script.src = SHEETJS_URL;
+      script.src = url;
       script.onload = () => {
-        if (window.XLSX) resolve(window.XLSX);
+        const value = readValue();
+        if (value) resolve(value);
         else {
           script.remove();
-          reject(new Error("Excel 解析组件加载失败，请检查网络后重试"));
+          reject(new Error(errors.invalid));
         }
       };
       script.onerror = () => {
         script.remove();
-        reject(new Error("Excel 解析组件加载失败，请检查网络后重试"));
+        reject(new Error(errors.load));
       };
       document.head.append(script);
+    });
+  }
+
+  function loadSheetJs() {
+    if (window.XLSX) return Promise.resolve(window.XLSX);
+    if (sheetJsLoader) return sheetJsLoader;
+    const loader = loadGlobalScript(SHEETJS_URL, () => window.XLSX, {
+      invalid: "Excel 解析组件格式无效",
+      load: "Excel 解析组件加载失败，请检查网络后重试"
     });
     sheetJsLoader = loader;
     loader.catch(() => {
@@ -2693,21 +2706,9 @@
   function loadProductSourceIndexScript() {
     if (window.CubeProductSourceIndex) return Promise.resolve(window.CubeProductSourceIndex);
     if (productSourceIndexLoader) return productSourceIndexLoader;
-    const loader = new Promise((resolve, reject) => {
-      const script = document.createElement("script");
-      script.src = PRODUCT_SOURCE_INDEX_SCRIPT_URL;
-      script.onload = () => {
-        if (window.CubeProductSourceIndex) resolve(window.CubeProductSourceIndex);
-        else {
-          script.remove();
-          reject(new Error("本地产品来源索引格式无效"));
-        }
-      };
-      script.onerror = () => {
-        script.remove();
-        reject(new Error("本地产品来源索引加载失败"));
-      };
-      document.head.append(script);
+    const loader = loadGlobalScript(PRODUCT_SOURCE_INDEX_SCRIPT_URL, () => window.CubeProductSourceIndex, {
+      invalid: "本地产品来源索引格式无效",
+      load: "本地产品来源索引加载失败"
     });
     productSourceIndexLoader = loader;
     loader.catch(() => {
@@ -2719,21 +2720,9 @@
   function loadMtgjsonPriceIndexScript() {
     if (window.CubeMtgjsonPriceIndex) return Promise.resolve(window.CubeMtgjsonPriceIndex);
     if (mtgjsonPriceIndexLoader) return mtgjsonPriceIndexLoader;
-    const loader = new Promise((resolve, reject) => {
-      const script = document.createElement("script");
-      script.src = MTGJSON_PRICE_INDEX_SCRIPT_URL;
-      script.onload = () => {
-        if (window.CubeMtgjsonPriceIndex) resolve(window.CubeMtgjsonPriceIndex);
-        else {
-          script.remove();
-          reject(new Error("本地 MTGJSON 价格索引格式无效"));
-        }
-      };
-      script.onerror = () => {
-        script.remove();
-        reject(new Error("本地 MTGJSON 价格索引加载失败"));
-      };
-      document.head.append(script);
+    const loader = loadGlobalScript(MTGJSON_PRICE_INDEX_SCRIPT_URL, () => window.CubeMtgjsonPriceIndex, {
+      invalid: "本地 MTGJSON 价格索引格式无效",
+      load: "本地 MTGJSON 价格索引加载失败"
     });
     mtgjsonPriceIndexLoader = loader;
     loader.catch(() => {

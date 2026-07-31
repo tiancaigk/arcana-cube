@@ -240,16 +240,30 @@ function serveStatic(req, res, requestUrl) {
     return;
   }
 
+  let stat;
   try {
-    const stat = fs.statSync(filePath);
+    stat = fs.statSync(filePath);
     if (stat.isDirectory()) filePath = path.join(filePath, "index.html");
+    stat = fs.statSync(filePath);
   } catch (error) {
     send(res, 404, { "Content-Type": "text/plain; charset=utf-8" }, "Not Found");
     return;
   }
 
   const contentType = mimeTypes.get(path.extname(filePath).toLowerCase()) || "application/octet-stream";
-  res.writeHead(200, { "Content-Type": contentType });
+  const extension = path.extname(filePath).toLowerCase();
+  const etag = `W/"${stat.size.toString(16)}-${Math.trunc(stat.mtimeMs).toString(16)}"`;
+  const headers = {
+    "Cache-Control": [".png", ".jpg", ".jpeg", ".svg", ".webp"].includes(extension) ? "public, max-age=86400" : "no-cache",
+    "Content-Type": contentType,
+    "ETag": etag,
+    "Last-Modified": stat.mtime.toUTCString()
+  };
+  if (req.headers["if-none-match"] === etag) {
+    send(res, 304, headers);
+    return;
+  }
+  res.writeHead(200, headers);
   if (req.method === "HEAD") {
     res.end();
     return;
