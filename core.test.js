@@ -1,7 +1,7 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const { CURRENT_DATA_VERSION } = require("./migrations.js");
-const { buildBackup, buildCardNameSearchUrl, buildExcelRows, buildLocalizedNameSearchUrl, buildLocalImageFileName, buildPrintingsUrl, chooseValidFinish, computeStats, filterCards, filterOraclePrintings, filterPrintings, getAvailableFinishes, getBasicLandKind, getCardBucket, getCardDisplayName, getCardImage, getColorBucket, getFrontDisplayName, getFrontTypeLine, getLookupName, getOracleId, getPreferredLocalizedName, getPriceNumber, getUsdPrice, isLandCard, isPaperPrinting, isSupportedBasicLand, mergeArchiveMetadata, needsPriceRefresh, normalizeCardName, normalizeFinish, normalizeLocalizedNames, normalizeScryfallCard, parseBackup, parseDecklist, parseExcelRows, prepareTextImportRows, replacePrinting, sortCards } = require("./core.js");
+const { assertMainDeckSingleton, buildBackup, buildCardNameSearchUrl, buildExcelRows, buildLocalizedNameSearchUrl, buildLocalImageFileName, buildPrintingsUrl, chooseValidFinish, computeStats, filterCards, filterOraclePrintings, filterPrintings, findSingletonCard, getAvailableFinishes, getBasicLandKind, getCardBucket, getCardDisplayName, getCardImage, getColorBucket, getFrontDisplayName, getFrontTypeLine, getLookupName, getOracleId, getPreferredLocalizedName, getPriceNumber, getUsdPrice, isLandCard, isPaperPrinting, isSupportedBasicLand, mergeArchiveMetadata, needsPriceRefresh, normalizeCardName, normalizeFinish, normalizeLocalizedNames, normalizeScryfallCard, parseBackup, parseDecklist, parseExcelRows, prepareTextImportRows, replacePrinting, sortCards } = require("./core.js");
 
 const cards = [
   { name: "Alpha", colors: ["W"], cmc: 1, typeLine: "Creature — Human", set: "TST" },
@@ -17,6 +17,18 @@ test("text import rows flag duplicates and cards already in the Cube", () => {
   const rows = prepareTextImportRows(["Lightning Bolt", "Counterspell", "lightning  bolt"], ["Counterspell"]);
   assert.deepEqual(rows.map((row) => row.status), ["valid", "existing", "duplicate"]);
   assert.deepEqual(rows.map((row) => row.rowNumber), [1, 2, 3]);
+});
+
+test("main deck singleton matches Oracle IDs and falls back to English card names", () => {
+  const oracleId = "4457ed35-7c10-48c8-9776-456485fdf070";
+  const original = { id: "printing-a", name: "Lightning Bolt", oracleId };
+  assert.equal(findSingletonCard([original], { id: "printing-b", name: "Lightning Bolt", oracle_id: oracleId }), original);
+  assert.equal(findSingletonCard([{ id: "split-a", name: "Fire // Ice" }], { id: "split-b", name: "fire  //  ice" }).id, "split-a");
+  assert.equal(findSingletonCard([original], original), null);
+  assert.throws(() => assertMainDeckSingleton([
+    original,
+    { id: "printing-b", name: "Lightning Bolt", oracleId }
+  ]), /严格单例.*Lightning Bolt/);
 });
 
 test("computeStats separates lands and color buckets", () => {
@@ -531,5 +543,10 @@ test("JSON backups preserve the complete Cube and accept legacy exports", () => 
   const versionTwo = parseBackup(JSON.stringify({ format: "arcana-cube-backup", version: 2, dataVersion: CURRENT_DATA_VERSION, data }));
   assert.deepEqual(versionTwo.cubeData, data);
   assert.equal(versionTwo.priceHistoryData, null);
+  assert.throws(() => parseBackup({
+    ...data,
+    cards: [{ id: "printing-a", name: "Lightning Bolt", oracleId: "oracle-bolt" }, { id: "printing-b", name: "Lightning Bolt", oracleId: "oracle-bolt" }]
+  }), /严格单例/);
+  assert.throws(() => parseBackup({ ...data, cards: [{ name: "Missing ID" }] }), /内部 ID/);
   assert.throws(() => parseBackup('{"not":"a cube"}'), /有效/);
 });

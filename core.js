@@ -438,6 +438,42 @@
     return String(name || "").normalize("NFKC").toLocaleLowerCase().replace(/[’‘]/g, "'").replace(/\s+/g, " ").trim();
   }
 
+  function findSingletonCard(cards, candidate, options = {}) {
+    const source = Array.isArray(cards) ? cards : [];
+    const excludedId = String(options.excludeId || "");
+    const oracleId = getOracleId(candidate);
+    const nameKey = normalizeCardName(candidate && candidate.name);
+    return source.find((card) => {
+      if (!card || card === candidate || excludedId && String(card.id || "") === excludedId) return false;
+      const sameOracle = oracleId && getOracleId(card) === oracleId;
+      const sameName = nameKey && normalizeCardName(card.name) === nameKey;
+      return sameOracle || sameName;
+    }) || null;
+  }
+
+  function assertMainDeckSingleton(cards) {
+    const accepted = [];
+    (Array.isArray(cards) ? cards : []).forEach((card, index) => {
+      if (!card || typeof card !== "object" || !String(card.id || "").trim() || !String(card.name || "").trim()) {
+        throw new Error(`主牌表第 ${index + 1} 张记录缺少内部 ID 或卡牌名称`);
+      }
+      const duplicate = findSingletonCard(accepted, card);
+      if (duplicate) throw new Error(`主牌表不是严格单例：${card.name} 与 ${duplicate.name} 指向同一张牌`);
+      accepted.push(card);
+    });
+    return true;
+  }
+
+  function validateCardRecords(cards, label = "牌表") {
+    if (!Array.isArray(cards)) throw new Error(`${label}不是有效的卡牌数组`);
+    cards.forEach((card, index) => {
+      if (!card || typeof card !== "object" || !String(card.id || "").trim() || !String(card.name || "").trim()) {
+        throw new Error(`${label}第 ${index + 1} 张记录缺少内部 ID 或卡牌名称`);
+      }
+    });
+    return true;
+  }
+
   function getFrontDisplayName(name) {
     const value = String(name || "").trim();
     if (!value) return "";
@@ -566,6 +602,9 @@
       throw new Error("不是有效的 Arcana Cube 备份文件");
     }
     const data = migrateCubeData(sourceData, wrapped ? payload.dataVersion ?? 0 : 0);
+    validateCardRecords(data.cards, "主牌表");
+    validateCardRecords(data.basicLands || [], "基本地");
+    assertMainDeckSingleton(data.cards);
     return {
       version: wrapped ? Number(payload.version) || 1 : 0,
       cubeData: {
@@ -579,5 +618,5 @@
     };
   }
 
-  return { COLOR_ORDER, SORT_ORDER, PRICE_TTL_MS, parseDecklist, normalizeFinish, parseFinish, parseJapanPrint, getAvailableFinishes, chooseValidFinish, normalizeLocalizedNames, getPreferredLocalizedName, normalizeScryfallCard, mergeArchiveMetadata, getOracleId, getFrontColors, getFrontTypeLine, getUsdPrice, getPriceNumber, needsPriceRefresh, getColorBucket, getPrimaryType, isLandCard, getBasicLandKind, isSupportedBasicLand, getCardBucket, computeStats, filterCards, sortCards, buildCardNameSearchUrl, buildPrintingsUrl, buildLocalizedNameSearchUrl, buildLocalImageFileName, getCardImage, isPaperPrinting, filterOraclePrintings, filterPrintings, replacePrinting, normalizeCardName, getFrontDisplayName, getCardDisplayName, isSplitCard, getLookupName, prepareTextImportRows, parseExcelRows, buildExcelRows, buildBackup, parseBackup };
+  return { COLOR_ORDER, SORT_ORDER, PRICE_TTL_MS, parseDecklist, normalizeFinish, parseFinish, parseJapanPrint, getAvailableFinishes, chooseValidFinish, normalizeLocalizedNames, getPreferredLocalizedName, normalizeScryfallCard, mergeArchiveMetadata, getOracleId, getFrontColors, getFrontTypeLine, getUsdPrice, getPriceNumber, needsPriceRefresh, getColorBucket, getPrimaryType, isLandCard, getBasicLandKind, isSupportedBasicLand, getCardBucket, computeStats, filterCards, sortCards, buildCardNameSearchUrl, buildPrintingsUrl, buildLocalizedNameSearchUrl, buildLocalImageFileName, getCardImage, isPaperPrinting, filterOraclePrintings, filterPrintings, replacePrinting, normalizeCardName, findSingletonCard, assertMainDeckSingleton, validateCardRecords, getFrontDisplayName, getCardDisplayName, isSplitCard, getLookupName, prepareTextImportRows, parseExcelRows, buildExcelRows, buildBackup, parseBackup };
 });

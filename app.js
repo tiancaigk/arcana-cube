@@ -20,7 +20,7 @@
   const SHEETJS_URL = "vendor/xlsx.full.min.js";
   const PRODUCT_SOURCE_INDEX_SCRIPT_URL = "product-source-index.js";
   const MTGJSON_PRICE_INDEX_SCRIPT_URL = "mtgjson-price-index.js";
-  const { buildBackup, buildExcelRows, buildLocalizedNameSearchUrl, buildLocalImageFileName, chooseValidFinish, computeStats, filterCards, filterPrintings, sortCards, getAvailableFinishes, getBasicLandKind, getCardBucket, getCardDisplayName, getCardImage, getFrontColors, getFrontDisplayName, getFrontTypeLine, getOracleId, getPreferredLocalizedName, getPriceNumber, getUsdPrice, isPaperPrinting, isSplitCard, isSupportedBasicLand, mergeArchiveMetadata, needsPriceRefresh, normalizeCardName, normalizeFinish, normalizeLocalizedNames, normalizeScryfallCard, parseBackup, parseDecklist, parseExcelRows, prepareTextImportRows, replacePrinting } = window.CubeCore;
+  const { assertMainDeckSingleton, buildBackup, buildExcelRows, buildLocalizedNameSearchUrl, buildLocalImageFileName, chooseValidFinish, computeStats, filterCards, filterPrintings, findSingletonCard, sortCards, getAvailableFinishes, getBasicLandKind, getCardBucket, getCardDisplayName, getCardImage, getFrontColors, getFrontDisplayName, getFrontTypeLine, getOracleId, getPreferredLocalizedName, getPriceNumber, getUsdPrice, isPaperPrinting, isSplitCard, isSupportedBasicLand, mergeArchiveMetadata, needsPriceRefresh, normalizeCardName, normalizeFinish, normalizeLocalizedNames, normalizeScryfallCard, parseBackup, parseDecklist, parseExcelRows, prepareTextImportRows, replacePrinting, validateCardRecords } = window.CubeCore;
   const { cardSeries, dateKey, emptyPriceHistory, hasDailySnapshot, normalizePriceHistory, parsePriceHistoryData, priceChangesForPeriod, priceTrend, recordDailySnapshot, syncPriceHistoryWindow, topPriceMovers, totalSeries, wrapPriceHistoryData } = window.CubePriceHistory;
   const { appendChange, emptyChangeLog, latestEntries, normalizeChangeLog, parseChangeLogData, wrapChangeLogData } = window.CubeChangeLog;
   const { analyzeWorkspaceHealth } = window.CubeHealth;
@@ -148,8 +148,8 @@
   const state = {
     data: (() => {
       const loaded = loadState();
-      loaded.cards = normalizeStoredCards(loaded.cards || []);
-      loaded.basicLands = normalizeStoredCards(loaded.basicLands || []);
+      loaded.cards = normalizeStoredCards(loaded.cards || [], { label: "主牌表", singleton: true });
+      loaded.basicLands = normalizeStoredCards(loaded.basicLands || [], { label: "基本地" });
       return loaded;
     })(),
     priceHistory: loadPriceHistoryState(),
@@ -335,14 +335,18 @@
     };
   }
 
-  function normalizeStoredCards(cards) {
-    return sortCards(cards.map((card) => ({
+  function normalizeStoredCards(cards, options = {}) {
+    validateCardRecords(cards, options.label || "牌表");
+    const normalized = sortCards(cards.map((card) => ({
       ...card,
+      id: String(card.id || ""),
+      name: String(card.name || ""),
       ...normalizeImageFields(card),
       oracleId: getOracleId(card),
       localizedNames: normalizeLocalizedNames(card),
       frontColors: getFrontColors(card),
-      frontTypeLine: getFrontTypeLine(card),
+      typeLine: String(card.typeLine || getFrontTypeLine(card) || "Unknown"),
+      frontTypeLine: String(getFrontTypeLine(card) || card.typeLine || "Unknown"),
       oracleText: card.oracleText || "",
       backOracleText: card.backOracleText || "",
       artist: card.artist || "",
@@ -356,6 +360,8 @@
       priceDataDate: typeof card.priceDataDate === "string" ? card.priceDataDate : "",
       JapanPrint: card.JapanPrint === true
     })));
+    if (options.singleton) assertMainDeckSingleton(normalized);
+    return normalized;
   }
 
   function loadState() {
@@ -443,8 +449,8 @@
     state.data = {
       meta: { ...(data.meta || defaultState.meta) },
       notes: typeof data.notes === "string" ? data.notes : "",
-      cards: normalizeStoredCards(data.cards || []),
-      basicLands: normalizeStoredCards(data.basicLands || [])
+      cards: normalizeStoredCards(data.cards || [], { label: "主牌表", singleton: true }),
+      basicLands: normalizeStoredCards(data.basicLands || [], { label: "基本地" })
     };
     if (!state.data.meta.name) state.data.meta.name = defaultState.meta.name;
     if (typeof state.data.meta.description !== "string") state.data.meta.description = defaultState.meta.description;
@@ -2405,6 +2411,11 @@
       });
       return true;
     }
+    const duplicate = findSingletonCard(state.data.cards, card);
+    if (duplicate) {
+      toast("主牌表严格单例", `已经包含 ${duplicate.name}；如需更换版本，请使用“选择版本”`, true);
+      return false;
+    }
     state.data.cards.unshift(card);
     state.data.cards = sortCards(state.data.cards);
     collectionCommands.execute({
@@ -2754,6 +2765,7 @@
       const candidates = state.excelRows.filter((row) => row.status === "valid");
       elements.importStatus.textContent = `正在批量核验 ${candidates.length} 个版本…`;
       const cardsByPrinting = await catalog.lookupPrintingBatch(candidates);
+      const acceptedCards = [];
       candidates.forEach((row) => {
         row.card = cardsByPrinting.get(printingKey(row.setCode, row.collectorNumber)) || null;
         if (!row.card) {
@@ -2763,7 +2775,18 @@
         }
         const acceptedNames = [row.card.name, row.card.printed_name].filter(Boolean).map(normalizeCardName);
         if (acceptedNames.includes(normalizeCardName(row.expectedName))) {
-          row.importable = true;
+          const existingCard = findSingletonCard(state.data.cards, row.card);
+          const duplicateCard = findSingletonCard(acceptedCards, row.card);
+          if (existingCard) {
+            row.status = "existing";
+            row.message = `主牌表已包含 ${existingCard.name} 的其他版本`;
+          } else if (duplicateCard) {
+            row.status = "duplicate";
+            row.message = `文件中已有 ${duplicateCard.name} 的其他版本`;
+          } else {
+            row.importable = true;
+            acceptedCards.push(row.card);
+          }
         } else {
           row.status = "mismatch";
           row.message = `实际为 ${row.card.name}`;
@@ -2838,17 +2861,21 @@
       const candidates = state.textRows.filter((row) => row.status === "valid");
       elements.importStatus.textContent = `正在批量核验 ${candidates.length} 个牌名…`;
       const cardsByName = await catalog.lookupCardNameBatch(candidates.map((row) => row.expectedName));
-      const existingOracleIds = new Set(state.data.cards.map((card) => card.oracleId).filter(Boolean));
+      const acceptedCards = [];
       candidates.forEach((row) => {
         row.card = cardsByName.get(normalizeCardName(row.expectedName)) || null;
         if (!row.card) {
           row.status = "notFound";
           row.message = "Scryfall 中没有精确匹配的实体卡牌";
-        } else if (row.card.oracle_id && existingOracleIds.has(row.card.oracle_id)) {
+        } else if (findSingletonCard(state.data.cards, row.card)) {
           row.status = "existing";
           row.message = "当前 Cube 已包含这张牌的其他版本";
+        } else if (findSingletonCard(acceptedCards, row.card)) {
+          row.status = "duplicate";
+          row.message = "输入中已有这张牌的其他名称或版本";
         } else {
           row.importable = true;
+          acceptedCards.push(row.card);
         }
       });
       state.textValidated = true;
