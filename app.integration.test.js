@@ -89,8 +89,13 @@ test("printing selector filters Foil-capable versions and forces Foil on selecti
   assert.match(appSource, /replacePrinting\(current, printing, state\.printingFinishFilter === "foil" \? "foil" : current\.finish\)/);
   assert.match(appSource, /lookupMtgjsonPrintingPrice\(state\.printingPriceIndex, printing, "foil"\)/);
   assert.match(appSource, /loadMtgjsonPrintingPriceIndex\(\)/);
+  assert.match(appSource, /bundledMtgjsonPriceCatalog\.loadIndex\(\)/);
   assert.match(appSource, /overlayMtgjsonPriceIndex\(bundled, preferred\.index\)/);
   assert.match(appSource, /localIndex && priceIndexMatchesCube\(localIndex\)/);
+  assert.match(appSource, /void enrichPrintingPrices\(cardId, requestId, pricePromise\)/);
+  const printingDialogSource = appSource.slice(appSource.indexOf("async function openPrintingDialog"), appSource.indexOf("function selectPrinting"));
+  assert.doesNotMatch(printingDialogSource, /Promise\.all/);
+  assert.ok(printingDialogSource.indexOf("catalog.lookupAllPrintings") < printingDialogSource.indexOf("state.printings = printings"));
   assert.match(appSource, /applyIndexedPricesToCard\(replaced, state\.printingPriceIndex, lookupMtgjsonPrintingPrice, \{ clearMissing: true \}\)/);
   const summaryStart = appSource.indexOf("function printingPriceSummary(printing)");
   const summaryEnd = appSource.indexOf("function printingPriceTitle(printing)", summaryStart);
@@ -127,7 +132,21 @@ test("image preview renders and enriches a read-only card archive", () => {
   assert.match(appSource, /preferFallback:\s*window\.location\.protocol === "file:"/);
   assert.match(appSource, /function loadProductSourceIndexScript\(\)/);
   assert.match(appSource, /void enrichPreviewProductSources\(cardId\)/);
+  assert.match(appSource, /const metadataKey = card && card\.scryfallId \? `\$\{cardId\}:\$\{card\.scryfallId\}`/);
+  assert.match(appSource, /state\.previewMetadataCompleted\.add\(metadataKey\)/);
   assert.match(styleSource, /\.product-source-row\[data-product-type="collector"\]/);
+});
+
+test("closing or replacing an add-card lookup prevents stale results from mutating the Cube", () => {
+  assert.match(appSource, /addLookupRequestId:\s*0/);
+  assert.match(appSource, /addLookupController:\s*null/);
+  assert.match(appSource, /function isCurrentAddLookup\(request\)/);
+  assert.match(appSource, /catalog\.lookupNamed\(basicName, request\.controller\.signal\)/);
+  assert.match(appSource, /catalog\.searchByName\(name, request\.controller\.signal\)/);
+  assert.match(appSource, /catalog\.lookupPrinting\(setCode, collectorNumber, request\.controller\.signal\)/);
+  assert.match(appSource, /catalog\.lookupPrintingBatch\(targets, request\.controller\.signal\)/);
+  assert.match(appSource, /if \(!isCurrentAddLookup\(request\)\) return null;/);
+  assert.match(appSource, /elements\.addCardDialog\.addEventListener\("close", clearNameResults\)/);
 });
 
 test("remembered Cube folders reconnect without reopening the picker", () => {
@@ -198,8 +217,8 @@ test("basic lands switch between kind and release-ordered set groups", () => {
 test("basic lands support partial-success collector number range additions", () => {
   assert.match(appSource, /parseCollectorNumberRange/);
   assert.match(appSource, /classifyBasicLandBatch\(targets, cardsByPrinting, state\.data\.basicLands\)/);
-  assert.match(appSource, /async function addBasicLandRange\(setCode, collectorNumbers\)/);
-  assert.match(appSource, /catalog\.lookupPrintingBatch\(targets\)/);
+  assert.match(appSource, /async function addBasicLandRange\(setCode, collectorNumbers, request\)/);
+  assert.match(appSource, /catalog\.lookupPrintingBatch\(targets, request\.controller\.signal\)/);
   assert.match(appSource, /缺少卡牌|不是五种基本地|仅有电子版|已经收藏/);
   assert.match(appSource, /collectionCommands\.execute\(\{ changed: counts\.added > 0, changes, render:/);
   assert.match(appSource, /state\.addTarget === "basic" && parsedCollector\.isRange/);
@@ -223,7 +242,9 @@ test("automatic price maintenance waits for folder restore and records daily his
   assert.match(appSource, /const PRICE_MAINTENANCE_INTERVAL_MS\s*=\s*60 \* 60 \* 1000/);
   assert.match(appSource, /recordCurrentPriceHistory\(\{ onlyIfMissing: !force,/);
   assert.match(appSource, /await restoreDirectoryMode\(\);[\s\S]*try\s*\{[\s\S]*await refreshStalePrices\(\);[\s\S]*finally\s*\{[\s\S]*schedulePriceMaintenance\(\);/);
-  assert.match(appSource, /mtgjsonPriceCatalog\.loadIndex\(\)/);
+  assert.match(appSource, /bundledMtgjsonPriceCatalog\.loadIndex\(\)/);
+  assert.match(appSource, /function loadCachedLocalPriceIndex\(\)/);
+  assert.doesNotMatch(appSource, /mtgjsonPriceCatalog\.clearCache\(\)/);
   assert.match(appSource, /applyIndexedPriceUpdates\(targets, index/);
   assert.match(appSource, /priceIndexMatchesCube\(localIndex\)/);
   assert.match(appSource, /card\.priceSource\.origin !== "mtgjson"/);
@@ -239,18 +260,23 @@ test("price history loads offline shards before requesting missing printing hist
     appSource.indexOf("async function syncMtgjsonPriceHistory")
   );
   assert.match(appSource, /function syncMtgjsonPriceHistory\(\)/);
-  assert.match(appSource, /function loadMissingMtgjsonHistory\(index, cards\)/);
+  assert.match(appSource, /function loadMissingMtgjsonHistory\(index, cards, signal\)/);
   assert.match(appSource, /!hasMtgjsonHistoricalEntry\(index, card\)/);
   assert.match(appSource, /mtgjsonHistoryShardCatalog\.load\(index, requestedIds\)/);
   assert.match(appSource, /mergeMtgjsonPriceSeries\(entry\.foil, latest\.foil, index\.providers\)/);
   assert.ok(historyLoaderSource.indexOf("mtgjsonHistoryShardCatalog.load(index, requestedIds)") < historyLoaderSource.indexOf("fetch(endpoint"));
   assert.match(historyLoaderSource, /fetch\(endpoint,[\s\S]*scryfallIds: missingIds/);
+  assert.match(historyLoaderSource, /signal/);
   assert.match(appSource, /mergeMtgjsonPriceIndexes\(mergedIndex, payload\)/);
+  assert.match(appSource, /const historyIndex = await loadMtgjsonPrintingPriceIndex\(\)/);
   assert.match(appSource, /syncPriceHistoryWindow\(/);
   assert.match(appSource, /mtgjsonPriceSeries\(index, card, finish\)/);
   assert.match(appSource, /windowDays: 90/);
   assert.match(appSource, /仅补全最近 90 天，不限制下方曲线范围/);
   assert.match(appSource, /data-sync-price-history/);
+  assert.match(appSource, /PRICE_HISTORY_SYNC_TIMEOUT_MS/);
+  assert.match(appSource, /state\.priceHistorySyncController/);
+  assert.match(appSource, /elements\.priceHistoryDialog\.open && elements\.priceHistoryContent\.querySelector\("\[data-sync-price-history\]"\)/);
   assert.match(styleSource, /\.price-history-tools/);
 });
 

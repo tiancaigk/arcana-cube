@@ -122,7 +122,9 @@ async function collectPrintingCandidates(cubeCards, existingIndex, cacheDir, opt
   const cachedCandidates = new Map();
   Object.values(existingIndex && existingIndex.printingPrices || {}).forEach((entry) => {
     const candidate = normalizePrintingCandidate(entry);
-    if (candidate && desiredOracleIds.has(candidate.oracleId)) candidates.set(candidate.scryfallId, candidate);
+    if (!candidate) return;
+    cachedCandidates.set(candidate.scryfallId, candidate);
+    if (desiredOracleIds.has(candidate.oracleId)) candidates.set(candidate.scryfallId, candidate);
   });
   currentCandidates.forEach((candidate) => candidates.set(candidate.scryfallId, candidate));
 
@@ -139,6 +141,15 @@ async function collectPrintingCandidates(cubeCards, existingIndex, cacheDir, opt
     });
   } catch (_error) {
     // Cache miss for the current MTGJSON data version.
+  }
+  const existingGeneratedAt = Date.parse(existingIndex && existingIndex.generatedAt || "");
+  if (Number.isFinite(existingGeneratedAt)) {
+    const existingOracleIds = new Set(existingIndex && existingIndex.printingOracleIds || []);
+    oracleIds.forEach((oracleId) => {
+      if (!refreshedAtByOracle[oracleId] && existingOracleIds.has(oracleId)) {
+        refreshedAtByOracle[oracleId] = new Date(existingGeneratedAt).toISOString();
+      }
+    });
   }
   const now = options.now instanceof Date ? options.now : new Date();
   const refreshOracleIds = oracleIds.filter((oracleId) => {
@@ -219,17 +230,28 @@ function findPrinting(setPayload, cubeCard, lookup = createPrintingLookup(setPay
   return lookup.byNumberAndName.get(`${number}\0${String(cubeCard.name || "")}`) || null;
 }
 
+function chooseRichestIndex(indexes) {
+  return (indexes || []).filter(validateIndex).sort((a, b) => {
+    const printingDelta = Object.keys(b.printingPrices || {}).length - Object.keys(a.printingPrices || {}).length;
+    if (printingDelta) return printingDelta;
+    const cardDelta = Object.keys(b.cards || {}).length - Object.keys(a.cards || {}).length;
+    if (cardDelta) return cardDelta;
+    return String(b.generatedAt || b.source && b.source.date || "").localeCompare(String(a.generatedAt || a.source && a.source.date || ""));
+  })[0] || null;
+}
+
 async function readExistingIndex() {
   const candidates = outputFile === bundledOutputFile ? [outputFile] : [outputFile, bundledOutputFile];
-  for (const file of candidates) {
+  const indexes = [];
+  for (const file of [...new Set(candidates)]) {
     try {
       const value = JSON.parse(await fsp.readFile(file, "utf8"));
-      if (validateIndex(value)) return value;
+      if (validateIndex(value)) indexes.push(value);
     } catch (_error) {
       // Try the bundled index when a local runtime index does not exist yet.
     }
   }
-  return null;
+  return chooseRichestIndex(indexes);
 }
 
 async function mapPrintingUuids(cubeCards, existingIndex, cacheDir) {
@@ -477,6 +499,7 @@ if (require.main === module) {
 
 module.exports = {
   cardmarketDateRange,
+  chooseRichestIndex,
   collectPrintingCandidates,
   createPrintingLookup,
   dateOffset,

@@ -17,7 +17,7 @@ const {
   priceSeries,
   validateIndex
 } = require("./mtgjsonPrices.js");
-const { collectPrintingCandidates, readCachedSet } = require("./scripts/build-mtgjson-price-index.js");
+const { chooseRichestIndex, collectPrintingCandidates, readCachedSet } = require("./scripts/build-mtgjson-price-index.js");
 
 function sampleIndex() {
   return {
@@ -55,7 +55,17 @@ test("Cube price fingerprints are stable by printing set and change with selecte
   assert.notEqual(first, cubeFingerprint([{ scryfallId: "a" }, { scryfallId: "c" }]));
 });
 
-test("selectable printings are rediscovered for each MTGJSON data-version cache", async (t) => {
+test("price builds ignore an empty local cache when a richer bundled index exists", () => {
+  const empty = sampleIndex();
+  empty.generatedAt = "2026-07-31T00:00:00.000Z";
+  empty.cards = {};
+  empty.printingPrices = {};
+  const rich = sampleIndex();
+  rich.generatedAt = "2026-07-28T00:00:00.000Z";
+  assert.strictEqual(chooseRichestIndex([empty, rich]), rich);
+});
+
+test("selectable printings reuse a stable catalog and refresh it after seven days", async (t) => {
   const cacheDir = await fsp.mkdtemp(path.join(os.tmpdir(), "arcana-printings-"));
   t.after(() => fsp.rm(cacheDir, { recursive: true, force: true }));
   const oracleId = "4457ed35-7c10-48c8-9776-456485fdf070";
@@ -68,6 +78,7 @@ test("selectable printings are rediscovered for each MTGJSON data-version cache"
   };
   let discoveryCalls = 0;
   const first = await collectPrintingCandidates(cubeCards, existingIndex, cacheDir, {
+    now: new Date("2026-07-01T00:00:00Z"),
     fetchOraclePrintings: async (ids) => {
       discoveryCalls += 1;
       assert.deepEqual(ids, [oracleId]);
@@ -78,10 +89,20 @@ test("selectable printings are rediscovered for each MTGJSON data-version cache"
   assert.deepEqual(first.candidates.map((card) => card.scryfallId).sort(), ["current", "new", "old"]);
 
   await collectPrintingCandidates(cubeCards, existingIndex, cacheDir, {
+    now: new Date("2026-07-02T00:00:00Z"),
     fetchOraclePrintings: async () => {
-      throw new Error("current-version cache should cover this Oracle ID");
+      throw new Error("fresh stable cache should cover this Oracle ID");
     }
   });
+  await collectPrintingCandidates(cubeCards, existingIndex, cacheDir, {
+    now: new Date("2026-07-09T00:00:00Z"),
+    fetchOraclePrintings: async (ids) => {
+      discoveryCalls += 1;
+      assert.deepEqual(ids, [oracleId]);
+      return [];
+    }
+  });
+  assert.equal(discoveryCalls, 2);
 });
 
 test("set metadata cache fetches once within the current data version", async (t) => {
@@ -193,6 +214,18 @@ test("selectable printing lookup uses the lightweight MTGJSON version index", ()
   assert.equal(lookupPrice(index, { scryfallId: "alternative" }, "foil").usd, 8.75);
   assert.equal(hasHistoricalEntry(index, { scryfallId: "alternative" }), false);
   assert.equal(hasHistoricalEntry(index, { scryfallId: "printing" }), true);
+  assert.equal(hasHistoricalEntry(index, { scryfallId: "printing", finish: "nonfoil" }), false);
+});
+
+test("historical entries require more than one valid point for the selected finish", () => {
+  const index = sampleIndex();
+  index.cards.latestOnly = {
+    uuid: "mtgjson-latest-only",
+    foil: [["2026-07-28", 4.5, 0]],
+    nonfoil: [["2026-07-27", 3.1, 1], ["2026-07-28", 3.25, 0]]
+  };
+  assert.equal(hasHistoricalEntry(index, { scryfallId: "latestOnly", finish: "foil" }), false);
+  assert.equal(hasHistoricalEntry(index, { scryfallId: "latestOnly", finish: "nonfoil" }), true);
 });
 
 test("supplemental history replaces latest-only printing fallbacks", () => {
@@ -233,6 +266,7 @@ test("runtime price overlays retain the complete selectable printing catalog", (
   const local = sampleIndex();
   local.source = { date: "2026-07-30", cubeFingerprint: "current" };
   local.cards.current = { foil: [["2026-07-30", 9, 0]], nonfoil: [] };
+  local.cards.printing = { uuid: "mtgjson-printing", foil: [["2026-07-30", 5.25, 0]], nonfoil: [] };
   local.printingOracleIds = ["oracle", "local-oracle"];
   local.printingPrices.printing = { foil: [["2026-07-30", 5, 0]], nonfoil: [] };
   const merged = overlayPriceIndex(bundled, local);
@@ -240,6 +274,8 @@ test("runtime price overlays retain the complete selectable printing catalog", (
   assert.equal(merged.printingPrices.bundled.foil[0][1], 4);
   assert.equal(merged.printingPrices.printing.foil[0][1], 5);
   assert.equal(merged.cards.current.foil[0][1], 9);
+  assert.deepEqual(merged.cards.printing.foil.map((point) => point[0]), ["2026-07-27", "2026-07-28", "2026-07-30"]);
+  assert.equal(hasHistoricalEntry(merged, { scryfallId: "printing", finish: "foil" }), true);
   assert.deepEqual(merged.printingOracleIds, ["oracle", "bundled-oracle", "local-oracle"]);
 });
 

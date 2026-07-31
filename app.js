@@ -17,6 +17,7 @@
   const IMAGE_FETCH_TIMEOUT_MS = 25000;
   const IMAGE_CACHE_CHECKPOINT = 100;
   const PRICE_MAINTENANCE_INTERVAL_MS = 60 * 60 * 1000;
+  const PRICE_HISTORY_SYNC_TIMEOUT_MS = 10 * 60 * 1000;
   const SHEETJS_URL = "vendor/xlsx.full.min.js";
   const PRODUCT_SOURCE_INDEX_SCRIPT_URL = "product-source-index.js";
   const MTGJSON_PRICE_INDEX_SCRIPT_URL = "mtgjson-price-index.js";
@@ -31,7 +32,7 @@
   const { createMtgchClient } = window.MtgchClient;
   const { createCatalog, printingKey } = window.CubeCatalog;
   const { createProductSourceCatalog } = window.CubeProductSources;
-  const { createMtgjsonPriceCatalog, cubeFingerprint, hasHistoricalEntry: hasMtgjsonHistoricalEntry, lookupPrice: lookupMtgjsonPrice, lookupPrintingPrice: lookupMtgjsonPrintingPrice, mergePriceIndexes: mergeMtgjsonPriceIndexes, mergeSeries: mergeMtgjsonPriceSeries, overlayPriceIndex: overlayMtgjsonPriceIndex, priceSeries: mtgjsonPriceSeries, providerLabel } = window.CubeMtgjsonPrices;
+  const { createMtgjsonPriceCatalog, cubeFingerprint, hasHistoricalEntry: hasMtgjsonHistoricalEntry, lookupPrice: lookupMtgjsonPrice, lookupPrintingPrice: lookupMtgjsonPrintingPrice, mergePriceIndexes: mergeMtgjsonPriceIndexes, mergeSeries: mergeMtgjsonPriceSeries, overlayPriceIndex: overlayMtgjsonPriceIndex, priceSeries: mtgjsonPriceSeries, providerLabel, validateIndex: validateMtgjsonPriceIndex } = window.CubeMtgjsonPrices;
   const { createHistoryShardCatalog } = window.CubeMtgjsonHistoryShards;
   const { applyIndexedPricesToCard, applyIndexedPriceUpdates } = window.CubePriceMaintenance;
   const { dateLabelIndexes, datePositions, splitDateSeries } = window.CubeChart;
@@ -72,7 +73,7 @@
     loadFallback: loadProductSourceIndexScript,
     preferFallback: window.location.protocol === "file:"
   });
-  const mtgjsonPriceCatalog = createMtgjsonPriceCatalog({
+  const bundledMtgjsonPriceCatalog = createMtgjsonPriceCatalog({
     fetchImpl: (...args) => fetch(...args),
     indexUrl: "mtgjson-price-index.json",
     loadFallback: loadMtgjsonPriceIndexScript,
@@ -184,12 +185,12 @@
     lookupMode: "name",
     addTarget: "draft",
     nameResults: [],
-    nameSearchId: 0,
-    nameSearchController: null,
+    addLookupRequestId: 0,
+    addLookupController: null,
     printingController: null,
     previewCardId: null,
     previewController: null,
-    previewMetadataAttempts: new Set(),
+    previewMetadataCompleted: new Set(),
     previewProductSources: {
       cardId: null,
       status: "idle",
@@ -198,6 +199,7 @@
     },
     refreshingPrices: false,
     syncingPriceHistory: false,
+    priceHistorySyncController: null,
     priceIndexSource: null,
     priceIndexMode: "",
     imageCaching: false,
@@ -291,6 +293,8 @@
     toast
   });
   let searchRenderFrame = 0;
+  let localMtgjsonPriceIndexPromise = null;
+  let combinedMtgjsonPriceIndexCache = { bundled: null, local: null, index: null };
   const foilObservers = new Map();
 
   function loadNameLanguage() {
@@ -1455,11 +1459,27 @@
       if (!update && response.status === 404) return null;
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(payload.error || "本地 MTGJSON 价格索引不可用");
-      await mtgjsonPriceCatalog.setIndex(payload);
+      if (!validateMtgjsonPriceIndex(payload)) throw new Error("本地 MTGJSON 价格索引格式无效");
       return payload;
     } finally {
       window.clearTimeout(timeout);
     }
+  }
+
+  function loadCachedLocalPriceIndex() {
+    if (!localMtgjsonPriceIndexPromise) {
+      const request = requestLocalPriceIndex(false);
+      localMtgjsonPriceIndexPromise = request;
+      request.catch(() => {
+        if (localMtgjsonPriceIndexPromise === request) localMtgjsonPriceIndexPromise = null;
+      });
+    }
+    return localMtgjsonPriceIndexPromise;
+  }
+
+  function cacheLocalPriceIndex(index) {
+    localMtgjsonPriceIndexPromise = Promise.resolve(index);
+    return index;
   }
 
   async function loadPreferredMtgjsonPriceIndex(options = {}) {
@@ -1467,15 +1487,19 @@
     let localIndex = null;
     let warning = "";
     if (endpoint) {
-      try {
-        localIndex = await requestLocalPriceIndex(false);
-      } catch (error) {
-        warning = error.name === "AbortError" ? "连接本地价格服务超时" : error.message || "本地价格服务不可用";
+      if (!options.rebuildLocal) {
+        try {
+          localIndex = await loadCachedLocalPriceIndex();
+        } catch (error) {
+          warning = error.name === "AbortError" ? "连接本地价格服务超时" : error.message || "本地价格服务不可用";
+        }
       }
       const shouldUpdate = options.rebuildLocal || (options.refreshLocalIfStale && (!priceIndexGeneratedToday(localIndex) || !priceIndexMatchesCube(localIndex)));
       if (shouldUpdate) {
         try {
           localIndex = await requestLocalPriceIndex(true);
+          if (!priceIndexMatchesCube(localIndex)) throw new Error("本地价格索引与当前牌表不一致");
+          cacheLocalPriceIndex(localIndex);
           state.priceIndexMode = "local";
           return { index: localIndex, mode: "local", rebuilt: true, warning: "" };
         } catch (error) {
@@ -1486,13 +1510,13 @@
         }
       }
       if (localIndex && priceIndexMatchesCube(localIndex)) {
+        cacheLocalPriceIndex(localIndex);
         state.priceIndexMode = "local";
         return { index: localIndex, mode: "local", rebuilt: false, warning };
       }
       if (localIndex && !warning) warning = "本地价格索引与当前牌表不一致，已忽略旧缓存";
     }
-    mtgjsonPriceCatalog.clearCache();
-    const index = await mtgjsonPriceCatalog.loadIndex();
+    const index = await bundledMtgjsonPriceCatalog.loadIndex();
     state.priceIndexMode = "bundled";
     return { index, mode: "bundled", rebuilt: false, warning };
   }
@@ -1500,17 +1524,41 @@
   async function loadMtgjsonPrintingPriceIndex() {
     const preferred = await loadPreferredMtgjsonPriceIndex();
     if (preferred.mode === "bundled") return preferred.index;
-    mtgjsonPriceCatalog.clearCache();
-    const bundled = await mtgjsonPriceCatalog.loadIndex();
-    return overlayMtgjsonPriceIndex(bundled, preferred.index);
+    const bundled = await bundledMtgjsonPriceCatalog.loadIndex();
+    if (combinedMtgjsonPriceIndexCache.bundled === bundled && combinedMtgjsonPriceIndexCache.local === preferred.index) {
+      return combinedMtgjsonPriceIndexCache.index;
+    }
+    const index = overlayMtgjsonPriceIndex(bundled, preferred.index);
+    combinedMtgjsonPriceIndexCache = { bundled, local: preferred.index, index };
+    return index;
   }
 
-  async function loadMissingMtgjsonHistory(index, cards) {
+  function abortReason(signal) {
+    return signal && signal.reason instanceof Error ? signal.reason : new DOMException("请求已取消", "AbortError");
+  }
+
+  function waitForAbortable(task, signal) {
+    if (!signal) return Promise.resolve(task);
+    if (signal.aborted) return Promise.reject(abortReason(signal));
+    return new Promise((resolve, reject) => {
+      const onAbort = () => reject(abortReason(signal));
+      signal.addEventListener("abort", onAbort, { once: true });
+      Promise.resolve(task).then((value) => {
+        signal.removeEventListener("abort", onAbort);
+        resolve(value);
+      }, (error) => {
+        signal.removeEventListener("abort", onAbort);
+        reject(error);
+      });
+    });
+  }
+
+  async function loadMissingMtgjsonHistory(index, cards, signal) {
     const requestedIds = [...new Set(cards
       .filter((card) => card.scryfallId && !hasMtgjsonHistoricalEntry(index, card))
       .map((card) => card.scryfallId))];
     if (!requestedIds.length) return { index, requested: 0, resolved: 0, bundled: 0 };
-    const bundled = await mtgjsonHistoryShardCatalog.load(index, requestedIds);
+    const bundled = await waitForAbortable(mtgjsonHistoryShardCatalog.load(index, requestedIds), signal);
     const bundledCards = Object.fromEntries(Object.entries(bundled.cards).map(([scryfallId, entry]) => {
       const latest = index.printingPrices && index.printingPrices[scryfallId] || {};
       return [scryfallId, {
@@ -1549,9 +1597,11 @@
       response = await fetch(endpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ scryfallIds: missingIds })
+        body: JSON.stringify({ scryfallIds: missingIds }),
+        signal
       });
-    } catch (_error) {
+    } catch (error) {
+      if (signal && signal.aborted) throw abortReason(signal);
       throw new Error(`有 ${missingIds.length} 个新版本需要本地补全，请先运行“启动 Cube.command”`);
     }
     const payload = await response.json().catch(() => ({}));
@@ -1567,12 +1617,16 @@
 
   async function syncMtgjsonPriceHistory() {
     if (state.syncingPriceHistory) return;
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => controller.abort(new DOMException("价格历史同步超时", "TimeoutError")), PRICE_HISTORY_SYNC_TIMEOUT_MS);
+    state.priceHistorySyncController = controller;
     state.syncingPriceHistory = true;
     openTotalPriceHistory();
     try {
-      const { index: bundledIndex } = await loadPreferredMtgjsonPriceIndex();
+      const historyIndex = await loadMtgjsonPrintingPriceIndex();
+      if (controller.signal.aborted) throw abortReason(controller.signal);
       const cards = getValuedCards();
-      const supplemental = await loadMissingMtgjsonHistory(bundledIndex, cards);
+      const supplemental = await loadMissingMtgjsonHistory(historyIndex, cards, controller.signal);
       const index = supplemental.index;
       state.priceIndexSource = index.source || null;
       const result = syncPriceHistoryWindow(
@@ -1611,10 +1665,13 @@
         : "";
       toast("最近 90 天已同步", `覆盖 ${result.replacedSnapshots} 个日期，新建 ${result.createdSnapshots} 个日期，共 ${result.pricePoints} 个价格点${providerSummary ? ` · ${providerSummary}` : ""}${supplementalText}`);
     } catch (error) {
-      toast("历史同步失败", error.message || "无法读取 MTGJSON 价格历史", true);
+      if (error.name === "AbortError") return;
+      toast(error.name === "TimeoutError" ? "历史同步超时" : "历史同步失败", error.message || "无法读取 MTGJSON 价格历史", true);
     } finally {
+      window.clearTimeout(timeout);
+      if (state.priceHistorySyncController === controller) state.priceHistorySyncController = null;
       state.syncingPriceHistory = false;
-      openTotalPriceHistory();
+      if (elements.priceHistoryDialog.open && elements.priceHistoryContent.querySelector("[data-sync-price-history]")) openTotalPriceHistory();
     }
   }
 
@@ -2076,15 +2133,17 @@
 
   async function enrichPreviewMetadata(cardId) {
     const card = cardByIdAny(cardId);
-    if (!card || !card.scryfallId || (card.setName && card.releasedAt) || state.previewMetadataAttempts.has(cardId)) return;
-    state.previewMetadataAttempts.add(cardId);
+    const metadataKey = card && card.scryfallId ? `${cardId}:${card.scryfallId}` : "";
+    if (!card || !metadataKey || (card.setName && card.releasedAt) || state.previewMetadataCompleted.has(metadataKey)) return;
     try {
       const printing = await catalog.lookupById(card.scryfallId, state.previewController.signal);
       if (!printing || state.previewCardId !== cardId || !elements.imagePreviewDialog.open) return;
       const location = findCardLocation(cardId);
       if (!location) return;
       const current = location.cards[location.index];
+      if (current.scryfallId !== card.scryfallId) return;
       location.cards[location.index] = mergeArchiveMetadata(current, printing);
+      state.previewMetadataCompleted.add(metadataKey);
       saveState("cube");
       renderImagePreview(location.cards[location.index]);
     } catch (error) {
@@ -2383,6 +2442,15 @@
     }).join("");
   }
 
+  async function enrichPrintingPrices(cardId, requestId, pricePromise) {
+    const priceResult = await pricePromise;
+    if (requestId !== printingRequestId || state.editingCardId !== cardId || !elements.printingDialog.open) return;
+    state.printingPriceIndex = priceResult.index;
+    state.printingPriceError = priceResult.error;
+    if (priceResult.index) state.priceIndexSource = priceResult.index.source || null;
+    if (state.printings.length) renderPrintings();
+  }
+
   async function openPrintingDialog(cardId) {
     const card = cardByIdAny(cardId);
     if (!card) return;
@@ -2403,13 +2471,12 @@
     $("#printingDialogTitle").textContent = `${cardDisplayName(card)} · 选择版本`;
     renderPrintingFinishFilter();
     elements.printingDialog.showModal();
+    const pricePromise = loadMtgjsonPrintingPriceIndex()
+      .then((index) => ({ index, error: "" }))
+      .catch((error) => ({ index: null, error: error.message || "加载失败" }));
+    void enrichPrintingPrices(cardId, requestId, pricePromise);
     try {
-      const [printingResult, priceResult] = await Promise.all([
-        catalog.lookupAllPrintings(card, state.printingController.signal),
-        loadMtgjsonPrintingPriceIndex()
-          .then((index) => ({ index, error: "" }))
-          .catch((error) => ({ index: null, error: error.message || "加载失败" }))
-      ]);
+      const printingResult = await catalog.lookupAllPrintings(card, state.printingController.signal);
       if (requestId !== printingRequestId || state.editingCardId !== cardId || !elements.printingDialog.open) return;
       const { oracleId, printings } = printingResult;
       if (card.oracleId !== oracleId) {
@@ -2417,9 +2484,6 @@
         saveState("cube");
       }
       state.printings = printings;
-      state.printingPriceIndex = priceResult.index;
-      state.printingPriceError = priceResult.error;
-      if (priceResult.index) state.priceIndexSource = priceResult.index.source || null;
       renderPrintings();
     } catch (error) {
       if (requestId !== printingRequestId || state.editingCardId !== cardId || !elements.printingDialog.open) return;
@@ -2503,10 +2567,37 @@
     });
   }
 
+  function resetAddLookupButton() {
+    elements.lookupButton.disabled = false;
+    elements.lookupButton.innerHTML = state.lookupMode === "name" ? "搜索卡牌" : "<span>+</span> 查找并添加";
+  }
+
+  function cancelAddLookup() {
+    if (state.addLookupController) state.addLookupController.abort();
+    state.addLookupController = null;
+    state.addLookupRequestId += 1;
+    resetAddLookupButton();
+  }
+
+  function beginAddLookup() {
+    cancelAddLookup();
+    const controller = new AbortController();
+    state.addLookupController = controller;
+    return { controller, requestId: state.addLookupRequestId };
+  }
+
+  function isCurrentAddLookup(request) {
+    return Boolean(
+      request
+      && request.requestId === state.addLookupRequestId
+      && request.controller === state.addLookupController
+      && !request.controller.signal.aborted
+      && elements.addCardDialog.open
+    );
+  }
+
   function clearNameResults() {
-    if (state.nameSearchController) state.nameSearchController.abort();
-    state.nameSearchController = null;
-    state.nameSearchId += 1;
+    cancelAddLookup();
     state.nameResults = [];
     elements.lookupResult.classList.add("hidden");
     elements.lookupResult.innerHTML = "";
@@ -2632,9 +2723,10 @@
     </div>`;
   }
 
-  async function addBasicLandRange(setCode, collectorNumbers) {
+  async function addBasicLandRange(setCode, collectorNumbers, request) {
     const targets = collectorNumbers.map((collectorNumber) => ({ setCode, collectorNumber }));
-    const cardsByPrinting = await catalog.lookupPrintingBatch(targets);
+    const cardsByPrinting = await catalog.lookupPrintingBatch(targets, request.controller.signal);
+    if (!isCurrentAddLookup(request)) return null;
     const classified = classifyBasicLandBatch(targets, cardsByPrinting, state.data.basicLands);
     const changes = classified.accepted.map((result) => {
       const card = normalizeScryfallCard(result);
@@ -2657,29 +2749,28 @@
     const setCode = elements.setCodeInput.value.trim();
     const collectorNumber = elements.collectorNumberInput.value.trim();
     if (isNameLookup ? !name : (!setCode || !collectorNumber)) return;
+    const request = beginAddLookup();
     elements.lookupButton.disabled = true;
     elements.lookupButton.textContent = "正在查找…";
     try {
       if (isNameLookup) {
-        if (state.nameSearchController) state.nameSearchController.abort();
-        state.nameSearchController = new AbortController();
-        const searchId = ++state.nameSearchId;
         elements.lookupResult.classList.remove("hidden");
         elements.lookupResult.innerHTML = '<div class="name-result-empty">正在搜索实体卡牌…</div>';
         const basicName = BASIC_LAND_ORDER.find((candidate) => candidate.toLocaleLowerCase() === name.toLocaleLowerCase());
-        const results = state.addTarget === "basic" ? basicName ? [await catalog.lookupNamed(basicName, state.nameSearchController.signal)] : [] : await catalog.searchByName(name, state.nameSearchController.signal);
-        if (searchId !== state.nameSearchId) return;
+        const results = state.addTarget === "basic" ? basicName ? [await catalog.lookupNamed(basicName, request.controller.signal)] : [] : await catalog.searchByName(name, request.controller.signal);
+        if (!isCurrentAddLookup(request)) return;
         state.nameResults = state.addTarget === "basic" && basicName ? results.filter(isSupportedBasicLand).slice(0, 1) : state.addTarget === "basic" ? [] : results;
         renderNameResults();
         return;
       }
       const parsedCollector = parseCollectorNumberRange(collectorNumber);
       if (state.addTarget === "basic" && parsedCollector.isRange) {
-        await addBasicLandRange(setCode, parsedCollector.numbers);
+        await addBasicLandRange(setCode, parsedCollector.numbers, request);
         return;
       }
       if (parsedCollector.isRange) throw new Error("普通牌表只能输入单个收藏编号");
-      const result = await catalog.lookupPrinting(setCode, collectorNumber);
+      const result = await catalog.lookupPrinting(setCode, collectorNumber, request.controller.signal);
+      if (!isCurrentAddLookup(request)) return;
       const card = normalizeScryfallCard(result);
       if (!addCard(card)) return;
       elements.addCardDialog.close();
@@ -2688,11 +2779,13 @@
       elements.collectorNumberInput.value = "";
       toast("已添加", card.name);
     } catch (error) {
-      if (error.name === "AbortError") return;
+      if (error.name === "AbortError" || !isCurrentAddLookup(request)) return;
       toast("添加失败", error.message || "请检查网络后重试", true);
     } finally {
-      elements.lookupButton.disabled = false;
-      elements.lookupButton.innerHTML = isNameLookup ? "搜索卡牌" : "<span>+</span> 查找并添加";
+      if (state.addLookupController === request.controller) {
+        state.addLookupController = null;
+        resetAddLookupButton();
+      }
     }
   }
 
@@ -3235,6 +3328,8 @@
     $$('[data-basic-land-grouping]').forEach((button) => button.addEventListener("click", () => setBasicLandGrouping(button.dataset.basicLandGrouping)));
     $("#addCardForm").addEventListener("submit", handleAddCard);
     elements.cardNameInput.addEventListener("input", clearNameResults);
+    elements.setCodeInput.addEventListener("input", clearNameResults);
+    elements.collectorNumberInput.addEventListener("input", clearNameResults);
     elements.lookupResult.addEventListener("click", (event) => {
       const button = event.target.closest("[data-add-search-result]");
       if (button) selectNameResult(button.dataset.addSearchResult);
@@ -3377,6 +3472,9 @@
     });
     elements.imagePreviewDialog.addEventListener("cancel", clearImagePreview);
     elements.imagePreviewDialog.addEventListener("close", clearImagePreview);
+    elements.priceHistoryDialog.addEventListener("close", () => {
+      if (state.priceHistorySyncController) state.priceHistorySyncController.abort(new DOMException("价格历史同步已取消", "AbortError"));
+    });
     elements.addCardDialog.addEventListener("close", clearNameResults);
     elements.printingDialog.addEventListener("close", () => {
       if (state.printingController) state.printingController.abort();

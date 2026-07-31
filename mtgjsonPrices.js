@@ -121,10 +121,11 @@
     return scryfallId ? index.cards[scryfallId] || index.printingPrices && index.printingPrices[scryfallId] || null : null;
   }
 
-  function hasHistoricalEntry(index, card) {
+  function hasHistoricalEntry(index, card, finish = card && card.finish) {
     if (!validateIndex(index)) return false;
     const scryfallId = String(card && card.scryfallId || "").trim();
-    return Boolean(scryfallId && Object.prototype.hasOwnProperty.call(index.cards, scryfallId));
+    const entry = scryfallId && index.cards[scryfallId];
+    return entryPriceSeries(index, entry, finish).length > 1;
   }
 
   function printingEntry(index, printing) {
@@ -220,22 +221,29 @@
     if (baseIndex.providers.join("\0") !== currentIndex.providers.join("\0")) {
       throw new Error("MTGJSON 价格来源顺序不一致");
     }
+    const overlayEntries = (baseEntries, currentEntries) => {
+      const result = { ...(baseEntries || {}) };
+      Object.entries(currentEntries || {}).forEach(([scryfallId, current]) => {
+        const base = result[scryfallId] || {};
+        result[scryfallId] = {
+          ...base,
+          ...current,
+          foil: mergeSeries(base.foil, current && current.foil, baseIndex.providers),
+          nonfoil: mergeSeries(base.nonfoil, current && current.nonfoil, baseIndex.providers)
+        };
+      });
+      return result;
+    };
     return {
       ...baseIndex,
       ...currentIndex,
       source: currentIndex.source || baseIndex.source,
-      cards: {
-        ...(baseIndex.cards || {}),
-        ...(currentIndex.cards || {})
-      },
+      cards: overlayEntries(baseIndex.cards, currentIndex.cards),
       printingOracleIds: [...new Set([
         ...(baseIndex.printingOracleIds || []),
         ...(currentIndex.printingOracleIds || [])
       ])],
-      printingPrices: {
-        ...(baseIndex.printingPrices || {}),
-        ...(currentIndex.printingPrices || {})
-      }
+      printingPrices: overlayEntries(baseIndex.printingPrices, currentIndex.printingPrices)
     };
   }
 
