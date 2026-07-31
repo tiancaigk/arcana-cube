@@ -27,6 +27,26 @@ test("storage validates and round-trips Cube data", () => {
   assert.throws(() => storage.save({ cards: [] }), /无效/);
 });
 
+test("storage surfaces newer versions and migration failures without overwriting them", () => {
+  const fallback = { meta: { name: "Fallback" }, notes: "", cards: [] };
+  const data = { meta: { name: "Newer" }, notes: "", cards: [] };
+  const newerPayload = JSON.stringify({
+    format: "arcana-cube-local",
+    dataVersion: CURRENT_DATA_VERSION + 1,
+    data
+  });
+  const newerMemory = memoryStorage(newerPayload);
+  assert.throws(() => createStorage(newerMemory, "cube").load(fallback), /较新版本/);
+  assert.equal(newerMemory.value(), newerPayload);
+
+  const invalidVersionPayload = JSON.stringify({
+    format: "arcana-cube-local",
+    dataVersion: -1,
+    data
+  });
+  assert.throws(() => createStorage(memoryStorage(invalidVersionPayload), "cube").load(fallback), /版本无效/);
+});
+
 test("workspace file helpers wrap and parse Cube data", () => {
   const data = { meta: { name: "Workspace" }, notes: "note", cards: [{ id: "1" }] };
   const wrapped = wrapWorkspaceData(data);

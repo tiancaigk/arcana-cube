@@ -22,14 +22,22 @@
   function createStorage(storage, key) {
     return {
       load(fallback) {
+        let serialized;
         try {
-          const saved = JSON.parse(storage.getItem(key));
-          if (isCubeData(saved)) return migrateCubeData(saved, 0);
-          if (saved && saved.format === LOCAL_FORMAT && isCubeData(saved.data)) return migrateCubeData(saved.data, saved.dataVersion ?? 0);
-          return clone(fallback);
+          serialized = storage.getItem(key);
         } catch (error) {
           return clone(fallback);
         }
+        if (serialized === null) return clone(fallback);
+        let saved;
+        try {
+          saved = JSON.parse(serialized);
+        } catch (error) {
+          return clone(fallback);
+        }
+        if (isCubeData(saved)) return migrateCubeData(saved, 0);
+        if (saved && saved.format === LOCAL_FORMAT && isCubeData(saved.data)) return migrateCubeData(saved.data, saved.dataVersion ?? 0);
+        return clone(fallback);
       },
       save(data) {
         if (!isCubeData(data)) throw new Error("Cube 数据格式无效");

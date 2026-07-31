@@ -46,9 +46,23 @@
       return writeBrowser(domain, snapshot);
     }
 
+    function pendingFor(directoryHandle, create = false) {
+      let entries = pending.get(directoryHandle);
+      if (!entries && create) {
+        entries = new Map();
+        pending.set(directoryHandle, entries);
+      }
+      return entries;
+    }
+
+    function pendingHasDomain(domain) {
+      return [...pending.values()].some((entries) => entries.has(domain));
+    }
+
     function enqueueDirectory(domain, snapshot) {
-      if (!getDirectoryHandle()) return;
-      pending.set(domain, snapshot);
+      const directoryHandle = getDirectoryHandle();
+      if (!directoryHandle) return;
+      pendingFor(directoryHandle, true).set(domain, snapshot);
       dirty.add(domain);
       scheduleDrain();
     }
@@ -95,22 +109,29 @@
     function drain() {
       if (drainPromise) return drainPromise;
       drainPromise = (async () => {
+        const failedHandles = new Set();
         while (pending.size) {
-          const directoryHandle = getDirectoryHandle();
+          const directoryHandle = [...pending.keys()].find((handle) => !failedHandles.has(handle));
           if (!directoryHandle) return;
-          const batch = new Map(pending);
-          batch.forEach((_snapshot, domain) => pending.delete(domain));
-          for (const domain of DOMAINS) {
+          const batch = new Map(pending.get(directoryHandle));
+          pending.delete(directoryHandle);
+          for (let index = 0; index < DOMAINS.length; index += 1) {
+            const domain = DOMAINS[index];
             if (!batch.has(domain)) continue;
             const snapshot = batch.get(domain);
             try {
               await directoryWriters[domain](directoryHandle, snapshot);
-              if (!pending.has(domain) && !scheduled.has(domain)) dirty.delete(domain);
+              if (!pendingHasDomain(domain) && !scheduled.has(domain)) dirty.delete(domain);
             } catch (error) {
-              if (!pending.has(domain)) pending.set(domain, snapshot);
-              dirty.add(domain);
+              const retry = pendingFor(directoryHandle, true);
+              DOMAINS.slice(index).forEach((remainingDomain) => {
+                if (!batch.has(remainingDomain) || retry.has(remainingDomain)) return;
+                retry.set(remainingDomain, batch.get(remainingDomain));
+                dirty.add(remainingDomain);
+              });
+              failedHandles.add(directoryHandle);
               await onDirectoryError(error, domain, directoryHandle);
-              return;
+              break;
             }
           }
         }
@@ -138,14 +159,17 @@
     function hasDirty(domain) {
       if (domain !== undefined) {
         validateDomain(domain);
-        return dirty.has(domain) || scheduled.has(domain) || pending.has(domain);
+        return dirty.has(domain) || scheduled.has(domain) || pendingHasDomain(domain);
       }
       return dirty.size > 0 || scheduled.size > 0 || pending.size > 0;
     }
 
-    function clearDirectory() {
-      pending.clear();
-      dirty.clear();
+    function clearDirectory(directoryHandle) {
+      if (directoryHandle === undefined) pending.clear();
+      else pending.delete(directoryHandle);
+      DOMAINS.forEach((domain) => {
+        if (!scheduled.has(domain) && !pendingHasDomain(domain)) dirty.delete(domain);
+      });
     }
 
     return { markDirty, scheduleDirty, saveBrowser, flush, flushBrowserSync, hasDirty, clearDirectory };

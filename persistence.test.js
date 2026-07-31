@@ -98,6 +98,70 @@ test("a failed directory write remains dirty and reports the failure", async () 
   assert.equal(coordinator.hasDirty("cube"), true);
 });
 
+test("pending snapshots stay bound to the directory that received them", async () => {
+  const oldHandle = { name: "Old Cube" };
+  const newHandle = { name: "New Cube" };
+  let currentHandle = oldHandle;
+  const writes = [];
+  const failures = [];
+  const coordinator = createPersistenceCoordinator({
+    browserWriters: {
+      cube: () => {},
+      priceHistory: () => {},
+      changeLog: () => {}
+    },
+    directoryWriters: {
+      cube: async (handle, snapshot) => {
+        writes.push({ handle, revision: snapshot.revision });
+        if (handle === oldHandle) throw new Error("old folder unavailable");
+      },
+      priceHistory: async () => {},
+      changeLog: async () => {}
+    },
+    getDirectoryHandle: () => currentHandle,
+    onDirectoryError: async (error, _domain, handle) => failures.push(`${handle.name}:${error.message}`)
+  });
+
+  coordinator.markDirty("cube", { revision: 1 });
+  await coordinator.flush();
+  currentHandle = newHandle;
+  coordinator.markDirty("cube", { revision: 2 });
+  await coordinator.flush();
+
+  assert.equal(writes.some((entry) => entry.handle === newHandle && entry.revision === 1), false);
+  assert.equal(writes.some((entry) => entry.handle === newHandle && entry.revision === 2), true);
+  assert.equal(coordinator.hasDirty("cube"), true);
+  assert.ok(failures.every((entry) => entry.startsWith("Old Cube:")));
+
+  coordinator.clearDirectory(oldHandle);
+  assert.equal(coordinator.hasDirty("cube"), false);
+});
+
+test("a failed domain preserves the remaining snapshots for the same directory", async () => {
+  let shouldFail = true;
+  const writes = [];
+  const { coordinator } = createHarness({
+    directoryWriters: {
+      cube: async (_handle, snapshot) => {
+        writes.push(`cube:${snapshot.revision}`);
+        if (shouldFail) throw new Error("disk full");
+      },
+      priceHistory: async (_handle, snapshot) => writes.push(`priceHistory:${snapshot.revision}`),
+      changeLog: async (_handle, snapshot) => writes.push(`changeLog:${snapshot.revision}`)
+    }
+  });
+  coordinator.markDirty("cube", { revision: 1 });
+  coordinator.markDirty("priceHistory", { revision: 1 });
+  await coordinator.flush();
+  assert.equal(coordinator.hasDirty("cube"), true);
+  assert.equal(coordinator.hasDirty("priceHistory"), true);
+
+  shouldFail = false;
+  await coordinator.flush();
+  assert.deepEqual(writes, ["cube:1", "cube:1", "priceHistory:1"]);
+  assert.equal(coordinator.hasDirty(), false);
+});
+
 test("a newer snapshot queued during a write is persisted after the in-flight value", async () => {
   const writes = [];
   let releaseFirst;
