@@ -86,7 +86,7 @@ test("thumbnail failure preserves a newly downloaded original", async () => {
   assert.equal(target.localThumbnail, "");
 });
 
-test("image cache processes both faces and reports progress sequentially", async () => {
+test("image cache processes cards concurrently while reporting ordered progress", async () => {
   let inFlight = 0;
   let maxInFlight = 0;
   const progress = [];
@@ -99,12 +99,23 @@ test("image cache processes both faces and reports progress sequentially", async
       return { ok: true, status: 200, blob: async () => new Blob([url], { type: "image/png" }) };
     }
   });
-  const cards = [card({ remoteBackImage: "https://cards.scryfall.io/png/back/a/b/card.png", backImage: "https://cards.scryfall.io/png/back/a/b/card.png" }), card({ id: "card-2", collectorNumber: "127" })];
-  const result = await cache.cacheAll(cards, { onProgress: (entry) => progress.push(entry.index) });
-  assert.equal(result.total, 2);
-  assert.equal(result.updated, 2);
-  assert.deepEqual(progress, [1, 2]);
-  assert.equal(maxInFlight, 1);
+  const cards = Array.from({ length: 6 }, (_value, index) => card({
+    id: `card-${index}`,
+    scryfallId: `printing-${index}`,
+    collectorNumber: String(126 + index),
+    ...(index === 0 ? { remoteBackImage: "https://cards.scryfall.io/png/back/a/b/card.png", backImage: "https://cards.scryfall.io/png/back/a/b/card.png" } : {})
+  }));
+  const checkpoints = [];
+  const result = await cache.cacheAll(cards, {
+    checkpointEvery: 2,
+    onProgress: (entry) => progress.push(entry.index),
+    checkpoint: (entry) => checkpoints.push(entry.updated)
+  });
+  assert.equal(result.total, 6);
+  assert.equal(result.updated, 6);
+  assert.deepEqual(progress, [1, 2, 3, 4, 5, 6]);
+  assert.deepEqual(checkpoints, [2, 4, 6]);
+  assert.equal(maxInFlight, 3);
   assert.equal(cards[0].localBackImage.endsWith("-back.png"), true);
   assert.equal(cards[0].localBackThumbnail.endsWith("-back.webp"), true);
 });

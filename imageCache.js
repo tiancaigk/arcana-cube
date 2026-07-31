@@ -36,6 +36,7 @@
     const imageDirName = options.imageDirName || "images";
     const thumbnailDirName = options.thumbnailDirName || "thumbnails";
     const timeoutMs = Number(options.timeoutMs) || 25000;
+    const defaultConcurrency = Math.min(8, Math.max(1, Math.floor(Number(options.concurrency) || 3)));
     const setTimer = options.setTimer || setTimeout;
     const clearTimer = options.clearTimer || clearTimeout;
     if (!workspace || typeof workspace.fileExists !== "function" || typeof workspace.readFile !== "function" || typeof workspace.writeFile !== "function") throw new Error("图片缓存缺少工作区服务");
@@ -145,23 +146,62 @@
       const onProgress = runOptions.onProgress || (() => {});
       const checkpoint = runOptions.checkpoint || (() => {});
       const checkpointEvery = Math.max(1, Number(runOptions.checkpointEvery) || 100);
-      for (let index = 0; index < targets.length; index += 1) {
-        let result;
-        try {
-          result = await cacheCard(targets[index]);
-          summary[result.status] += 1;
-          if (result.errors.length) {
-            summary.failed += 1;
-            summary.errors.push(...result.errors.map((entry) => ({ card: targets[index], ...entry })));
-          }
-        } catch (error) {
-          result = { status: "failed", errors: [{ card: targets[index], stage: "original", error }] };
-          summary.failed += 1;
-          summary.errors.push(...result.errors);
-        }
-        await onProgress({ index: index + 1, total: targets.length, card: targets[index], result, summary: { ...summary, errors: [...summary.errors] } });
-        if ((index + 1) % checkpointEvery === 0) await checkpoint({ ...summary, errors: [...summary.errors] });
+      const concurrency = Math.min(targets.length, Math.min(8, Math.max(1, Math.floor(Number(runOptions.concurrency) || defaultConcurrency))));
+      const activeByCard = new Map();
+      let cursor = 0;
+      let completed = 0;
+      let reportTail = Promise.resolve();
+
+      function cacheKey(card) {
+        return String(card.scryfallId || `${card.set || ""}\0${card.collectorNumber || ""}\0${card.name || ""}`);
       }
+
+      async function cacheTarget(card) {
+        const key = cacheKey(card);
+        const previous = activeByCard.get(key) || Promise.resolve();
+        const task = previous.catch(() => {}).then(() => cacheCard(card));
+        activeByCard.set(key, task);
+        try {
+          return await task;
+        } finally {
+          if (activeByCard.get(key) === task) activeByCard.delete(key);
+        }
+      }
+
+      async function report(card, result) {
+        const operation = reportTail.then(async () => {
+          if (result.status === "failed") {
+            summary.failed += 1;
+          } else {
+            summary[result.status] += 1;
+            if (result.errors.length) summary.failed += 1;
+          }
+          if (result.errors.length) summary.errors.push(...result.errors.map((entry) => entry.card ? entry : ({ card, ...entry })));
+          completed += 1;
+          const snapshot = { ...summary, errors: [...summary.errors] };
+          await onProgress({ index: completed, total: targets.length, card, result, summary: snapshot });
+          if (completed % checkpointEvery === 0) await checkpoint(snapshot);
+        });
+        reportTail = operation.catch(() => {});
+        return operation;
+      }
+
+      async function worker() {
+        while (cursor < targets.length) {
+          const targetIndex = cursor;
+          cursor += 1;
+          const target = targets[targetIndex];
+          let result;
+          try {
+            result = await cacheTarget(target);
+          } catch (error) {
+            result = { status: "failed", errors: [{ card: target, stage: "original", error }] };
+          }
+          await report(target, result);
+        }
+      }
+
+      await Promise.all(Array.from({ length: concurrency }, worker));
       return summary;
     }
 
