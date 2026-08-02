@@ -33,6 +33,56 @@
     return String(left.collectorNumber || "").localeCompare(String(right.collectorNumber || ""), undefined, { numeric: true, sensitivity: "base" });
   }
 
+  function compareBasicLandsWithinKind(left, right) {
+    const dateOrder = validReleaseDate(right.releasedAt).localeCompare(validReleaseDate(left.releasedAt));
+    if (dateOrder) return dateOrder;
+    const setOrder = String(left.set || "").localeCompare(String(right.set || ""), undefined, { sensitivity: "base" });
+    return setOrder || compareCollectorNumbers(left, right);
+  }
+
+  function interleaveBasicLandKinds(cards) {
+    const byKind = new Map(BASIC_LAND_ORDER.map((kind) => [kind, []]));
+    cards.forEach((card) => {
+      const kind = core.getBasicLandKind(card);
+      if (byKind.has(kind)) byKind.get(kind).push(card);
+    });
+    byKind.forEach((items) => items.sort(compareCollectorNumbers));
+    const result = [];
+    const rows = Math.max(0, ...[...byKind.values()].map((items) => items.length));
+    for (let row = 0; row < rows; row += 1) {
+      BASIC_LAND_ORDER.forEach((kind) => {
+        const card = byKind.get(kind)[row];
+        if (card) result.push(card);
+      });
+    }
+    return result;
+  }
+
+  function buildSetGroups(cards) {
+    const sets = new Map();
+    cards.forEach((card) => {
+      const setCode = String(card.set || "").trim().toUpperCase();
+      const key = setCode || "UNKNOWN";
+      if (!sets.has(key)) sets.set(key, { key, label: String(card.setName || "").trim() || (setCode || "未知系列"), setCode, releasedAt: validReleaseDate(card.releasedAt), cards: [] });
+      const group = sets.get(key);
+      if (!group.releasedAt) group.releasedAt = validReleaseDate(card.releasedAt);
+      group.cards.push(card);
+    });
+    return [...sets.values()].map((group) => ({ ...group, cards: interleaveBasicLandKinds(group.cards) })).sort((left, right) => {
+      if (left.releasedAt && right.releasedAt) return right.releasedAt.localeCompare(left.releasedAt) || left.label.localeCompare(right.label);
+      if (left.releasedAt) return -1;
+      if (right.releasedAt) return 1;
+      return left.label.localeCompare(right.label);
+    });
+  }
+
+  function sortBasicLands(cards) {
+    const source = Array.isArray(cards) ? cards : [];
+    const supported = source.filter(core.isSupportedBasicLand);
+    const unsupported = source.filter((card) => !core.isSupportedBasicLand(card));
+    return [...buildSetGroups(supported).flatMap((group) => group.cards), ...unsupported];
+  }
+
   function groupBasicLands(cards, mode = "kind") {
     const source = Array.isArray(cards) ? cards.filter(core.isSupportedBasicLand) : [];
     if (mode !== "set") {
@@ -41,28 +91,11 @@
         label: BASIC_LAND_LABELS[kind],
         setCode: "",
         releasedAt: "",
-        cards: source.filter((card) => core.getBasicLandKind(card) === kind).sort((left, right) => {
-          const dateOrder = validReleaseDate(right.releasedAt).localeCompare(validReleaseDate(left.releasedAt));
-          return dateOrder || compareCollectorNumbers(left, right);
-        })
+        cards: source.filter((card) => core.getBasicLandKind(card) === kind).sort(compareBasicLandsWithinKind)
       }));
     }
 
-    const sets = new Map();
-    source.forEach((card) => {
-      const setCode = String(card.set || "").trim().toUpperCase();
-      const key = setCode || "UNKNOWN";
-      if (!sets.has(key)) sets.set(key, { key, label: String(card.setName || "").trim() || (setCode || "未知系列"), setCode, releasedAt: validReleaseDate(card.releasedAt), cards: [] });
-      const group = sets.get(key);
-      if (!group.releasedAt) group.releasedAt = validReleaseDate(card.releasedAt);
-      group.cards.push(card);
-    });
-    return [...sets.values()].map((group) => ({ ...group, cards: group.cards.sort(compareCollectorNumbers) })).sort((left, right) => {
-      if (left.releasedAt && right.releasedAt) return right.releasedAt.localeCompare(left.releasedAt) || left.label.localeCompare(right.label);
-      if (left.releasedAt) return -1;
-      if (right.releasedAt) return 1;
-      return left.label.localeCompare(right.label);
-    });
+    return buildSetGroups(source);
   }
 
   function classifyBasicLandBatch(targets, cardsByPrinting, existingCards = []) {
@@ -97,5 +130,5 @@
     return { accepted, counts, items };
   }
 
-  return { BASIC_LAND_LABELS, BASIC_LAND_ORDER, classifyBasicLandBatch, groupBasicLands, parseCollectorNumberRange };
+  return { BASIC_LAND_LABELS, BASIC_LAND_ORDER, classifyBasicLandBatch, groupBasicLands, parseCollectorNumberRange, sortBasicLands };
 });

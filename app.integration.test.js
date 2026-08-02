@@ -202,6 +202,8 @@ test("basic lands use a dedicated five-group collection view", () => {
   assert.match(appSource, /basicLands:\s*\[\]/);
   assert.match(appSource, /function renderBasicLands\(\)/);
   assert.match(basicLandsSource, /\["Plains", "Island", "Swamp", "Mountain", "Forest"\]/);
+  assert.match(appSource, /basicLands: sortBasicLands\(normalizeStoredCards/);
+  assert.match(appSource, /state\.data\.basicLands = sortBasicLands/);
   assert.match(appSource, /function findCardLocation\(cardId\)/);
   assert.match(appSource, /isSupportedBasicLand\(card\)/);
   assert.match(appSource, /已经收藏了这个基本地版本/);

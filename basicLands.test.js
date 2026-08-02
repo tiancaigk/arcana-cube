@@ -2,9 +2,9 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 const core = require("./core.js");
 const catalog = require("./catalog.js");
-const { classifyBasicLandBatch, groupBasicLands, parseCollectorNumberRange } = require("./basicLands.js");
+const { classifyBasicLandBatch, groupBasicLands, parseCollectorNumberRange, sortBasicLands } = require("./basicLands.js");
 
-test("basic land groups keep kind order and use natural collector order within sets", () => {
+test("basic land groups keep kind order and interleave land kinds within sets", () => {
   const cards = [
     { name: "Plains", set: "FDN", setName: "Foundations", collectorNumber: "10", releasedAt: "2024-11-15" },
     { name: "Forest", set: "FDN", setName: "Foundations", collectorNumber: "2", releasedAt: "2024-11-15" },
@@ -13,7 +13,28 @@ test("basic land groups keep kind order and use natural collector order within s
   assert.deepEqual(groupBasicLands(cards, "kind").map((group) => group.key), ["Plains", "Island", "Swamp", "Mountain", "Forest"]);
   const sets = groupBasicLands(cards, "set");
   assert.deepEqual(sets.map((group) => group.key), ["FDN", "ONE"]);
-  assert.deepEqual(sets[0].cards.map((card) => card.collectorNumber), ["2", "10"]);
+  assert.deepEqual(sets[0].cards.map((card) => card.collectorNumber), ["10", "2"]);
+});
+
+test("stored basic lands sort by set and interleave WUBRG variants by collector order", () => {
+  const cards = [
+    { name: "Forest", set: "NEW", collectorNumber: "10", releasedAt: "2026-01-01" },
+    { name: "Mountain", set: "NEW", collectorNumber: "8", releasedAt: "2026-01-01" },
+    { name: "Plains", set: "NEW", collectorNumber: "2", releasedAt: "2026-01-01" },
+    { name: "Island", set: "NEW", collectorNumber: "4", releasedAt: "2026-01-01" },
+    { name: "Swamp", set: "NEW", collectorNumber: "6", releasedAt: "2026-01-01" },
+    { name: "Forest", set: "NEW", collectorNumber: "9", releasedAt: "2026-01-01" },
+    { name: "Mountain", set: "NEW", collectorNumber: "7", releasedAt: "2026-01-01" },
+    { name: "Plains", set: "NEW", collectorNumber: "1", releasedAt: "2026-01-01" },
+    { name: "Island", set: "NEW", collectorNumber: "3", releasedAt: "2026-01-01" },
+    { name: "Swamp", set: "NEW", collectorNumber: "5", releasedAt: "2026-01-01" },
+    { name: "Plains", set: "OLD", collectorNumber: "1", releasedAt: "2025-01-01" }
+  ];
+  const sorted = sortBasicLands(cards);
+  assert.deepEqual(sorted.slice(0, 10).map((card) => card.name), ["Plains", "Island", "Swamp", "Mountain", "Forest", "Plains", "Island", "Swamp", "Mountain", "Forest"]);
+  assert.deepEqual(sorted.slice(0, 10).map((card) => card.collectorNumber), ["1", "3", "5", "7", "9", "2", "4", "6", "8", "10"]);
+  assert.equal(sorted[10].set, "OLD");
+  assert.notStrictEqual(sorted, cards);
 });
 
 test("collector range parsing preserves literals and limits numeric ranges", () => {

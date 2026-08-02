@@ -37,7 +37,7 @@
   const { createHistoryShardCatalog } = window.CubeMtgjsonHistoryShards;
   const { applyIndexedPricesToCard, applyIndexedPriceUpdates } = window.CubePriceMaintenance;
   const { dateLabelIndexes, datePositions, splitDateSeries } = window.CubeChart;
-  const { BASIC_LAND_LABELS, BASIC_LAND_ORDER, classifyBasicLandBatch, groupBasicLands, parseCollectorNumberRange } = window.CubeBasicLands;
+  const { BASIC_LAND_LABELS, BASIC_LAND_ORDER, classifyBasicLandBatch, groupBasicLands, parseCollectorNumberRange, sortBasicLands } = window.CubeBasicLands;
   const { createCollectionCommandExecutor } = window.CubeCollectionCommands;
   const { createViewPreferenceStore } = window.CubeViewPreferences;
   const { createImageCache, isRemoteImageUrl, preferPngImageUrl } = window.CubeImageCache;
@@ -462,7 +462,7 @@
       meta: { ...(data.meta || defaultState.meta) },
       notes: typeof data.notes === "string" ? data.notes : "",
       cards: normalizeStoredCards(data.cards || [], { label: "主牌表", singleton: true }),
-      basicLands: normalizeStoredCards(data.basicLands || [], { label: "基本地" })
+      basicLands: sortBasicLands(normalizeStoredCards(data.basicLands || [], { label: "基本地" }))
     };
     if (!state.data.meta.name) state.data.meta.name = defaultState.meta.name;
     if (typeof state.data.meta.description !== "string") state.data.meta.description = defaultState.meta.description;
@@ -2653,7 +2653,7 @@
         toast("无法重复添加", "已经收藏了这个基本地版本", true);
         return false;
       }
-      state.data.basicLands.unshift(card);
+      state.data.basicLands = sortBasicLands([card, ...state.data.basicLands]);
       collectionCommands.execute({
         changed: true,
         changes: [{ type: "basicLand.added", summary: `添加基本地：${card.name}`, details: { card: cardLogInfo(card), after: cardLogInfo(card) } }],
@@ -2753,6 +2753,7 @@
       return { type: "basicLand.added", summary: `添加基本地：${card.name}`, details: { card: cardLogInfo(card), after: cardLogInfo(card) } };
     });
     const { counts, items } = classified;
+    if (counts.added > 0) state.data.basicLands = sortBasicLands(state.data.basicLands);
     collectionCommands.execute({ changed: counts.added > 0, changes, render: { scopes: ["basics", "stats"] } });
     if (counts.added > 0) scheduleAutomaticPriceRefresh();
     const summary = { setCode: setCode.toUpperCase(), first: collectorNumbers[0], last: collectorNumbers[collectorNumbers.length - 1], counts, items };
