@@ -32,7 +32,7 @@
   const { requestJson: scryfallRequest } = window.ScryfallClient;
   const { createMtgchClient } = window.MtgchClient;
   const { createCatalog, printingKey } = window.CubeCatalog;
-  const { createProductSourceCatalog } = window.CubeProductSources;
+  const { createProductSourceCatalog, lookupProductSources, validateIndex: validateProductSourceIndex } = window.CubeProductSources;
   const { createMtgjsonPriceCatalog, cubeFingerprint, hasHistoricalEntry: hasMtgjsonHistoricalEntry, lookupPrice: lookupMtgjsonPrice, lookupPrintingPrice: lookupMtgjsonPrintingPrice, mergePriceIndexes: mergeMtgjsonPriceIndexes, mergeSeries: mergeMtgjsonPriceSeries, overlayPriceIndex: overlayMtgjsonPriceIndex, priceSeries: mtgjsonPriceSeries, providerLabel, validateIndex: validateMtgjsonPriceIndex } = window.CubeMtgjsonPrices;
   const { createHistoryShardCatalog } = window.CubeMtgjsonHistoryShards;
   const { applyIndexedPricesToCard, applyIndexedPriceUpdates } = window.CubePriceMaintenance;
@@ -96,7 +96,8 @@
   let sheetJsLoader;
   let printingRequestId = 0;
   let priceChartSequence = 0;
-  let preferredProductSourceIndex = { fingerprint: "", promise: null };
+  let localProductSourceIndexPromise = null;
+  let productSourceRebuild = { fingerprint: "", promise: null };
 
   const seedCards = [
     ["Swords to Plowshares", "{W}", 1, ["W"], "Instant", "2XM", "uncommon"],
@@ -1421,44 +1422,40 @@
       if (!update && response.status === 404) return null;
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(payload.error || "本地产品来源索引不可用");
+      if (!validateProductSourceIndex(payload)) throw new Error("本地产品来源索引格式无效");
       return payload;
     } finally {
       window.clearTimeout(timeout);
     }
   }
 
-  function loadPreferredProductSourceIndex() {
-    const fingerprint = cubeFingerprint(getValuedCards());
-    if (preferredProductSourceIndex.fingerprint === fingerprint && preferredProductSourceIndex.promise) {
-      return preferredProductSourceIndex.promise;
+  function loadCachedLocalProductSourceIndex() {
+    if (!localProductSourceIndexPromise) {
+      const request = requestLocalProductSourceIndex(false);
+      localProductSourceIndexPromise = request;
+      request.catch(() => {
+        if (localProductSourceIndexPromise === request) localProductSourceIndexPromise = null;
+      });
     }
-    const promise = (async () => {
-      let warning = "";
-      productSourceCatalog.clearCache();
-      const bundledIndex = await productSourceCatalog.loadIndex();
-      if (productSourceIndexMatchesCube(bundledIndex)) {
-        return { index: bundledIndex, matchesCube: true, warning };
-      }
-      const endpoint = localProductSourceEndpoint();
-      if (endpoint) {
-        let localIndex = null;
-        try {
-          localIndex = await requestLocalProductSourceIndex(false);
-          if (!productSourceIndexMatchesCube(localIndex)) localIndex = await requestLocalProductSourceIndex(true);
-        } catch (error) {
-          warning = error.name === "AbortError" ? "本地产品来源更新超时" : error.message || "本地产品来源更新失败";
-        }
-        if (productSourceIndexMatchesCube(localIndex)) {
-          await productSourceCatalog.setIndex(localIndex);
-          return { index: localIndex, matchesCube: true, warning };
-        }
-      }
-      return { index: bundledIndex, matchesCube: false, warning };
-    })();
-    preferredProductSourceIndex = { fingerprint, promise };
-    promise.catch(() => {
-      if (preferredProductSourceIndex.promise === promise) preferredProductSourceIndex = { fingerprint: "", promise: null };
-    });
+    return localProductSourceIndexPromise;
+  }
+
+  function cacheLocalProductSourceIndex(index) {
+    localProductSourceIndexPromise = Promise.resolve(index);
+    return index;
+  }
+
+  function rebuildLocalProductSourceIndex() {
+    const fingerprint = cubeFingerprint(getValuedCards());
+    if (productSourceRebuild.fingerprint === fingerprint && productSourceRebuild.promise) {
+      return productSourceRebuild.promise;
+    }
+    const promise = requestLocalProductSourceIndex(true).then(cacheLocalProductSourceIndex);
+    productSourceRebuild = { fingerprint, promise };
+    const clear = () => {
+      if (productSourceRebuild.promise === promise) productSourceRebuild = { fingerprint: "", promise: null };
+    };
+    promise.then(clear, clear);
     return promise;
   }
 
@@ -2072,6 +2069,13 @@
     current.replaceWith(template.content.firstElementChild);
   }
 
+  function publishPreviewProductSources(cardId, result) {
+    if (state.previewCardId !== cardId || !elements.imagePreviewDialog.open) return false;
+    state.previewProductSources = { cardId, status: "ready", result, error: "" };
+    updateProductSourcePanel(cardId);
+    return true;
+  }
+
   async function enrichPreviewProductSources(cardId) {
     const card = cardByIdAny(cardId);
     if (!card || !card.scryfallId) {
@@ -2080,13 +2084,52 @@
       return;
     }
     try {
-      const preferred = await loadPreferredProductSourceIndex();
-      const result = await productSourceCatalog.lookup(card);
-      result.indexMatchesCube = preferred.matchesCube;
-      result.warning = preferred.warning;
+      const bundledIndex = await productSourceCatalog.loadIndex();
+      let result = lookupProductSources(bundledIndex, card);
+      result.indexMatchesCube = productSourceIndexMatchesCube(bundledIndex);
+      result.warning = "";
+      if (!publishPreviewProductSources(cardId, result)) return;
+
+      if (!localProductSourceEndpoint()) return;
+      let localIndex;
+      try {
+        localIndex = await loadCachedLocalProductSourceIndex();
+      } catch (error) {
+        if (!result.entry) {
+          result = {
+            ...result,
+            warning: error.name === "AbortError" ? "连接本地产品来源服务超时" : error.message || "本地产品来源服务不可用"
+          };
+          publishPreviewProductSources(cardId, result);
+        }
+        return;
+      }
       if (state.previewCardId !== cardId || !elements.imagePreviewDialog.open) return;
-      state.previewProductSources = { cardId, status: "ready", result, error: "" };
-      updateProductSourcePanel(cardId);
+      if (localIndex) {
+        const localResult = lookupProductSources(localIndex, card);
+        if (localResult.entry || !result.entry) result = localResult;
+        result.indexMatchesCube = productSourceIndexMatchesCube(localIndex);
+        result.warning = "";
+        if (!publishPreviewProductSources(cardId, result)) return;
+        if (result.entry || result.indexMatchesCube) return;
+      } else if (result.entry) {
+        return;
+      }
+
+      result = { ...result, warning: "当前索引暂无这个版本，正在后台补全…" };
+      if (!publishPreviewProductSources(cardId, result)) return;
+      try {
+        const rebuiltIndex = await rebuildLocalProductSourceIndex();
+        result = lookupProductSources(rebuiltIndex, card);
+        result.indexMatchesCube = productSourceIndexMatchesCube(rebuiltIndex);
+        result.warning = "";
+      } catch (error) {
+        result = {
+          ...result,
+          warning: error.name === "AbortError" ? "本地产品来源更新超时" : error.message || "本地产品来源更新失败"
+        };
+      }
+      publishPreviewProductSources(cardId, result);
     } catch (error) {
       if (state.previewCardId !== cardId || !elements.imagePreviewDialog.open) return;
       state.previewProductSources = {

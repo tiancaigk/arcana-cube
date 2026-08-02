@@ -145,6 +145,17 @@
     );
   }
 
+  function lookupProductSources(index, card) {
+    if (!validateIndex(index)) throw new Error("产品来源索引格式无效");
+    const scryfallId = String(card && card.scryfallId || "").trim();
+    const entry = scryfallId ? index.cards[scryfallId] : null;
+    return {
+      entry,
+      products: selectProductSources(entry, card && card.finish, index.products),
+      source: index.source || null
+    };
+  }
+
   function createProductSourceCatalog(options = {}) {
     const fetchImpl = options.fetchImpl || (typeof fetch === "function" ? fetch : null);
     const indexUrl = options.indexUrl || "product-source-index.json";
@@ -188,13 +199,7 @@
 
     async function lookup(card) {
       const index = await loadIndex();
-      const scryfallId = String(card && card.scryfallId || "").trim();
-      const entry = scryfallId ? index.cards[scryfallId] : null;
-      return {
-        entry,
-        products: selectProductSources(entry, card && card.finish, index.products),
-        source: index.source || null
-      };
+      return lookupProductSources(index, card);
     }
 
     function clearCache() {
@@ -216,6 +221,7 @@
     collapseProducts,
     createProductSourceCatalog,
     isPaperProduct,
+    lookupProductSources,
     productType,
     productTypeLabel,
     selectProductSources,

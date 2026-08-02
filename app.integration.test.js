@@ -138,6 +138,14 @@ test("image preview renders and enriches a read-only card archive", () => {
   assert.match(styleSource, /\.product-source-row\[data-product-type="collector"\]/);
 });
 
+test("card details publish cached product sources before any background rebuild", () => {
+  const publishResult = appSource.indexOf("publishPreviewProductSources(cardId, result)");
+  const rebuildResult = appSource.indexOf("await rebuildLocalProductSourceIndex()", publishResult);
+  assert.ok(publishResult >= 0 && rebuildResult > publishResult);
+  assert.match(appSource, /if \(result\.entry \|\| result\.indexMatchesCube\) return;/);
+  assert.match(styleSource, /\.card-archive-images \{[^}]*overflow: hidden;/);
+});
+
 test("closing or replacing an add-card lookup prevents stale results from mutating the Cube", () => {
   assert.match(appSource, /addLookupRequestId:\s*0/);
   assert.match(appSource, /addLookupController:\s*null/);

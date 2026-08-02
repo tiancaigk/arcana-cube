@@ -4,6 +4,7 @@ const {
   collapseProducts,
   createProductSourceCatalog,
   isPaperProduct,
+  lookupProductSources,
   productType,
   selectProductSources,
   validateIndex
@@ -101,6 +102,19 @@ test("compact indexes resolve shared product records by UUID", () => {
     { pack: product("pack", "Collector Booster Pack", "booster_pack", "collector") }
   );
   assert.equal(products[0].name, "Collector Booster Pack");
+});
+
+test("an exact card can be queried from a stale Cube-wide index without rebuilding it", () => {
+  const index = {
+    format: "arcana-cube-product-sources",
+    version: 1,
+    source: { cubeFingerprint: "older-cube" },
+    products: { pack: product("pack", "Collector Booster Pack", "booster_pack", "collector") },
+    cards: { printing: { sources: { foil: ["pack"] } } }
+  };
+  const result = lookupProductSources(index, { scryfallId: "printing", finish: "foil" });
+  assert.equal(result.entry, index.cards.printing);
+  assert.equal(result.products[0].uuid, "pack");
 });
 
 test("catalog caches and validates the generated index", async () => {
