@@ -141,6 +141,22 @@ test("MTGJSON price series uses USD providers before converted Cardmarket EUR", 
   ]);
 });
 
+test("Foil prices use etched data only when traditional Foil is unavailable", () => {
+  const entry = {
+    paper: {
+      tcgplayer: { currency: "USD", retail: { etched: { "2026-07-27": 14.05, "2026-07-28": 14.93 } } },
+      manapool: { currency: "USD", retail: { foil: { "2026-07-28": 12.5 } } },
+      cardmarket: { currency: "EUR", retail: { etched: { "2026-07-26": 7.21 } } }
+    }
+  };
+  assert.deepEqual(buildPriceSeries(entry, "foil", undefined, { "2026-07-24": 1.1485 }), [
+    ["2026-07-26", 8.28, 3, 1.1485, "2026-07-24"],
+    ["2026-07-27", 14.05, 0],
+    ["2026-07-28", 12.5, 1]
+  ]);
+  assert.deepEqual(buildPriceSeries(entry, "nonfoil", undefined, { "2026-07-24": 1.1485 }), []);
+});
+
 test("Cardmarket conversion uses the closest previous ECB business-day rate", () => {
   const entry = {
     paper: {

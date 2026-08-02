@@ -85,30 +85,34 @@
   }
 
   function buildPriceSeries(priceEntry, finish, providers = PROVIDER_ORDER, exchangeRates = {}) {
-    const priceKey = normalizeFinish(finish) === "foil" ? "foil" : "normal";
+    const priceKeys = normalizeFinish(finish) === "foil" ? ["foil", "etched"] : ["normal"];
     const paper = priceEntry && priceEntry.paper || {};
     const dates = new Set();
     providers.forEach((provider) => {
       const list = paper[provider];
       if (list && (list.currency === "USD" || provider === "cardmarket" && list.currency === "EUR")) {
-        Object.keys(list.retail && list.retail[priceKey] || {}).forEach((date) => dates.add(date));
+        priceKeys.forEach((priceKey) => {
+          Object.keys(list.retail && list.retail[priceKey] || {}).forEach((date) => dates.add(date));
+        });
       }
     });
     return [...dates].sort().flatMap((date) => {
-      for (let providerIndex = 0; providerIndex < providers.length; providerIndex += 1) {
-        const provider = providers[providerIndex];
-        const list = paper[provider];
-        if (!list) continue;
-        const rawPrice = list.retail && list.retail[priceKey] && list.retail[priceKey][date];
-        if (list.currency === "USD") {
-          const usd = normalizeUsd(rawPrice);
-          if (usd !== null) return [[date, usd, providerIndex]];
-        }
-        if (provider === "cardmarket" && list.currency === "EUR") {
-          const eur = normalizeUsd(rawPrice);
-          const exchange = exchangeRateForDate(exchangeRates, date);
-          const usd = eur !== null && exchange ? normalizeUsd(eur * exchange.rate) : null;
-          if (usd !== null) return [[date, usd, providerIndex, exchange.rate, exchange.date]];
+      for (const priceKey of priceKeys) {
+        for (let providerIndex = 0; providerIndex < providers.length; providerIndex += 1) {
+          const provider = providers[providerIndex];
+          const list = paper[provider];
+          if (!list) continue;
+          const rawPrice = list.retail && list.retail[priceKey] && list.retail[priceKey][date];
+          if (list.currency === "USD") {
+            const usd = normalizeUsd(rawPrice);
+            if (usd !== null) return [[date, usd, providerIndex]];
+          }
+          if (provider === "cardmarket" && list.currency === "EUR") {
+            const eur = normalizeUsd(rawPrice);
+            const exchange = exchangeRateForDate(exchangeRates, date);
+            const usd = eur !== null && exchange ? normalizeUsd(eur * exchange.rate) : null;
+            if (usd !== null) return [[date, usd, providerIndex, exchange.rate, exchange.date]];
+          }
         }
       }
       return [];

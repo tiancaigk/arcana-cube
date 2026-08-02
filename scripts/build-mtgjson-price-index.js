@@ -324,7 +324,7 @@ function cardmarketDateRange(priceEntries) {
   const dates = [];
   priceEntries.forEach((entry) => {
     const cardmarket = entry && entry.paper && entry.paper.cardmarket;
-    ["foil", "normal"].forEach((finish) => {
+    ["foil", "etched", "normal"].forEach((finish) => {
       dates.push(...Object.keys(cardmarket && cardmarket.retail && cardmarket.retail[finish] || {}));
     });
   });
