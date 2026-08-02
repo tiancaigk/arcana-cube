@@ -5,6 +5,7 @@ const os = require("node:os");
 const path = require("node:path");
 const { spawn } = require("node:child_process");
 const { pathToFileURL } = require("node:url");
+const vm = require("node:vm");
 const { cubeFingerprint } = require("../mtgjsonPrices.js");
 const { createLocalServer } = require("./local-server.js");
 
@@ -16,6 +17,26 @@ function delay(ms) {
 
 function hasCompletedProductSourceResult(state) {
   return state.rowCount > 0 || /尚未收录|当前没有这张|已识别当前实体版本|索引与牌表版本不一致/.test(state.status || "");
+}
+
+function findHistoryShardFixture(rootDir) {
+  const context = {};
+  fs.readdirSync(rootDir)
+    .filter((fileName) => /^mtgjson-history-[0-9a-f]\.js$/.test(fileName))
+    .sort()
+    .forEach((fileName) => {
+      vm.runInNewContext(fs.readFileSync(path.join(rootDir, fileName), "utf8"), context, { filename: fileName });
+    });
+  const shards = context.CubeMtgjsonHistoryShardData || {};
+  for (const key of Object.keys(shards).sort()) {
+    const shard = shards[key];
+    for (const [scryfallId, entry] of Object.entries(shard.cards || {}).sort(([a], [b]) => a.localeCompare(b))) {
+      if ((entry.foil || []).length === 90 && (entry.nonfoil || []).length === 90) {
+        return { key, scryfallId };
+      }
+    }
+  }
+  throw new Error("离线 MTGJSON 历史分片中没有可用于浏览器测试的完整版本");
 }
 
 async function waitForJson(url, timeoutMs = 10000) {
@@ -79,7 +100,9 @@ async function main() {
   if (!fs.existsSync(chromePath)) throw new Error(`没有找到 Chrome：${chromePath}`);
   const profileDir = fs.mkdtempSync(path.join(os.tmpdir(), "arcana-cube-browser-"));
   const debugPort = 9300 + Math.floor(Math.random() * 500);
-  const bundledPriceIndex = JSON.parse(fs.readFileSync(path.join(__dirname, "..", "mtgjson-price-index.json"), "utf8"));
+  const rootDir = path.join(__dirname, "..");
+  const bundledPriceIndex = JSON.parse(fs.readFileSync(path.join(rootDir, "mtgjson-price-index.json"), "utf8"));
+  const historyShardFixture = findHistoryShardFixture(rootDir);
   let localPriceIndexReads = 0;
   let localPriceIndexUpdates = 0;
   const server = createLocalServer({
@@ -407,7 +430,7 @@ async function main() {
     }
     if (!fileProductSourceState.scriptSource.startsWith("file:")) throw new Error("本地文件模式没有使用同目录产品来源索引");
     const fileHistoryShardState = await evaluate(`(async () => {
-      const id = '68785426-6868-4184-8d52-75a6a920848b';
+      const id = ${JSON.stringify(historyShardFixture.scryfallId)};
       if (!window.CubeMtgjsonPriceIndex) {
         await new Promise((resolve, reject) => {
           const script = document.createElement('script');
@@ -423,7 +446,7 @@ async function main() {
       return {
         foilPoints: entry?.foil?.length || 0,
         nonfoilPoints: entry?.nonfoil?.length || 0,
-        sourceVersion: window.CubeMtgjsonHistoryShardData?.sld?.sourceVersion || ''
+        sourceVersion: window.CubeMtgjsonHistoryShardData?.[${JSON.stringify(historyShardFixture.key)}]?.sourceVersion || ''
       };
     })()`);
     if (fileHistoryShardState.foilPoints !== 90 || fileHistoryShardState.nonfoilPoints !== 90) {

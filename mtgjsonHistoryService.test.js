@@ -3,7 +3,12 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
-const { MAX_HISTORY_IDS, createMtgjsonHistoryService, normalizeIds } = require("./scripts/mtgjson-history-service.js");
+const {
+  HISTORY_CACHE_VERSION,
+  MAX_HISTORY_IDS,
+  createMtgjsonHistoryService,
+  normalizeIds
+} = require("./scripts/mtgjson-history-service.js");
 
 const scryfallId = "68785426-6868-4184-8d52-75a6a920848b";
 const uuid = "c37b5396-403c-5514-9c3c-3f3ace3baf71";
@@ -63,8 +68,48 @@ test("history service extracts and caches selected MTGJSON printing history", as
   assert.deepEqual(second.cards[scryfallId].foil.at(-1), ["2026-07-29", 17.5, 1]);
   assert.equal(streamCalls, 1);
   const cached = JSON.parse(fs.readFileSync(path.join(rootDir, ".cache", "history", `${scryfallId}.json`), "utf8"));
+  assert.equal(cached.cacheVersion, HISTORY_CACHE_VERSION);
   assert.equal(cached.sourceVersion, "next-test-version");
   assert.deepEqual(cached.entry.foil.at(-1), ["2026-07-29", 17.5, 1]);
+});
+
+test("history service rebuilds old caches with the shared etched Foil rule", async () => {
+  const rootDir = fs.mkdtempSync(path.join(os.tmpdir(), "arcana-history-etched-"));
+  writeIndex(rootDir);
+  const historyDir = path.join(rootDir, ".cache", "history");
+  fs.mkdirSync(historyDir, { recursive: true });
+  fs.writeFileSync(path.join(historyDir, `${scryfallId}.json`), JSON.stringify({
+    sourceVersion: "test-version",
+    entry: { uuid, foil: [], nonfoil: [] }
+  }));
+  let streamCalls = 0;
+  const service = createMtgjsonHistoryService({
+    rootDir,
+    cacheRoot: path.join(rootDir, ".cache"),
+    downloadFile: async (_url, destination) => destination,
+    fetchEurUsdRates: async () => ({ rates: {}, from: "", to: "" }),
+    streamSelectedPrices: async (_file, targetUuids) => {
+      streamCalls += 1;
+      assert.deepEqual([...targetUuids], [uuid]);
+      return new Map([[uuid, {
+        paper: {
+          manapool: {
+            currency: "USD",
+            retail: { etched: { "2026-05-01": 19.25, "2026-07-28": 17.37 } }
+          }
+        }
+      }]]);
+    }
+  });
+
+  const result = await service.getHistory([scryfallId]);
+  assert.equal(streamCalls, 1);
+  assert.deepEqual(result.cards[scryfallId].foil, [
+    ["2026-05-01", 19.25, 1],
+    ["2026-07-28", 17.37, 1]
+  ]);
+  const cached = JSON.parse(fs.readFileSync(path.join(historyDir, `${scryfallId}.json`), "utf8"));
+  assert.equal(cached.cacheVersion, HISTORY_CACHE_VERSION);
 });
 
 test("history service prefers a newer local index when it covers a requested printing", async () => {

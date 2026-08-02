@@ -18,6 +18,7 @@ const { pruneMtgjsonCache, safeVersionName } = require("./mtgjson-cache.js");
 
 const apiRoot = "https://mtgjson.com/api/v5";
 const MAX_HISTORY_IDS = 1000;
+const HISTORY_CACHE_VERSION = 2;
 
 function normalizeIds(values) {
   return [...new Set((Array.isArray(values) ? values : [])
@@ -87,13 +88,17 @@ function createMtgjsonHistoryService(options = {}) {
   async function loadCachedEntry(cacheDir, legacyCacheDir, scryfallId) {
     try {
       const payload = JSON.parse(await fsp.readFile(path.join(cacheDir, `${scryfallId}.json`), "utf8"));
-      if (payload.entry) return { entry: payload.entry, sourceVersion: String(payload.sourceVersion || ""), legacy: false };
+      if (payload.entry && payload.cacheVersion === HISTORY_CACHE_VERSION) {
+        return { entry: payload.entry, sourceVersion: String(payload.sourceVersion || ""), legacy: false };
+      }
     } catch (_error) {
       // Try the former per-version cache location.
     }
     try {
       const payload = JSON.parse(await fsp.readFile(path.join(legacyCacheDir, `${scryfallId}.json`), "utf8"));
-      return payload.entry ? { entry: payload.entry, sourceVersion: String(payload.sourceVersion || ""), legacy: true } : null;
+      return payload.entry && payload.cacheVersion === HISTORY_CACHE_VERSION
+        ? { entry: payload.entry, sourceVersion: String(payload.sourceVersion || ""), legacy: true }
+        : null;
     } catch (_error) {
       return null;
     }
@@ -102,7 +107,7 @@ function createMtgjsonHistoryService(options = {}) {
   async function saveCachedEntry(cacheDir, scryfallId, sourceVersion, entry) {
     const file = path.join(cacheDir, `${scryfallId}.json`);
     const temporary = `${file}.tmp`;
-    await fsp.writeFile(temporary, JSON.stringify({ sourceVersion, entry }));
+    await fsp.writeFile(temporary, JSON.stringify({ cacheVersion: HISTORY_CACHE_VERSION, sourceVersion, entry }));
     await fsp.rename(temporary, file);
   }
 
@@ -201,4 +206,12 @@ function createMtgjsonHistoryService(options = {}) {
   return { getHistory };
 }
 
-module.exports = { MAX_HISTORY_IDS, createMtgjsonHistoryService, historyRange, indexCoverage, mapLimit, normalizeIds };
+module.exports = {
+  HISTORY_CACHE_VERSION,
+  MAX_HISTORY_IDS,
+  createMtgjsonHistoryService,
+  historyRange,
+  indexCoverage,
+  mapLimit,
+  normalizeIds
+};
